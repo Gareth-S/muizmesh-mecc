@@ -1,0 +1,13 @@
+{
+    "title": "MuizenMesh Community Sites",
+    "description": "You have arrived at our our WebRing. It provides navigation and acccess to our Mesh Sites. If you have a site on MuizenMesh, please fill out the form and display the banner.",
+    "image": "freakazoid.jpg",
+    "url": "https://muizenmesh.co.za/webring",
+    "repo": "https://github.com/ubuntupunk/webring",
+    "admins": [
+        {
+            "name": "David Robert Lewis",
+            "url": "https://github.com/ubuntupunk"
+        }
+    ]
+}

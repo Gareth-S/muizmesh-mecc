@@ -1,0 +1,12 @@
+[
+    {
+        "title": "Muizenberg Community Garden",
+        "url": "https://muizenmesh.co.za/wp/garden",
+        "feed": "https://muizenmesh.co.za/wp/garden/feed.xml"
+    },
+    {
+        "title": "Our Mesh Sites",
+        "url": "https://muizenmesh.co.za/wp",
+        "feed": "https://muizenmesh.co.za/feed.xml"
+    }
+]

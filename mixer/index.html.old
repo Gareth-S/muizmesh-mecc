@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Music Visualising</title>
+        <link rel="stylesheet" href="./examples/prettify.css"/>
+
+        <!-- Akko CSS -->
+        <link rel="stylesheet" href="./css/prettify.css"/>
+
+        <!-- Preparing Akko container for displaying inline -->
+        <style>
+            #akko {
+                height: 500px;
+            }
+        </style>
+
+    </head>
+    <body>
+        <h1>The MuizenMixer Project</h1>
+
+        <p> While we busy working on our mixer project here is Akko a music visualising framework based on WebGL and Web Audio API. 
+
+        <p>We want you to create a remix and share culture. The idea will be to upload and share tracks under a community contract. (Calling it a license just gets our regulators into a tizz!)
+            When viewing examples, try to change tracks and visualisers using the controls in the top left and right of
+            the screen respectively. You can drop your own tracks into the visualiser, but obviously they do not persist on our server.</p>
+<!-- Akko's container -->
+<div id="akko"></div>
+
+<!-- Akko's dependencies -->
+<script src="https://cdn.jsdelivr.net/bluebird/latest/bluebird.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/86/three.min.js"></script>
+
+<!-- Akko JS -->
+<script src="./dist/akko.js"></script>
+
+<!-- Defining our visualiser and starting Akko -->
+<script>
+    // Amount of cubes to draw, must be a power of 2 since we're using it for `fftSize` below
+    const CUBE_COUNT = 16;
+
+    class CustomVisualiser extends Akko.Visualiser {
+        constructor() {
+            super({
+                code: 'Cv',
+                name: 'Custom Visualiser',
+                fftSize: CUBE_COUNT * 2,
+            });
+        }
+
+        onInit(data) {
+            this.scene = new THREE.Scene();
+            this.camera = new THREE.PerspectiveCamera(60, data.width / data.height, 0.1, 100);
+            this.camera.position.z = 10;
+            this.camera.lookAt(new THREE.Vector3(0, 0, 0));
+            this.scene.add(this.camera);
+            this.cubes = [];
+            let geometry = new THREE.BoxGeometry(1, 1, 1);
+            let xOffset = -CUBE_COUNT / 2 + 0.5;
+            let hslStep = 1 / CUBE_COUNT;
+            for (let i = 0; i < CUBE_COUNT; i++) {
+                let material = new THREE.MeshBasicMaterial({color: 0xffffff});
+                material.color.setHSL(hslStep * i, 1, 0.5);
+                let cube = new THREE.Mesh(geometry, material);
+                cube.position.set(xOffset + i, 0, 0);
+                this.scene.add(cube);
+                this.cubes.push(cube);
+            }
+        }
+
+        onUpdate(data) {
+            for (let i = 0; i < CUBE_COUNT; i++) {
+                let cube = this.cubes[i];
+                let frequency = data.frequencyData[i];
+                let timeDomain = data.timeDomainData[i];
+                cube.scale.y = this.lerp(cube.scale.y, frequency * timeDomain, 0.1);
+            }
+            data.renderer.render(this.scene, this.camera);
+        }
+
+        onDestroy() {
+            delete this.scene;
+            delete this.camera;
+            delete this.cubes;
+        }
+    }
+
+    // Starting Akko and adding our visualiser.
+    let akko = new Akko({
+        autoPlay: true,
+        useDefaultVisualisers: false,
+    });
+    akko.addVisualiser(new CustomVisualiser());
+    akko.addTrack('./examples/audio/Fatal Force - Fan Girls.mp3');
+    akko.addTrack('./examples/audio/Computer Music All-Stars - Albatross v2.mp3');
+    akko.start();
+</script>
+
+
+
+        <p>Examples:</p>
+
+        <ul>
+            <li><a href="./examples/akko-fullscreen.html">Full screen Akko</a></li>
+            <li><a href="./examples/akko-inline.html">Akko as an inline element on a page</a></li>
+            <li><a href="./examples/akko-custom-es5.html">Akko with a custom visualiser</a> (ES5 version)</li>
+            <li><a href="./examples/akko-custom-es6.html">Akko with a custom visualiser</a> (ES6 version)</li>
+        </ul>
+        See <a href="https://github.com/TimboKZ/Akko">Akko on GitHub</a>.</p>
+    </body>
+</html>

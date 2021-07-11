@@ -1,0 +1,50 @@
+/***
+ * @copyright Copyright (c) 2017, Magnus Walbeck <mw@mwalbeck.org>
+ *
+ * @license GNU AGPL version 3 or any later version, see COPYING file for more.
+ */
+
+/* Phone Sync --------------------------------------------------------------- */
+
+.app-ocsms #app-navigation {
+    border-left: unset;
+
+    .ocsms-plname {
+        color: var(--color-main-text);
+    }
+
+    #app-mailbox-peers li {
+        border-top: 1px solid var(--color-border);
+
+        &:hover {
+            background-color: var(--color-background-hover);
+
+            a {
+                background: unset;
+            }
+        }
+    }
+}
+
+.app-ocsms #app-content {
+    #app-content-header {
+        box-shadow: unset;
+    }
+
+    .msg-recv {
+        background-color: var(--color-background-darker);
+        border-color: var(--color-border);
+        box-shadow: none;
+    }
+
+    .msg-sent {
+        background-color: var(--color-background-darker);
+        border-color: var(--color-success);
+        box-shadow: none;
+    }
+
+    .msg-date {
+        color: var(--color-text-maxcontrast);
+        opacity: 1;
+    }
+}

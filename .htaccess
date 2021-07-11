@@ -1,0 +1,7 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine on
+  RewriteRule ^\.well-known/carddav /cloud/remote.php/dav [R=301,L]
+  RewriteRule ^\.well-known/caldav /cloud/remote.php/dav [R=301,L]
+  RewriteRule ^.well-known/webfinger /cloud/public.php?service=webfinger [QSA,L]
+  RewriteRule ^\.well-known/nodeinfo /cloud//index.php/.well-known/nodeinfo [R=301,L]
+</IfModule>

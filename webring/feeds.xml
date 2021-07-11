@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<opml version="1.0">
+    <head>
+        <title>MuizenMesh Community Sites Member Feeds</title>
+    </head>
+    <body>
+    
+        
+        <outline type="rss" text="Muizenberg Community Garden" title="Muizenberg Community Garden" xmlUrl="https://muizenmesh.co.za/wp/garden/feed.xml" htmlUrl="https://muizenmesh.co.za/wp/garden" />
+        
+    
+        
+        <outline type="rss" text="MuizenMesh" title="MuizenMesh" xmlUrl="https://muizenmesh.co.za/feed.xml" htmlUrl="https://muizenmesh.co.za/wp" />
+        
+    
+    </body>
+</opml>

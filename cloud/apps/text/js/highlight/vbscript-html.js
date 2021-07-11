@@ -1,0 +1,2 @@
+(window.textWebpackJsonp=window.textWebpackJsonp||[]).push([[182],{620:function(n,t,e){"use strict";n.exports=function(n){return{name:"VBScript in HTML",subLanguage:"xml",contains:[{begin:"<%",end:"%>",subLanguage:"vbscript"}]}}}}]);
+//# sourceMappingURL=vbscript-html.js.map?v=2d20c6d9a6e432a6f5b0
