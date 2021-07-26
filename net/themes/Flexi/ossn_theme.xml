@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme xmlns="http://www.opensource-socialnetwork.org/theme/v/3.0">
+    <name>Flexi</name>
+    <id>Flexi</id>
+    <author>Core Team</author>
+    <author_url>http://www.softlab24.com/</author_url>	
+    <description>A responsive theme for Ossn.</description>
+    <license>OSSN License v3</license>    
+    <license_url>http://www.opensource-socialnetwork.org/licence</license_url>
+    <version>1.6</version>
+	<requires>
+		<type>ossn_version</type>
+		<version>5.6</version>
+	</requires>
+</theme>
