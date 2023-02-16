@@ -1,0 +1,27 @@
+[19-Oct-2022 14:58:42 UTC] PHP Fatal error:  Uncaught Dotenv\Exception\ValidationException: One or more environment variables failed assertions: DB_PASSWORD is missing. in /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php:175
+Stack trace:
+#0 /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php(57): Dotenv\Validator->assert(Object(Closure), 'is missing')
+#1 /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Dotenv.php(253): Dotenv\Validator->required()
+#2 /home/sexthera/public_html/muizenmesh.co.za/wp/config/application.php(41): Dotenv\Dotenv->required(Array)
+#3 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp-config.php(8): require_once('/home/sexthera/...')
+#4 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-load.php(55): require_once('/home/sexthera/...')
+#5 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-blog-header.php(13): require_once('/home/sexthera/...')
+#6 /home/sexthera/public_html/muizenmesh.co.za/wp/web/index.php(6): requi in /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php on line 175
+[19-Oct-2022 14:58:51 UTC] PHP Fatal error:  Uncaught Dotenv\Exception\ValidationException: One or more environment variables failed assertions: DB_PASSWORD is missing. in /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php:175
+Stack trace:
+#0 /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php(57): Dotenv\Validator->assert(Object(Closure), 'is missing')
+#1 /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Dotenv.php(253): Dotenv\Validator->required()
+#2 /home/sexthera/public_html/muizenmesh.co.za/wp/config/application.php(41): Dotenv\Dotenv->required(Array)
+#3 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp-config.php(8): require_once('/home/sexthera/...')
+#4 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-load.php(55): require_once('/home/sexthera/...')
+#5 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-blog-header.php(13): require_once('/home/sexthera/...')
+#6 /home/sexthera/public_html/muizenmesh.co.za/wp/web/index.php(6): requi in /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php on line 175
+[19-Oct-2022 14:59:00 UTC] PHP Fatal error:  Uncaught Dotenv\Exception\ValidationException: One or more environment variables failed assertions: DB_PASSWORD is missing. in /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php:175
+Stack trace:
+#0 /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php(57): Dotenv\Validator->assert(Object(Closure), 'is missing')
+#1 /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Dotenv.php(253): Dotenv\Validator->required()
+#2 /home/sexthera/public_html/muizenmesh.co.za/wp/config/application.php(41): Dotenv\Dotenv->required(Array)
+#3 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp-config.php(8): require_once('/home/sexthera/...')
+#4 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-load.php(55): require_once('/home/sexthera/...')
+#5 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-blog-header.php(13): require_once('/home/sexthera/...')
+#6 /home/sexthera/public_html/muizenmesh.co.za/wp/web/index.php(6): requi in /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php on line 175

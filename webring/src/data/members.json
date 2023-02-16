@@ -1,12 +1,12 @@
 [
     {
-        "title": "Muizenberg Community Garden",
-        "url": "https://muizenmesh.co.za/wp/garden",
-        "feed": "https://muizenmesh.co.za/wp/garden/feed.xml"
+        "title": "Muizenberg Electricity Crisis Committee",
+        "url": "https://muizenmesh.co.za/wp/web/mecc",
+        "feed": "https://muizenmesh.co.za/wp/mecc/feed.xml"
     },
     {
         "title": "Our Mesh Sites",
-        "url": "https://muizenmesh.co.za/wp",
+        "url": "https://muizenmesh.co.za/wp/web/",
         "feed": "https://muizenmesh.co.za/feed.xml"
     }
 ]

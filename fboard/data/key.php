@@ -1,1 +1,0 @@
-<?php define('KEY', '$2y$10$cdc.PfUEJotFYSu9q17AkevWBKBSCvVfXvouwwdIDe/gTHyZ09ll6'); ?>

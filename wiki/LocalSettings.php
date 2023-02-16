@@ -133,8 +133,11 @@ wfLoadSkin( 'Timeless' );
 wfLoadSkin( 'Vector' );
 
 wfLoadExtension ( 'VisualEditor' );
+wfLoadExtension("EmbedVideo");
 
 # End of automatically generated settings.
 # Add more configuration options below.
 
 $wgTmpDirectory = "/home/sexthera/tmp_gcpiud";
+
+wfLoadExtension( 'InputBox' );
