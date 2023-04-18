@@ -24,6 +24,7 @@
  */
 
 use MediaWiki\Revision\RevisionStore;
+use Wikimedia\ParamValidator\ParamValidator;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -67,7 +68,7 @@ class ApiSetNotificationTimestamp extends ApiBase {
 	public function execute() {
 		$user = $this->getUser();
 
-		if ( $user->isAnon() ) {
+		if ( !$user->isRegistered() ) {
 			$this->dieWithError( 'watchlistanontext', 'notloggedin' );
 		}
 		$this->checkUserRightsAny( 'editmywatchlist' );
@@ -90,7 +91,7 @@ class ApiSetNotificationTimestamp extends ApiBase {
 			);
 		}
 
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER, 'api' );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
 
 		$timestamp = null;
 		if ( isset( $params['timestamp'] ) ) {
@@ -173,18 +174,18 @@ class ApiSetNotificationTimestamp extends ApiBase {
 				$result[] = $rev;
 			}
 
-			if ( $pageSet->getTitles() ) {
+			if ( $pageSet->getPages() ) {
 				// Now process the valid titles
 				$this->watchedItemStore->setNotificationTimestampsForUser(
 					$user,
 					$timestamp,
-					$pageSet->getTitles()
+					$pageSet->getPages()
 				);
 
 				// Query the results of our update
 				$timestamps = $this->watchedItemStore->getNotificationTimestampsBatch(
 					$user,
-					$pageSet->getTitles()
+					$pageSet->getPages()
 				);
 
 				// Now, put the valid titles into the result
@@ -202,7 +203,9 @@ class ApiSetNotificationTimestamp extends ApiBase {
 							$r['known'] = true;
 						}
 					}
-					if ( isset( $timestamps[$ns] ) && array_key_exists( $dbkey, $timestamps[$ns] ) ) {
+					if ( isset( $timestamps[$ns] ) && array_key_exists( $dbkey, $timestamps[$ns] )
+						&& $timestamps[$ns][$dbkey] !== false
+					) {
 						$r['notificationtimestamp'] = '';
 						if ( $timestamps[$ns][$dbkey] !== null ) {
 							$r['notificationtimestamp'] = wfTimestamp( TS_ISO_8601, $timestamps[$ns][$dbkey] );
@@ -249,16 +252,16 @@ class ApiSetNotificationTimestamp extends ApiBase {
 	public function getAllowedParams( $flags = 0 ) {
 		$result = [
 			'entirewatchlist' => [
-				ApiBase::PARAM_TYPE => 'boolean'
+				ParamValidator::PARAM_TYPE => 'boolean'
 			],
 			'timestamp' => [
-				ApiBase::PARAM_TYPE => 'timestamp'
+				ParamValidator::PARAM_TYPE => 'timestamp'
 			],
 			'torevid' => [
-				ApiBase::PARAM_TYPE => 'integer'
+				ParamValidator::PARAM_TYPE => 'integer'
 			],
 			'newerthanrevid' => [
-				ApiBase::PARAM_TYPE => 'integer'
+				ParamValidator::PARAM_TYPE => 'integer'
 			],
 			'continue' => [
 				ApiBase::PARAM_HELP_MSG => 'api-help-param-continue',

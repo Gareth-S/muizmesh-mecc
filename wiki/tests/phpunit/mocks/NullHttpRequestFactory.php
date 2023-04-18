@@ -2,6 +2,7 @@
 
 use MediaWiki\Config\ServiceOptions;
 use MediaWiki\Http\HttpRequestFactory;
+use MediaWiki\MainConfigNames;
 use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\AssertionFailedError;
 use Psr\Log\NullLogger;
@@ -20,11 +21,13 @@ class NullHttpRequestFactory extends HttpRequestFactory {
 	public function __construct() {
 		$options = new ServiceOptions(
 			self::CONSTRUCTOR_OPTIONS, [
-			'HTTPTimeout' => 1,
-			'HTTPConnectTimeout' => 1,
-			'HTTPMaxTimeout' => 2,
-			'HTTPMaxConnectTimeout' => 2,
-		]
+			MainConfigNames::HTTPTimeout => 1,
+			MainConfigNames::HTTPConnectTimeout => 1,
+			MainConfigNames::HTTPMaxTimeout => 2,
+			MainConfigNames::HTTPMaxConnectTimeout => 2,
+			MainConfigNames::LocalVirtualHosts => [],
+			MainConfigNames::LocalHTTPProxy => false,
+			]
 		);
 
 		parent::__construct( $options, new NullLogger() );
@@ -60,8 +63,7 @@ class NullHttpRequestFactory extends HttpRequestFactory {
 	 * @return \GuzzleHttp\Client
 	 */
 	public function createGuzzleClient( array $config = [] ): \GuzzleHttp\Client {
-		// NOTE: if needed, we can also return a mock here, like we do in createMultiClient()
-		Assert::fail( "HTTP request blocked. Use MockHttpTrait." );
+		return new NullGuzzleClient( $config );
 	}
 
 }

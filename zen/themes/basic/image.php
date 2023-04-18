@@ -64,7 +64,7 @@ if (!defined('WEBPATH'))
 			<div id="image">
 				<strong>
 					<?php
-					if (isImagePhoto()) {
+					if ($_zp_current_image->isPhoto()) {
 						$fullimage = getFullImageURL();
 					} else {
 						$fullimage = NULL;
@@ -74,7 +74,7 @@ if (!defined('WEBPATH'))
 						<a href="<?php echo html_encode(pathurlencode($fullimage)); ?>" title="<?php printBareImageTitle(); ?>" class="fullimage">
 							<?php
 						}
-						if (function_exists('printUserSizeImage') && isImagePhoto()) {
+						if (function_exists('printUserSizeImage') && $_zp_current_image->isPhoto()) {
 							printUserSizeImage(getImageTitle());
 						} else {
 							printDefaultSizedImage(getImageTitle());
@@ -93,7 +93,7 @@ if (!defined('WEBPATH'))
 				<?php
 				If (function_exists('printAddToFavorites'))
 					printAddToFavorites($_zp_current_image);
-				@call_user_func('printSlideShowLink');
+				callUserFunction('printSlideShowLink');
 
 				if (getImageMetaData()) {
 					printImageMetadata();
@@ -106,10 +106,10 @@ if (!defined('WEBPATH'))
 				<br class="clearall" />
 
 				<?php
-				@call_user_func('printOpenStreetMap');
-				@call_user_func('printGoogleMap');
-				@call_user_func('printRating');
-				@call_user_func('printCommentForm');
+				callUserFunction('openStreetMap::printOpenStreetMap');
+				callUserFunction('printGoogleMap');
+				callUserFunction('printRating');
+				callUserFunction('printCommentForm');
 				?>
 			</div>
 		</div>

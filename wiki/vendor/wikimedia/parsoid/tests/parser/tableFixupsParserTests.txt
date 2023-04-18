@@ -164,7 +164,7 @@ Table cell attribute merging edge cases
 <tr>
 <td><a rel="mw:WikiLink" href="./No_Merging_Here" title="No Merging Here" about="#mwt2" typeof="mw:Transclusion" class="new" data-parsoid='{"stx":"simple","a":{"href":"./No_Merging_Here"},"sa":{"href":"No Merging Here"},"pi":[[{"k":"1","named":true}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"td_attrs_and_content","href":"./Template:Td_attrs_and_content"},"params":{"1":{"wt":"[[No Merging Here]] class=\"foo\""}},"i":0}}]}'>No Merging Here</a><span about="#mwt2"> class="foo" | foobar</span> baz</td></tr>
 <tr>
-<td><span class="mw-default-size" typeof="mw:Transclusion mw:Error mw:Image" about="#mwt3" data-parsoid='{"optList":[],"pi":[[{"k":"1","named":true}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"td_attrs_and_content","href":"./Template:Td_attrs_and_content"},"params":{"1":{"wt":"[[File:Foo.jpg]] class=\"foo\""}},"i":0}}]}'><a href="./Special:FilePath/Foo.jpg"><span resource="./File:Foo.jpg">File:Foo.jpg</span></a></span><span about="#mwt3"> class="foo" | foobar</span> baz</td></tr>
+<td><span class="mw-default-size" typeof="mw:Transclusion mw:Error mw:File" about="#mwt3" data-parsoid='{"optList":[],"pi":[[{"k":"1","named":true}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"td_attrs_and_content","href":"./Template:Td_attrs_and_content"},"params":{"1":{"wt":"[[File:Foo.jpg]] class=\"foo\""}},"i":0}}]}'><a href="./Special:FilePath/Foo.jpg"><span class="mw-broken-media" resource="./File:Foo.jpg">File:Foo.jpg</span></a></span><span about="#mwt3"> class="foo" | foobar</span> baz</td></tr>
 </tbody></table>
 !! end
 
@@ -237,5 +237,22 @@ Ensure a cell with newlines doesn't combine with following cell
 <tr data-parsoid='{"startTagSrc":"|-"}'>
 <td>not combined
  </td><td about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"td_content","href":"./Template:Td_content"},"params":{"1":{"wt":""}},"i":0}}]}'>foobar</td></tr>
+</tbody></table>
+!! end
+
+!! test
+Table cell attributes and nested transclusions
+!! wikitext
+{|
+| '''{{td_attrs_and_content|1=style='border:1px solid blue;'}}'''
+|}
+!! html/php
+<table>
+<tbody><tr>
+<td>foobar<b></b>
+</td></tr></tbody></table>
+!! html/parsoid
+<table>
+<tbody><tr><td style="border:1px solid blue;" typeof="mw:Transclusion" about="#mwt1" data-mw='{"parts":["| &apos;&apos;&apos;",{"template":{"target":{"wt":"td_attrs_and_content","href":"./Template:Td_attrs_and_content"},"params":{"1":{"wt":"style=&apos;border:1px solid blue;&apos;"}},"i":0}},"&apos;&apos;&apos;"]}'>foobar</td></tr>
 </tbody></table>
 !! end

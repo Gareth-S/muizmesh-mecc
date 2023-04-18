@@ -1,6 +1,7 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
+use MediaWiki\Page\PageReferenceValue;
 
 /**
  * See also unit tests at \MediaWiki\Tests\Unit\WikitextContentHandlerTest
@@ -11,10 +12,10 @@ class WikitextContentHandlerTest extends MediaWikiLangTestCase {
 	/** @var WikitextContentHandler */
 	private $handler;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
-		$this->handler = MediaWikiServices::getInstance()->getContentHandlerFactory()
+		$this->handler = $this->getServiceContainer()->getContentHandlerFactory()
 			->getContentHandler( CONTENT_MODEL_WIKITEXT );
 	}
 
@@ -25,9 +26,8 @@ class WikitextContentHandlerTest extends MediaWikiLangTestCase {
 	 * @covers WikitextContentHandler::makeRedirectContent
 	 */
 	public function testMakeRedirectContent( $title, $expected ) {
-		MediaWikiServices::getInstance()->getContentLanguage()->resetNamespaces();
-
-		MediaWikiServices::getInstance()->resetServiceForTesting( 'MagicWordFactory' );
+		$this->getServiceContainer()->resetServiceForTesting( 'ContentLanguage' );
+		$this->getServiceContainer()->resetServiceForTesting( 'MagicWordFactory' );
 
 		if ( is_string( $title ) ) {
 			$title = Title::newFromText( $title );
@@ -248,7 +248,7 @@ class WikitextContentHandlerTest extends MediaWikiLangTestCase {
 	 * @covers WikitextContentHandler::getChangeTag
 	 */
 	public function testGetChangeTag( $old, $new, $flags, $expected ) {
-		$this->setMwGlobals( 'wgSoftwareTags', [
+		$this->overrideConfigValue( MainConfigNames::SoftwareTags, [
 			'mw-new-redirect' => true,
 			'mw-removed-redirect' => true,
 			'mw-changed-redirect-target' => true,
@@ -271,26 +271,47 @@ class WikitextContentHandlerTest extends MediaWikiLangTestCase {
 	public function testDataIndexFieldsFile() {
 		$mockEngine = $this->createMock( SearchEngine::class );
 		$title = Title::newFromText( 'Somefile.jpg', NS_FILE );
-		$page = new WikiPage( $title );
+		$page = $this->getServiceContainer()->getWikiPageFactory()->newFromTitle( $title );
 
 		$fileHandler = $this->getMockBuilder( FileContentHandler::class )
 			->disableOriginalConstructor()
-			->setMethods( [ 'getDataForSearchIndex' ] )
+			->onlyMethods( [ 'getDataForSearchIndex' ] )
 			->getMock();
 
 		$handler = $this->getMockBuilder( WikitextContentHandler::class )
 			->disableOriginalConstructor()
-			->setMethods( [ 'getFileHandler' ] )
+			->onlyMethods( [ 'getFileHandler' ] )
 			->getMock();
 
-		$handler->method( 'getFileHandler' )->will( $this->returnValue( $fileHandler ) );
+		$handler->method( 'getFileHandler' )->willReturn( $fileHandler );
 		$fileHandler->expects( $this->once() )
 			->method( 'getDataForSearchIndex' )
-			->will( $this->returnValue( [ 'file_text' => 'This is file content' ] ) );
+			->willReturn( [ 'file_text' => 'This is file content' ] );
 
-		$data = $handler->getDataForSearchIndex( $page, new ParserOutput(), $mockEngine );
+		$data = $handler->getDataForSearchIndex( $page, new ParserOutput( '' ), $mockEngine );
 		$this->assertArrayHasKey( 'file_text', $data );
 		$this->assertEquals( 'This is file content', $data['file_text'] );
 	}
 
+	/**
+	 * @covers WikitextContentHandler::fillParserOutput
+	 */
+	public function testHadSignature() {
+		$services = $this->getServiceContainer();
+		$contentTransformer = $services->getContentTransformer();
+		$contentRenderer = $services->getContentRenderer();
+		$this->hideDeprecated( 'AbstractContent::preSaveTransform' );
+
+		$pageObj = PageReferenceValue::localReference( NS_MAIN, __CLASS__ );
+
+		$content = new WikitextContent( '~~~~' );
+		$pstContent = $contentTransformer->preSaveTransform(
+			$content,
+			$pageObj,
+			$this->getTestUser()->getUser(),
+			ParserOptions::newFromAnon()
+		);
+
+		$this->assertTrue( $contentRenderer->getParserOutput( $pstContent, $pageObj )->getFlag( 'user-signature' ) );
+	}
 }

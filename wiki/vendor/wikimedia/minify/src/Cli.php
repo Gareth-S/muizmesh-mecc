@@ -53,7 +53,7 @@ final class Cli {
 	}
 
 	/** Perform the specified command. */
-	public function run() : void {
+	public function run(): void {
 		try {
 			switch ( $this->command ) {
 			case 'css':
@@ -61,6 +61,12 @@ final class Cli {
 				break;
 			case 'js':
 				$this->runJs( ...$this->params );
+				break;
+			case 'jsmap-web':
+				$this->runJsMapWeb( ...$this->params );
+				break;
+			case 'jsmap-raw':
+				$this->runJsMapRaw( ...$this->params );
 				break;
 			case '':
 			case 'help':
@@ -77,41 +83,62 @@ final class Cli {
 		}
 	}
 
-	private function runCss( string $file = null ) : void {
+	private function runCss( string $file = null ): void {
 		$data = $file === null ? stream_get_contents( $this->in ) : file_get_contents( $file );
 		$this->output( CSSMin::minify( $data ) );
 	}
 
-	private function runJs( string $file = null ) : void {
+	private function runJs( string $file = null ): void {
 		$data = $file === null ? stream_get_contents( $this->in ) : file_get_contents( $file );
 		$this->output( JavaScriptMinifier::minify( $data ) );
 	}
 
-	private function help() : void {
+	private function runJsMapWeb( string $file = null ): void {
+		$data = $file === null ? stream_get_contents( $this->in ) : file_get_contents( $file );
+		$sourceName = $file === null ? 'file.js' : basename( $file );
+		$mapper = JavaScriptMinifier::createSourceMapState();
+		$mapper->addSourceFile( $sourceName, $data, true );
+		$this->output( rtrim( $mapper->getSourceMap(), "\n" ) );
+	}
+
+	private function runJsMapRaw( string $file = null ): void {
+		$data = $file === null ? stream_get_contents( $this->in ) : file_get_contents( $file );
+		$sourceName = $file === null ? 'file.js' : basename( $file );
+		$mapper = JavaScriptMinifier::createSourceMapState();
+		$mapper->addSourceFile( $sourceName, $data, true );
+		$this->output( rtrim( $mapper->getRawSourceMap(), "\n" ) );
+	}
+
+	private function help(): void {
 		$this->output( <<<TEXT
 usage: {$this->self} <command>
 
 commands:
-   css [<file>]   Minify input data as CSS code, and write to output.
-                  Reads from stdin by default, or can read from a file.
-   js  [<file>]   Minify input data as JavaScript code, write to output.
-                  Reads from stdin by default, or can read from a file.
+   css [<file>]        Minify input data as CSS code, and write to output.
+                       Reads from stdin by default, or can read from a file.
+   js  [<file>]        Minify input data as JavaScript code, write to output.
+                       Reads from stdin by default, or can read from a file.
+   jsmap-raw [<file>]  Minify JavaScript code and write a raw source map to
+                       output. Such a source map should not be delivered over
+                       HTTP due to XSSI concerns.
+   jsmap-web [<file>]  Minify JavaScript code and write a source map with XSSI
+                       prefix.
 TEXT
 		);
 	}
 
-	private function error( string $text ) : void {
+	private function error( string $text ): void {
 		$this->exitCode = 1;
 		$this->output( "\n{$this->self} error: $text\n\n------\n" );
 		$this->help();
 	}
 
-	private function output( string $text ) : void {
+	private function output( string $text ): void {
 		fwrite( $this->out, $text . "\n" );
 	}
 
 	/** @return int */
-	public function getExitCode() : int {
+	public function getExitCode(): int {
 		return $this->exitCode;
 	}
 }

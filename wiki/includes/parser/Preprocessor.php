@@ -93,6 +93,7 @@ abstract class Preprocessor {
 	 * @internal
 	 */
 	public function resetParser( ?Parser $parser ) {
+		// @phan-suppress-next-line PhanPossiblyNullTypeMismatchProperty For internal use only
 		$this->parser = $parser;
 	}
 
@@ -141,5 +142,5 @@ abstract class Preprocessor {
 	 *   - Preprocessor::DOM_UNCACHED: disable use of the preprocessor cache.
 	 * @return PPNode
 	 */
-	 abstract public function preprocessToObj( $text, $flags = 0 );
+	abstract public function preprocessToObj( $text, $flags = 0 );
 }

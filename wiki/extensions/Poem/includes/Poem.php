@@ -1,5 +1,13 @@
 <?php
 
+namespace MediaWiki\Extension\Poem;
+
+use Html;
+use MediaWiki\Hook\ParserFirstCallInitHook;
+use Parser;
+use PPFrame;
+use Sanitizer;
+
 /**
  * This class handles formatting poems in WikiText, specifically anything within
  * <poem></poem> tags.
@@ -7,13 +15,13 @@
  * @license CC0-1.0
  * @author Nikola Smolenski <smolensk@eunet.yu>
  */
-class Poem {
+class Poem implements ParserFirstCallInitHook {
 	/**
 	 * Bind the renderPoem function to the <poem> tag
 	 * @param Parser $parser
 	 */
-	public static function init( Parser $parser ) {
-		$parser->setHook( 'poem', [ self::class, 'renderPoem' ] );
+	public function onParserFirstCallInit( $parser ) {
+		$parser->setHook( 'poem', [ $this, 'renderPoem' ] );
 	}
 
 	/**
@@ -24,7 +32,7 @@ class Poem {
 	 * @param PPFrame $frame
 	 * @return string
 	 */
-	public static function renderPoem( $in, array $param, Parser $parser, PPFrame $frame ) {
+	public function renderPoem( $in, array $param, Parser $parser, PPFrame $frame ) {
 		// using newlines in the text will cause the parser to add <p> tags,
 		// which may not be desired in some cases
 		$newline = isset( $param['compact'] ) ? '' : "\n";
@@ -34,7 +42,7 @@ class Poem {
 		// replace colons with indented spans
 		$text = preg_replace_callback(
 			'/^(:++)(.+)$/m',
-			function ( array $matches ) {
+			static function ( array $matches ) {
 				$indentation = strlen( $matches[1] ) . 'em';
 				return Html::rawElement(
 					'span',
@@ -61,7 +69,7 @@ class Poem {
 		// replace spaces at the beginning of a line with non-breaking spaces
 		$text = preg_replace_callback(
 			'/^ +/m',
-			function ( array $matches ) {
+			static function ( array $matches ) {
 				return str_repeat( '&#160;', strlen( $matches[0] ) );
 			},
 			$text

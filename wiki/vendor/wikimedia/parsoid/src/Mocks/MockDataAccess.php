@@ -1,4 +1,5 @@
 <?php
+declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\Mocks;
 
@@ -6,6 +7,7 @@ use Error;
 use Wikimedia\Parsoid\Config\DataAccess;
 use Wikimedia\Parsoid\Config\PageConfig;
 use Wikimedia\Parsoid\Config\PageContent;
+use Wikimedia\Parsoid\Core\ContentMetadataCollector;
 use Wikimedia\Parsoid\Utils\PHPUtils;
 
 /**
@@ -13,7 +15,7 @@ use Wikimedia\Parsoid\Utils\PHPUtils;
  * provides. While originally implemented to support ParserTests, this is no longer used
  * by parser tests.
  */
-class MockDataAccess implements DataAccess {
+class MockDataAccess extends DataAccess {
 	private static $PAGE_DATA = [
 		"Main_Page" => [
 			"title" => "Main Page",
@@ -262,7 +264,8 @@ class MockDataAccess implements DataAccess {
 		'File:Thumb.png' => 'Thumb.png',
 		'File:LoremIpsum.djvu' => 'LoremIpsum.djvu',
 		'File:Video.ogv' => 'Video.ogv',
-		'File:Audio.oga' => 'Audio.oga'
+		'File:Audio.oga' => 'Audio.oga',
+		'File:Bad.jpg' => 'Bad.jpg',
 	];
 
 	private const PNAMES = [
@@ -297,6 +300,13 @@ class MockDataAccess implements DataAccess {
 			'height' => 180,
 			'bits' => 24,
 			'mime' => 'image/svg+xml'
+		],
+		'Bad.jpg' => [
+			'size' => 12345,
+			'width' => 320,
+			'height' => 240,
+			'bits' => 24,
+			'mime' => 'image/jpeg',
 		],
 		'LoremIpsum.djvu' => [
 			'size' => 3249,
@@ -374,12 +384,16 @@ class MockDataAccess implements DataAccess {
 	/** @inheritDoc */
 	public function getFileInfo( PageConfig $pageConfig, array $files ): array {
 		$ret = [];
-		foreach ( $files as $name => $dims ) {
+		foreach ( $files as $f ) {
+			$name = $f[0];
+			$dims = $f[1];
+
 			// From mockAPI.js
 			$normFileName = self::FNAMES[$name] ?? $name;
 			$props = self::FILE_PROPS[$normFileName] ?? null;
 			if ( $props === null ) {
 				// We don't have info for this file
+				$ret[] = null;
 				continue;
 			}
 
@@ -400,7 +414,8 @@ class MockDataAccess implements DataAccess {
 				'url' => $baseurl,
 				'descriptionurl' => $durl,
 				'mediatype' => $mediatype,
-				'mime' => $props['mime']
+				'mime' => $props['mime'],
+				'badFile' => ( $normFileName === 'Bad.jpg' ),
 			];
 
 			if ( isset( $props['duration'] ) ) {
@@ -416,6 +431,9 @@ class MockDataAccess implements DataAccess {
 				$txopts['width'] = $dims['width'];
 				if ( isset( $dims['page'] ) ) {
 					$txopts['page'] = $dims['page'];
+				}
+				if ( isset( $dims['lang'] ) ) {
+					$txopts['lang'] = $dims['lang'];
 				}
 			}
 			if ( isset( $dims['height'] ) && $dims['height'] !== null ) {
@@ -508,7 +526,7 @@ class MockDataAccess implements DataAccess {
 				}
 			}
 
-			$ret = array_merge( $ret, [ $normFileName => $info ] );
+			$ret[] = $info;
 		}
 
 		return $ret;
@@ -521,7 +539,11 @@ class MockDataAccess implements DataAccess {
 	}
 
 	/** @inheritDoc */
-	public function parseWikitext( PageConfig $pageConfig, string $wikitext ): array {
+	public function parseWikitext(
+		PageConfig $pageConfig,
+		ContentMetadataCollector $metadata,
+		string $wikitext
+	): string {
 		// Render to html the contents of known extension tags
 		preg_match( '#<([A-Za-z][^\t\n\v />\0]*)#', $wikitext, $match );
 		switch ( $match[1] ) {
@@ -537,42 +559,41 @@ class MockDataAccess implements DataAccess {
 
 			case 'indicator':
 			case 'section':
-				$html = "\n";
+				$html = "";
 				break;
 
 			default:
 				throw new Error( 'Unhandled extension type encountered in: ' . $wikitext );
 		}
 
-		return [
-			'html' => $html,
-			'modules' => [],
-			'modulestyles' => [],
-			'categories' => [],
-		];
+		return $html;
 	}
 
 	/** @inheritDoc */
-	public function preprocessWikitext( PageConfig $pageConfig, string $wikitext ): array {
+	public function preprocessWikitext(
+		PageConfig $pageConfig,
+		ContentMetadataCollector $metadata,
+		string $wikitext
+	): string {
 		$revid = $pageConfig->getRevisionId();
-		$ret = [
-			'modules' => [],
-			'modulestyles' => [],
-			'categories' => [],
-			'properties' => [],
-		];
 
 		$expanded = str_replace( '{{!}}', '|', $wikitext );
-		preg_match( '/{{1x\|(.*?)}}/s', $expanded, $match );
+		preg_match( '/{{1x\|(.*?)}}/s', $expanded, $match1 );
+		preg_match( '/{{#tag:ref\|(.*?)\|(.*?)}}/s', $expanded, $match2 );
 
-		if ( $match ) {
-			$ret['wikitext'] = $match[1];
+		if ( $match1 ) {
+			$ret = $match1[1];
+		} elseif ( $match2 ) {
+			$ret = "<ref {$match2[2]}>{$match2[1]}</ref>";
 		} elseif ( $wikitext === '{{colours of the rainbow}}' ) {
-			$ret['wikitext'] = 'purple';
+			$ret = 'purple';
 		} elseif ( $wikitext === '{{REVISIONID}}' ) {
-			$ret['wikitext'] = (string)$revid;
+			$ret = (string)$revid;
+		} elseif ( $wikitext === '{{mangle}}' ) {
+			$ret = 'hi';
+			$metadata->addCategory( 'Mangle', 'ho' );
 		} else {
-			$ret['wikitext'] = '';
+			$ret = '';
 		}
 
 		return $ret;

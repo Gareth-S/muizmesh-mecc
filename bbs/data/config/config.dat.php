@@ -3,7 +3,7 @@ array (
   'title' => 'MuizenMesh BBS',
   'description' => 'Have you heard the word, Muizenberg?',
   'theme' => 'bootstrap',
-  'style' => '#000000',
+  'style' => '#5207d4',
   'lang' => 'en-US',
   'date_format' => 'l jS F o, H:i:s',
   'short_date_format' => 'Y/m/d H:i',
@@ -14,10 +14,10 @@ array (
   'nb_page_scroll_infinite' => '1',
   'admin' => 'admin@28c68f86',
   'private' => '',
-  'math_captcha' => '',
+  'math_captcha' => 'on',
   'editor' => 'markdown',
   'homepage' => 'index.php',
-  'blog_new' => '',
+  'blog_new' => 'muizenmesh-forum',
   'post_summary' => '55',
   'worker' => 
   array (

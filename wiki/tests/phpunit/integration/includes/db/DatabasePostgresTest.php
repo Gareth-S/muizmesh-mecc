@@ -2,6 +2,7 @@
 
 use Wikimedia\Rdbms\Database;
 use Wikimedia\Rdbms\DatabasePostgres;
+use Wikimedia\Rdbms\DBQueryError;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\ScopedCallback;
 use Wikimedia\TestingAccessWrapper;
@@ -11,7 +12,7 @@ use Wikimedia\TestingAccessWrapper;
  */
 class DatabasePostgresTest extends MediaWikiIntegrationTestCase {
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 		if ( !$this->db instanceof DatabasePostgres ) {
 			$this->markTestSkipped( 'Not PostgreSQL' );

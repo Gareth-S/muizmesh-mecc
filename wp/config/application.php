@@ -108,18 +108,25 @@ Config::define('WP_POST_REVISIONS', env('WP_POST_REVISIONS') ?: true);
 /* Multisite */
 Config::define( 'WP_ALLOW_MULTISITE', true );
 Config::define( 'MULTISITE', true );
-Config::define( 'SUBDOMAIN_INSTALL', true );
+Config::define( 'SUBDOMAIN_INSTALL', false );
 Config::define( 'DOMAIN_CURRENT_SITE', 'muizenmesh.co.za' );
 Config::define( 'PATH_CURRENT_SITE', '/wp/web/' );
 Config::define( 'SITE_ID_CURRENT_SITE', 1 );
 Config::define( 'BLOG_ID_CURRENT_SITE', 1 );
 
+Config::define('FORCE_SSL_ADMIN', true);
+Config::define('JETPACK_IP_ADDRESS_OK', '165.0.131.172');
+
+#Config::define('WP_CORE_DIRECTORY', 'wp');
+#define('WP_HOME','https://muizenmesh.co.za/wp/web');
+#define('WP_SITEURL','https://muizenmesh.co.za/wp/web');
+
 /**
  * Debugging Settings
  */
-Config::define('WP_DEBUG_DISPLAY', false);
-Config::define('WP_DEBUG_LOG', false);
-Config::define('SCRIPT_DEBUG', false);
+Config::define('WP_DEBUG_DISPLAY', true);
+Config::define('WP_DEBUG_LOG', true);
+Config::define('SCRIPT_DEBUG', true);
 ini_set('display_errors', '0');
 
 /**

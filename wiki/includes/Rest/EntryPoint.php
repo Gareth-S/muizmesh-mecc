@@ -6,10 +6,13 @@ use ExtensionRegistry;
 use IContextSource;
 use MediaWiki;
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Rest\BasicAccess\CompoundAuthorizer;
 use MediaWiki\Rest\BasicAccess\MWBasicAuthorizer;
+use MediaWiki\Rest\Reporter\MWErrorReporter;
 use MediaWiki\Rest\Validator\Validator;
+use MWExceptionRenderer;
 use RequestContext;
 use Title;
 use WebResponse;
@@ -57,7 +60,7 @@ class EntryPoint {
 		// Always include the "official" routes. Include additional routes if specified.
 		$routeFiles = array_merge(
 			[ 'includes/Rest/coreRoutes.json' ],
-			$conf->get( 'RestAPIAdditionalRouteFiles' )
+			$conf->get( MainConfigNames::RestAPIAdditionalRouteFiles )
 		);
 		array_walk( $routeFiles, static function ( &$val, $key ) {
 			global $IP;
@@ -67,26 +70,27 @@ class EntryPoint {
 		return ( new Router(
 			$routeFiles,
 			ExtensionRegistry::getInstance()->getAttribute( 'RestRoutes' ),
-			$conf->get( 'CanonicalServer' ),
-			$conf->get( 'RestPath' ),
+			new ServiceOptions( Router::CONSTRUCTOR_OPTIONS, $conf ),
 			$services->getLocalServerObjectCache(),
 			$responseFactory,
 			$authorizer,
 			$authority,
 			$objectFactory,
 			$restValidator,
-			$services->getHookContainer()
+			new MWErrorReporter(),
+			$services->getHookContainer(),
+			$context->getRequest()->getSession()
 		) )->setCors( $cors );
 	}
 
 	/**
-	 * @return ?RequestInterface The RequestInterface object used by this entry point.
+	 * @return RequestInterface The RequestInterface object used by this entry point.
 	 */
-	public static function getMainRequest(): ?RequestInterface {
+	public static function getMainRequest(): RequestInterface {
 		if ( self::$mainRequest === null ) {
 			$conf = MediaWikiServices::getInstance()->getMainConfig();
 			self::$mainRequest = new RequestFromGlobals( [
-				'cookiePrefix' => $conf->get( 'CookiePrefix' )
+				'cookiePrefix' => $conf->get( MainConfigNames::CookiePrefix )
 			] );
 		}
 		return self::$mainRequest;
@@ -107,10 +111,11 @@ class EntryPoint {
 		$conf = $services->getMainConfig();
 
 		$responseFactory = new ResponseFactory( self::getTextFormatters( $services ) );
+		$responseFactory->setShowExceptionDetails( MWExceptionRenderer::shouldShowExceptionDetails() );
 
 		$cors = new CorsUtils(
 			new ServiceOptions(
-				CorsUtils::CONSTRUCTOR_OPTIONS, $services->getMainConfig()
+				CorsUtils::CONSTRUCTOR_OPTIONS, $conf
 			),
 			$responseFactory,
 			$context->getUser()
@@ -136,7 +141,7 @@ class EntryPoint {
 	 * @param MediaWikiServices $services
 	 * @return ITextFormatter[]
 	 */
-	public static function getTextFormatters( MediaWikiServices $services ) {
+	private static function getTextFormatters( MediaWikiServices $services ) {
 		$code = $services->getContentLanguage()->getCode();
 		$langs = array_unique( [ $code, 'en' ] );
 		$textFormatters = [];

@@ -166,7 +166,7 @@ class CSSMin {
 		$contents = preg_replace( "/<\\?xml.*?\\?>/", '', $contents );
 		// The regular expression matches ASCII whitespace and printable characters.
 		if ( preg_match( '/^[\r\n\t\x20-\x7e]+$/', $contents ) ) {
-			// Do not base64-encode non-binary files (sane SVGs).
+			// Do not base64-encode non-binary files (sensible SVGs).
 			// (This often produces longer URLs, but they compress better, yielding a net smaller size.)
 			$encoded = rawurlencode( $contents );
 			// Unencode some things that don't need to be encoded, to make the encoding smaller
@@ -396,7 +396,7 @@ class CSSMin {
 	 * @param string $url
 	 * @return string
 	 */
-	private static function resolveUrl( string $base, string $url ) : string {
+	private static function resolveUrl( string $base, string $url ): string {
 		// Net_URL2::resolve() doesn't allow for resolving against server-less URLs.
 		// We need this as for MediaWiki/ResourceLoader, the remote base path may either
 		// be separate (e.g. a separate domain), or simply local (like "/w"). In the

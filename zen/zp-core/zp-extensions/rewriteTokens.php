@@ -19,7 +19,7 @@ if (OFFSET_PATH == 2) {
 }
 zp_register_filter('admin_tabs', 'rewriteTokens::tabs');
 
-require_once(SERVERPATH . '/' . ZENFOLDER . '/functions-config.php');
+require_once(SERVERPATH . '/' . ZENFOLDER . '/functions/functions-config.php');
 
 class rewriteTokens {
 
@@ -29,8 +29,8 @@ class rewriteTokens {
 	private $plugin_vars = array();
 
 	function __construct() {
-		global $_configMutex, $_zp_conf_vars;
-		$_configMutex->lock();
+		global $_zp_mutex, $_zp_conf_vars;
+		$_zp_mutex->lock();
 		$zp_cfg = file_get_contents(SERVERPATH . '/' . DATA_FOLDER . '/' . CONFIGFILE);
 		$i = strpos($zp_cfg, "\$conf['special_pages']");
 		$j = strpos($zp_cfg, '//', $i);
@@ -70,8 +70,8 @@ class rewriteTokens {
 	}
 
 	function __destruct() {
-		global $_configMutex;
-		$_configMutex->unlock();
+		global $_zp_mutex;
+		$_zp_mutex->unlock();
 	}
 
 	protected static function anOption($page, $element, &$_definitions) {
@@ -145,7 +145,7 @@ class rewriteTokens {
 		if (getOption('rewriteTokens_restore')) {
 			$updated = false;
 			purgeOption('rewriteTokens_restore');
-			$template = file_get_contents(SERVERPATH . '/' . ZENFOLDER . '/zenphoto_cfg.txt');
+			$template = file_get_contents(SERVERPATH . '/' . ZENFOLDER . '/file-templates/zenphoto_cfg.txt');
 			$i = strpos($template, "\$conf['special_pages']");
 			$j = strpos($template, '//', $i);
 			$newtext = substr($template, $i, $j - $i);

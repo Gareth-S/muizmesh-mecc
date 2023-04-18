@@ -14,7 +14,7 @@ use Wikimedia\TestingAccessWrapper;
  *
  * @license GPL-2.0-or-later
  */
-class ApiQueryExtractsTest extends \MediaWikiTestCase {
+class ApiQueryExtractsTest extends \MediaWikiIntegrationTestCase {
 	use MediaWikiCoversValidator;
 
 	private function newInstance() {
@@ -49,11 +49,21 @@ class ApiQueryExtractsTest extends \MediaWikiTestCase {
 			->method( 'getMain' )
 			->willReturn( $main );
 
+		$langConv = $this->createMock( ILanguageConverter::class );
+		$langConv->method( 'getPreferredVariant' )
+			->willReturn( 'en' );
 		$langConvFactory = $this->createMock( LanguageConverterFactory::class );
 		$langConvFactory->method( 'getLanguageConverter' )
-			->willReturn( $this->createMock( ILanguageConverter::class ) );
+			->willReturn( $langConv );
 
-		return new ApiQueryExtracts( $query, '', $configFactory, $cache, $langConvFactory );
+		return new ApiQueryExtracts(
+			$query,
+			'',
+			$configFactory,
+			$cache,
+			$langConvFactory,
+			$this->getServiceContainer()->getWikiPageFactory()
+		);
 	}
 
 	public function testMemCacheHelpers() {
@@ -64,6 +74,10 @@ class ApiQueryExtractsTest extends \MediaWikiTestCase {
 		$page = $this->createMock( \WikiPage::class );
 		$page->method( 'getTitle' )
 			->willReturn( $title );
+		$page->method( 'getId' )
+			->willReturn( 123 );
+		$page->method( 'getTouched' )
+			->willReturn( '20010101000000' );
 
 		$text = 'Text to cache';
 
@@ -90,14 +104,14 @@ class ApiQueryExtractsTest extends \MediaWikiTestCase {
 		$params = $instance->getAllowedParams();
 		$this->assertIsArray( $params );
 
-		$this->assertSame( $params['chars'][\ApiBase::PARAM_MIN], 1 );
-		$this->assertSame( $params['chars'][\ApiBase::PARAM_MAX], 1200 );
+		$this->assertSame( 1, $params['chars'][\ApiBase::PARAM_MIN] );
+		$this->assertSame( 1200, $params['chars'][\ApiBase::PARAM_MAX] );
 
-		$this->assertSame( $params['limit'][\ApiBase::PARAM_DFLT], 20 );
-		$this->assertSame( $params['limit'][\ApiBase::PARAM_TYPE], 'limit' );
-		$this->assertSame( $params['limit'][\ApiBase::PARAM_MIN], 1 );
-		$this->assertSame( $params['limit'][\ApiBase::PARAM_MAX], 20 );
-		$this->assertSame( $params['limit'][\ApiBase::PARAM_MAX2], 20 );
+		$this->assertSame( 20, $params['limit'][\ApiBase::PARAM_DFLT] );
+		$this->assertSame( 'limit', $params['limit'][\ApiBase::PARAM_TYPE] );
+		$this->assertSame( 1, $params['limit'][\ApiBase::PARAM_MIN] );
+		$this->assertSame( 20, $params['limit'][\ApiBase::PARAM_MAX] );
+		$this->assertSame( 20, $params['limit'][\ApiBase::PARAM_MAX2] );
 	}
 
 	/**
@@ -227,7 +241,7 @@ class ApiQueryExtractsTest extends \MediaWikiTestCase {
 			],
 
 			'Multiple matches' => [
-				"${marker}First\n${marker}Second",
+				"{$marker}First\n{$marker}Second",
 				'wiki',
 				"\n=== First ===\n\n=== Second ===",
 			],

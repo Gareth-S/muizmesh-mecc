@@ -4,11 +4,12 @@ namespace MediaWiki\Tests\Storage;
 
 use BagOStuff;
 use FormatJson;
-use IDatabase;
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\MainConfigNames;
 use MediaWiki\Storage\EditResult;
 use MediaWiki\Storage\EditResultCache;
 use MediaWikiUnitTestCase;
+use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -23,7 +24,7 @@ class EditResultCacheTest extends MediaWikiUnitTestCase {
 	 *
 	 * @return EditResult
 	 */
-	private function getEditResult() : EditResult {
+	private function getEditResult(): EditResult {
 		return new EditResult(
 			false,
 			100,
@@ -59,7 +60,7 @@ class EditResultCacheTest extends MediaWikiUnitTestCase {
 			$this->createNoOpMock( ILoadBalancer::class ),
 			new ServiceOptions(
 				EditResultCache::CONSTRUCTOR_OPTIONS,
-				[ 'RCMaxAge' => BagOStuff::TTL_MONTH ]
+				[ MainConfigNames::RCMaxAge => BagOStuff::TTL_MONTH ]
 			)
 		);
 
@@ -87,7 +88,7 @@ class EditResultCacheTest extends MediaWikiUnitTestCase {
 			$this->createNoOpMock( ILoadBalancer::class ),
 			new ServiceOptions(
 				EditResultCache::CONSTRUCTOR_OPTIONS,
-				[ 'RCMaxAge' => BagOStuff::TTL_MONTH ]
+				[ MainConfigNames::RCMaxAge => BagOStuff::TTL_MONTH ]
 			)
 		);
 		$res = $erCache->get( 126 );
@@ -116,7 +117,7 @@ class EditResultCacheTest extends MediaWikiUnitTestCase {
 			->willReturn( FormatJson::encode( $editResult ) );
 		$loadBalancer = $this->createMock( ILoadBalancer::class );
 		$loadBalancer->expects( $this->once() )
-			->method( 'getConnection' )
+			->method( 'getConnectionRef' )
 			->willReturn( $dbr );
 
 		$erCache = new EditResultCache(
@@ -124,7 +125,7 @@ class EditResultCacheTest extends MediaWikiUnitTestCase {
 			$loadBalancer,
 			new ServiceOptions(
 				EditResultCache::CONSTRUCTOR_OPTIONS,
-				[ 'RCMaxAge' => BagOStuff::TTL_MONTH ]
+				[ MainConfigNames::RCMaxAge => BagOStuff::TTL_MONTH ]
 			)
 		);
 		$res = $erCache->get( 126 );
@@ -151,7 +152,7 @@ class EditResultCacheTest extends MediaWikiUnitTestCase {
 			->willReturn( false );
 		$loadBalancer = $this->createMock( ILoadBalancer::class );
 		$loadBalancer->expects( $this->once() )
-			->method( 'getConnection' )
+			->method( 'getConnectionRef' )
 			->willReturn( $dbr );
 
 		$erCache = new EditResultCache(
@@ -159,7 +160,7 @@ class EditResultCacheTest extends MediaWikiUnitTestCase {
 			$loadBalancer,
 			new ServiceOptions(
 				EditResultCache::CONSTRUCTOR_OPTIONS,
-				[ 'RCMaxAge' => BagOStuff::TTL_MONTH ]
+				[ MainConfigNames::RCMaxAge => BagOStuff::TTL_MONTH ]
 			)
 		);
 		$res = $erCache->get( 126 );

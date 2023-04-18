@@ -3,11 +3,14 @@ declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\Wt2Html\PP\Handlers;
 
-use DOMElement;
-use DOMNode;
 use Wikimedia\Assert\Assert;
 use Wikimedia\Parsoid\Config\Env;
 use Wikimedia\Parsoid\Core\Sanitizer;
+use Wikimedia\Parsoid\DOM\Comment;
+use Wikimedia\Parsoid\DOM\Element;
+use Wikimedia\Parsoid\DOM\Node;
+use Wikimedia\Parsoid\DOM\Text;
+use Wikimedia\Parsoid\NodeData\TempData;
 use Wikimedia\Parsoid\Utils\DOMCompat;
 use Wikimedia\Parsoid\Utils\DOMDataUtils;
 use Wikimedia\Parsoid\Utils\DOMUtils;
@@ -18,8 +21,6 @@ use Wikimedia\Parsoid\Wt2Html\Frame;
 use Wikimedia\Parsoid\Wt2Html\PegTokenizer;
 
 /**
- * TableFixups class.
- *
  * Provides DOMTraverser visitors that fix template-induced interrupted table cell parsing
  * by recombining table cells and/or reparsing table cell content as attributes.
  * - stripDoubleTDs
@@ -32,7 +33,6 @@ class TableFixups {
 	private $tokenizer;
 
 	/**
-	 * TableFixups constructor.
 	 * @param Env $env
 	 */
 	public function __construct( Env $env ) {
@@ -54,15 +54,15 @@ class TableFixups {
 	 * ```
 	 *
 	 * @see https://phabricator.wikimedia.org/T52603
-	 * @param DOMElement $node
+	 * @param Element $node
 	 * @param Frame $frame
-	 * @return bool|DOMNode
+	 * @return bool|Node
 	 */
-	public function stripDoubleTDs( DOMElement $node, Frame $frame ) {
+	public function stripDoubleTDs( Element $node, Frame $frame ) {
 		$nextNode = $node->nextSibling;
 		if ( !WTUtils::isLiteralHTMLNode( $node ) &&
-			$nextNode instanceof DOMElement &&
-			$nextNode->nodeName === 'td' &&
+			$nextNode instanceof Element &&
+			DOMCompat::nodeName( $nextNode ) === 'td' &&
 			!WTUtils::isLiteralHTMLNode( $nextNode ) &&
 			DOMUtils::nodeEssentiallyEmpty( $node ) && (
 				// FIXME: will not be set for nested templates
@@ -99,11 +99,11 @@ class TableFixups {
 	}
 
 	/**
-	 * @param DOMNode $node
+	 * @param Node $node
 	 * @return bool
 	 */
-	private function isSimpleTemplatedSpan( DOMNode $node ): bool {
-		return $node->nodeName === 'span' &&
+	private function isSimpleTemplatedSpan( Node $node ): bool {
+		return DOMCompat::nodeName( $node ) === 'span' &&
 			DOMUtils::hasTypeOf( $node, 'mw:Transclusion' ) &&
 			DOMUtils::allChildrenAreTextOrComments( $node );
 	}
@@ -125,11 +125,11 @@ class TableFixups {
 	 * onto the cell itself.
 	 *
 	 * @param Frame $frame
-	 * @param DOMElement[] $transclusions
-	 * @param DOMElement $td
+	 * @param Element[] $transclusions
+	 * @param Element $td
 	 */
 	private function hoistTransclusionInfo(
-		Frame $frame, array $transclusions, DOMElement $td
+		Frame $frame, array $transclusions, Element $td
 	): void {
 		// Initialize dsr for $td
 		// In `handleTableCellTemplates`, we're creating a cell w/o dsr info.
@@ -162,24 +162,31 @@ class TableFixups {
 
 			// Assimilate $tpl's data-mw and data-parsoid pi info
 			$dmw = DOMDataUtils::getDataMw( $tpl );
-			foreach ( $dmw->parts as $tplInfo ) {
-				// Template index is relative  to other transclusions.
+			foreach ( $dmw->parts ?? [] as $part ) {
+				// Template index is relative to other transclusions.
 				// This index is used to extract whitespace information from
 				// data-parsoid and that array only includes info for templates.
 				// So skip over strings here.
-				if ( !is_string( $tplInfo ) ) {
-					$tplInfo->template->i = $index++;
+				if ( !is_string( $part ) ) {
+					// Cloning is strictly not needed here, but mimicing
+					// code in WrapSectionsState.php
+					$part = clone $part;
+					if ( isset( $part->template ) ) {
+						$part->template->i = $index++;
+					} else {
+						$part->templatearg->i = $index++;
+					}
 				}
-				$parts[] = $tplInfo;
+				$parts[] = $part;
 			}
-			$pi = array_merge( $pi, $tplDp->pi ?? [ [] ] );
+			PHPUtils::pushArray( $pi, $tplDp->pi ?? [ [] ] );
 			DOMDataUtils::setDataMw( $tpl, null );
 
 			$lastTpl = $tpl;
 			$prevDp = $tplDp;
 		}
 
-		$aboutId = $lastTpl->getAttribute( 'about' );
+		$aboutId = $lastTpl->getAttribute( 'about' ) ?? '';
 
 		// Hoist transclusion information to $td.
 		$td->setAttribute( 'typeof', 'mw:Transclusion' );
@@ -199,8 +206,15 @@ class TableFixups {
 		// invoking 'reparseTemplatedAttributes' on split cells
 		// with some modifications.
 		$child = $lastTpl;
+
+		// Transclusions may be nested in elements in some ugly wikitext so
+		// make sure we're starting at a direct descendant of td
+		while ( $child->parentNode !== $td ) {
+			$child = $child->parentNode;
+		}
+
 		while ( $child ) {
-			if ( $child->nodeName === 'span' && $child->getAttribute( 'about' ) === $aboutId ) {
+			if ( DOMCompat::nodeName( $child ) === 'span' && $child->getAttribute( 'about' ) === $aboutId ) {
 				// Remove the encapsulation attributes. If there are no more attributes left,
 				// the span wrapper is useless and can be removed.
 				$child->removeAttribute( 'about' );
@@ -227,13 +241,13 @@ class TableFixups {
 	 * nowiki content. Collection stops when encountering a pipe character.
 	 *
 	 * @param Env $env
-	 * @param DOMElement $cell known to be <td> / <th>
-	 * @param ?DOMElement $templateWrapper
-	 * @return array
+	 * @param Element $cell known to be <td> / <th>
+	 * @param ?Element $templateWrapper
+	 * @return ?array
 	 */
 	public function collectAttributishContent(
-		Env $env, DOMElement $cell, ?DOMElement $templateWrapper
-	): array {
+		Env $env, Element $cell, ?Element $templateWrapper
+	): ?array {
 		$buf = [];
 		$nowikis = [];
 		$transclusions = $templateWrapper ? [ $templateWrapper ] : [];
@@ -243,16 +257,22 @@ class TableFixups {
 		// templated content in this fashion anyway, we might as well use the
 		// same logic uniformly.
 
-		$traverse = function ( ?DOMNode $child ) use (
+		$traverse = static function ( ?Node $child ) use (
 			&$traverse, &$buf, &$nowikis, &$transclusions
 		): bool {
 			while ( $child ) {
-				if ( DOMUtils::isComment( $child ) ) {
+				if ( $child instanceof Comment ) {
 					// Legacy parser strips comments during parsing => drop them.
-				} elseif ( DOMUtils::isText( $child ) ) {
-					$buf[] = $child->nodeValue;
+				} elseif ( $child instanceof Text ) {
+					$text = $child->nodeValue;
+					$buf[] = $text;
+
+					// Are we done accumulating?
+					if ( preg_match( '/(?:^|[^|])\|(?:[^|]|$)/D', $text ) ) {
+						return true;
+					}
 				} else {
-					'@phan-var DOMElement $child';  /** @var DOMElement $child */
+					'@phan-var Element $child';  /** @var Element $child */
 					if ( DOMUtils::hasTypeOf( $child, 'mw:Transclusion' ) ) {
 						$transclusions[] = $child;
 					}
@@ -273,7 +293,7 @@ class TableFixups {
 						// Save the content and add in a marker to splice out later.
 						$nowikis[] = $child->textContent;
 						$buf[] = '<nowiki-marker>';
-					} elseif ( $child->getAttribute( "rel" ) === "mw:WikiLink" ||
+					} elseif ( DOMUtils::hasRel( $child, 'mw:WikiLink' ) ||
 						WTUtils::isGeneratedFigure( $child )
 					) {
 						// Wikilinks/images abort attribute parsing
@@ -285,26 +305,21 @@ class TableFixups {
 					}
 				}
 
-				// Are we done accumulating?
-				if ( count( $buf ) > 0 &&
-					preg_match( '/(?:^|[^|])\|(?:[^|]|$)/D', PHPUtils::lastItem( $buf ) )
-				) {
-					return true;
-				}
-
 				$child = $child->nextSibling;
 			}
 
 			return false;
 		};
 
-		$traverse( $cell->firstChild );
-
-		return [
-			'txt' => implode( '', $buf ),
-			'nowikis' => $nowikis,
-			'transclusions' => $transclusions,
-		];
+		if ( $traverse( $cell->firstChild ) ) {
+			return [
+				'txt' => implode( '', $buf ),
+				'nowikis' => $nowikis,
+				'transclusions' => $transclusions,
+			];
+		} else {
+			return null;
+		}
 	}
 
 	/**
@@ -332,15 +347,18 @@ class TableFixups {
 	 *   limitation can be lifted with more advanced data-mw construction.
 	 *
 	 * @param Frame $frame
-	 * @param DOMElement $cell known to be <td> / <th>
-	 * @param ?DOMElement $templateWrapper
+	 * @param Element $cell known to be <td> / <th>
+	 * @param ?Element $templateWrapper
 	 */
 	public function reparseTemplatedAttributes(
-		Frame $frame, DOMElement $cell, ?DOMElement $templateWrapper
+		Frame $frame, Element $cell, ?Element $templateWrapper
 	): void {
 		$env = $frame->getEnv();
 		// Collect attribute content and examine it
 		$attributishContent = $this->collectAttributishContent( $env, $cell, $templateWrapper );
+		if ( !$attributishContent ) {
+			return;
+		}
 
 		/**
 		 * FIXME: These checks are insufficient.
@@ -358,25 +376,18 @@ class TableFixups {
 		 * }
 		 */
 
-		$attrText = $attributishContent['txt'] ?? '';
-		// Check for the pipe character in the attributish text.
-		if ( !preg_match( '/^[^|]+\|([^|]|$)/D', $attrText ) ) {
+		$attrText = $attributishContent['txt'];
+		if ( !preg_match( '/(^[^|]+\|)([^|]|$)/D', $attrText, $matches ) ) {
 			return;
 		}
-
-		// Try to re-parse the attributish text content
-		if ( !preg_match( '/^[^|]+\|/', $attrText, $matches ) ) {
-			return;
-		}
-
-		$attributishPrefix = $matches[0];
+		$attributishPrefix = $matches[1];
 
 		// Splice in nowiki content.  We added in <nowiki> markers to prevent the
 		// above regexps from matching on nowiki-protected chars.
-		if ( preg_match( '/<nowiki-marker>/', $attributishPrefix ) ) {
+		if ( str_contains( $attributishPrefix, '<nowiki-marker>' ) ) {
 			$attributishPrefix = preg_replace_callback(
 				'/<nowiki-marker>/',
-				function ( $unused ) use ( &$attributishContent ) {
+				static function ( $unused ) use ( &$attributishContent ) {
 					// This is a little tricky. We want to use the content from the
 					// nowikis to reparse the string to key/val pairs but the rule,
 					// single_cell_table_args, will invariably get tripped up on
@@ -414,16 +425,17 @@ class TableFixups {
 		// Drop content that has been consumed by the reparsed attribute content.
 		// NOTE: We serialize and reparse data-object-id attributes as well which
 		// ensures stashed data-* attributes continue to be usable.
+		// FIXME: This is too naive.  What about all the care we showed in `collectAttributishContent`?
 		DOMCompat::setInnerHTML( $cell,
 			preg_replace( '/^[^|]*\|/', '', DOMCompat::getInnerHTML( $cell ) ) );
 	}
 
 	/**
 	 * @param Frame $frame
-	 * @param DOMElement $cell
+	 * @param Element $cell
 	 * @return bool
 	 */
-	private function combineWithPreviousCell( Frame $frame, DOMElement $cell ): bool {
+	private function combineWithPreviousCell( Frame $frame, Element $cell ): bool {
 		// UNSUPPORTED SCENARIO 1:
 		// While in the general case, we should look for combinability no matter
 		// whether $cell has attributes or not,  we are currently restricting
@@ -433,7 +445,7 @@ class TableFixups {
 		//     Ex: |class="foo"{{1x|1={{!}}title="x"{{!}}foo}}
 		//         should parse as <td class="foo">title="x"|foo</td>
 		$cellDp = DOMDataUtils::getDataParsoid( $cell );
-		if ( !isset( $cellDp->tmp->noAttrs ) ) {
+		if ( !$cellDp->getTempFlag( TempData::NO_ATTRS ) ) {
 			return false;
 		}
 
@@ -453,7 +465,7 @@ class TableFixups {
 		// We let the more general 'reparseTemplatedAttributes' code handle
 		// this scenario for now.
 		$prevDp = DOMDataUtils::getDataParsoid( $prev );
-		if ( !isset( $prevDp->tmp->noAttrs ) ) {
+		if ( !$prevDp->getTempFlag( TempData::NO_ATTRS ) ) {
 			return false;
 		}
 
@@ -465,7 +477,11 @@ class TableFixups {
 
 		// Reparse the attributish prefix
 		$attributeTokens = $this->tokenizer->tokenizeTableCellAttributes( $reparseSrc, false );
-		Assert::invariant( is_array( $attributeTokens ), "Expected successful parse of $reparseSrc" );
+		if ( !is_array( $attributeTokens ) ) {
+			$frame->getEnv()->log( "error/wt2html",
+				"TableFixups: Failed to successfully reparse $reparseSrc as table cell attributes" );
+			return false;
+		}
 
 		// Note that `row_syntax_table_args` (the rule used for tokenizing above)
 		// returns an array consisting of [table_attributes, spaces, pipe]
@@ -481,7 +497,27 @@ class TableFixups {
 			$cellDSR->start -= strlen( $prevCellSrc );
 		}
 
-		$prev->parentNode->removeChild( $prev );
+		$parent = $cell->parentNode;
+		// If $prev is not a <td> (has to be a <th>), the merged cell has
+		// to be a <th> as well. Since $cell is filtered to be a <td> in
+		// getReparseType(..), we create a $newCell as a <th>, transfer
+		// $cell's attributes over, and remove $cell.
+		//
+		// This is an edge case.
+		//
+		// Doing it this way is simpler than trying to fix the logic above
+		// since we'll have to deal with $cell's existing attrs & content.
+		if ( DOMCompat::nodeName( $prev ) === 'th' ) {
+			$newCell = $cell->ownerDocument->createElement( 'th' );
+			foreach ( DOMUtils::attributes( $cell ) as $k => $v ) {
+				$newCell->setAttribute( $k, $v );
+			}
+			DOMUtils::migrateChildren( $cell, $newCell );
+			$parent->insertBefore( $newCell, $cell );
+			$parent->removeChild( $cell );
+		}
+
+		$parent->removeChild( $prev );
 
 		return true;
 	}
@@ -491,15 +527,15 @@ class TableFixups {
 	private const OTHER_REPARSE = 2;
 
 	/**
-	 * @param DOMElement $cell $cell is known to be <td>/<th>
+	 * @param Element $cell $cell is known to be <td>/<th>
 	 * @return int
 	 */
-	private function getReparseType( DOMElement $cell ): int {
-		$isTd = $cell->nodeName === 'td';
+	private function getReparseType( Element $cell ): int {
+		$isTd = DOMCompat::nodeName( $cell ) === 'td';
 		$dp = DOMDataUtils::getDataParsoid( $cell );
 		if ( $isTd && // only | can separate attributes & content => $cell has to be <td>
 			WTUtils::isFirstEncapsulationWrapperNode( $cell ) && // See long comment below
-			!isset( $dp->tmp->failedReparse ) &&
+			!$dp->getTempFlag( TempData::FAILED_REPARSE ) &&
 			!isset( $dp->stx ) // has to be first cell of the row
 		) {
 			// Parsoid parses content of templates independent of top-level content.
@@ -513,10 +549,10 @@ class TableFixups {
 			// with other templated cells.  So, previous sibling cannot be templated.
 
 			$prev = $cell->previousSibling;
-			if ( $prev instanceof DOMElement &&
+			if ( $prev instanceof Element &&
 				!WTUtils::hasLiteralHTMLMarker( DOMDataUtils::getDataParsoid( $prev ) ) &&
 				!DOMUtils::hasTypeOf( $prev, 'mw:Transclusion' ) &&
-				!preg_match( '/\n/', DOMCompat::getInnerHTML( $prev ) )
+				!str_contains( DOMCompat::getInnerHTML( $prev ), "\n" )
 			) {
 				return self::COMBINE_WITH_PREV_CELL;
 			}
@@ -525,7 +561,7 @@ class TableFixups {
 		$testRE = $isTd ? '/[|]/' : '/[!|]/';
 		$child = $cell->firstChild;
 		while ( $child ) {
-			if ( DOMUtils::isText( $child ) && preg_match( $testRE, $child->textContent ) ) {
+			if ( $child instanceof Text && preg_match( $testRE, $child->textContent ) ) {
 				return self::OTHER_REPARSE;
 			}
 
@@ -534,8 +570,8 @@ class TableFixups {
 				// since they have higher precedence in tokenization
 				$child = WTUtils::skipOverEncapsulatedContent( $child );
 			} else {
-				if ( $child instanceof DOMElement ) {
-					if ( $child->getAttribute( "rel" ) === "mw:WikiLink" ||
+				if ( $child instanceof Element ) {
+					if ( DOMUtils::hasRel( $child, 'mw:WikiLink' ) ||
 						WTUtils::isGeneratedFigure( $child )
 					) {
 						// Wikilinks/images abort attribute parsing
@@ -556,12 +592,12 @@ class TableFixups {
 	}
 
 	/**
-	 * @param DOMElement $cell $cell is known to be <td>/<th>
+	 * @param Element $cell $cell is known to be <td>/<th>
 	 * @param Frame $frame
 	 * @return mixed
 	 */
 	public function handleTableCellTemplates(
-		DOMElement $cell, Frame $frame
+		Element $cell, Frame $frame
 	) {
 		if ( WTUtils::isLiteralHTMLNode( $cell ) ) {
 			return true;
@@ -579,14 +615,14 @@ class TableFixups {
 				// Clear property and retry $cell for other reparses
 				// The DOMTraverser will resume the handler on the
 				// returned $cell.
-				DOMDataUtils::getDataParsoid( $cell )->tmp->failedReparse = true;
+				DOMDataUtils::getDataParsoid( $cell )->setTempFlag( TempData::FAILED_REPARSE );
 				return $cell;
 			}
 		}
 
 		// If the cell didn't have attrs, extract and reparse templated attrs
 		$dp = DOMDataUtils::getDataParsoid( $cell );
-		if ( isset( $dp->tmp->noAttrs ) ) {
+		if ( $dp->getTempFlag( TempData::NO_ATTRS ) ) {
 			$templateWrapper = DOMUtils::hasTypeOf( $cell, 'mw:Transclusion' ) ? $cell : null;
 			$this->reparseTemplatedAttributes( $frame, $cell, $templateWrapper );
 		}
@@ -599,7 +635,7 @@ class TableFixups {
 		// if any addition attribute fixup or splits are required,
 		// they will get done.
 		$newCell = null;
-		$isTd = $cell->nodeName === 'td';
+		$isTd = DOMCompat::nodeName( $cell ) === 'td';
 		$ownerDoc = $cell->ownerDocument;
 		$child = $cell->firstChild;
 		while ( $child ) {
@@ -607,10 +643,10 @@ class TableFixups {
 
 			if ( $newCell ) {
 				$newCell->appendChild( $child );
-			} elseif ( DOMUtils::isText( $child ) || $this->isSimpleTemplatedSpan( $child ) ) {
+			} elseif ( $child instanceof Text || $this->isSimpleTemplatedSpan( $child ) ) {
 				// FIXME: This skips over scenarios like <div>foo||bar</div>.
-				$cellName = $cell->nodeName;
-				$hasSpanWrapper = !DOMUtils::isText( $child );
+				$cellName = DOMCompat::nodeName( $cell );
+				$hasSpanWrapper = !( $child instanceof Text );
 				$match = null;
 
 				if ( $isTd ) {
@@ -636,16 +672,16 @@ class TableFixups {
 						/**
 						 * $hasSpanWrapper above ensures $child is a span.
 						 *
-						 * @var DOMElement $child
+						 * @var Element $child
 						 */
-						'@phan-var DOMElement $child';
+						'@phan-var Element $child';
 						// Fix up transclusion wrapping
-						$about = $child->getAttribute( 'about' );
+						$about = $child->getAttribute( 'about' ) ?? '';
 						$this->hoistTransclusionInfo( $frame, [ $child ], $cell );
 					} else {
 						// Refetch the about attribute since 'reparseTemplatedAttributes'
 						// might have added one to it.
-						$about = $cell->getAttribute( 'about' );
+						$about = $cell->getAttribute( 'about' ) ?? '';
 					}
 
 					// about may not be present if the cell was inside
@@ -659,7 +695,7 @@ class TableFixups {
 
 					// Set data-parsoid noAttrs flag
 					$newCellDP = DOMDataUtils::getDataParsoid( $newCell );
-					$newCellDP->tmp->noAttrs = true;
+					$newCellDP->setTempFlag( TempData::NO_ATTRS );
 				}
 			}
 

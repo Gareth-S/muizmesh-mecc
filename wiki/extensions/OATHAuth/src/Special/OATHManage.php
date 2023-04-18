@@ -175,7 +175,7 @@ class OATHManage extends SpecialPage {
 	}
 
 	private function addInactiveHTML() {
-		foreach ( $this->auth->getAllModules() as $key => $module ) {
+		foreach ( $this->auth->getAllModules() as $module ) {
 			if ( $this->isModuleEnabled( $module ) ) {
 				continue;
 			}
@@ -248,7 +248,12 @@ class OATHManage extends SpecialPage {
 	 * @param PanelLayout|null $panel
 	 */
 	private function addCustomContent( IModule $module, $panel = null ) {
-		$form = $module->getManageForm( $this->action, $this->authUser, $this->userRepo );
+		$form = $module->getManageForm(
+			$this->action,
+			$this->authUser,
+			$this->userRepo,
+			$this->getContext()
+		);
 		if ( $form === null || !$this->isValidFormType( $form ) ) {
 			return;
 		}
@@ -346,7 +351,7 @@ class OATHManage extends SpecialPage {
 	}
 
 	private function hasAlternativeModules() {
-		foreach ( $this->auth->getAllModules() as $key => $module ) {
+		foreach ( $this->auth->getAllModules() as $module ) {
 			if ( !$this->isModuleEnabled( $module ) ) {
 				return true;
 			}

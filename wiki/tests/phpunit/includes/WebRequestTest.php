@@ -1,11 +1,22 @@
 <?php
 
+use MediaWiki\MainConfigNames;
+
 /**
  * @group WebRequest
  */
 class WebRequestTest extends MediaWikiIntegrationTestCase {
 
-	protected function setUp() : void {
+	/** @var string */
+	private $oldServer;
+
+	/** @var string */
+	private $oldWgRequest;
+
+	/** @var string */
+	private $oldWgServer;
+
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->oldServer = $_SERVER;
@@ -13,7 +24,7 @@ class WebRequestTest extends MediaWikiIntegrationTestCase {
 		$this->oldWgServer = $GLOBALS['wgServer'];
 	}
 
-	protected function tearDown() : void {
+	protected function tearDown(): void {
 		$_SERVER = $this->oldServer;
 		$GLOBALS['wgRequest'] = $this->oldWgRequest;
 		$GLOBALS['wgServer'] = $this->oldWgServer;
@@ -27,10 +38,8 @@ class WebRequestTest extends MediaWikiIntegrationTestCase {
 	 * @covers WebRequest::detectProtocol
 	 */
 	public function testDetectServer( $expected, $input, $description ) {
-		$this->setMwGlobals( 'wgAssumeProxiesUseDefaultProtocolPorts', true );
-
 		$this->setServerVars( $input );
-		$result = WebRequest::detectServer();
+		$result = WebRequest::detectServer( true );
 		$this->assertEquals( $expected, $result, $description );
 	}
 
@@ -377,7 +386,7 @@ class WebRequestTest extends MediaWikiIntegrationTestCase {
 		// Stub this for wfGetServerUrl()
 		$GLOBALS['wgServer'] = '//wiki.test';
 		$req = $this->getMockBuilder( WebRequest::class )
-			->setMethods( [ 'getRequestURL', 'getProtocol' ] )
+			->onlyMethods( [ 'getRequestURL', 'getProtocol' ] )
 			->getMock();
 		$req->method( 'getRequestURL' )->willReturn( '/path' );
 		$req->method( 'getProtocol' )->willReturn( 'https' );
@@ -394,9 +403,7 @@ class WebRequestTest extends MediaWikiIntegrationTestCase {
 	 */
 	public function testGetIP( $expected, $input, $cdn, $xffList, $private, $description ) {
 		$this->setServerVars( $input );
-		$this->setMwGlobals( [
-			'wgUsePrivateIPs' => $private,
-		] );
+		$this->overrideConfigValue( MainConfigNames::UsePrivateIPs, $private );
 
 		$hookContainer = $this->createHookContainer( [
 			'IsTrustedProxy' => static function ( &$ip, &$trusted ) use ( $xffList ) {
@@ -584,10 +591,10 @@ class WebRequestTest extends MediaWikiIntegrationTestCase {
 	 */
 	public function testGetIpLackOfRemoteAddrThrowAnException() {
 		// ensure that local install state doesn't interfere with test
-		$this->setMwGlobals( [
-			'wgCdnServers' => [],
-			'wgCdnServersNoPurge' => [],
-			'wgUsePrivateIPs' => false,
+		$this->overrideConfigValues( [
+			MainConfigNames::CdnServers => [],
+			MainConfigNames::CdnServersNoPurge => [],
+			MainConfigNames::UsePrivateIPs => false,
 		] );
 
 		$hookContainer = $this->createHookContainer();
@@ -683,5 +690,42 @@ class WebRequestTest extends MediaWikiIntegrationTestCase {
 			$vars['REQUEST_TIME'] = $_SERVER['REQUEST_TIME'];
 		}
 		$_SERVER = $vars;
+	}
+
+	private const INTERNAL_SERVER = 'http://wiki.site';
+
+	/**
+	 * @dataProvider provideMatchURLForCDN
+	 * @covers WebRequest::matchURLForCDN
+	 */
+	public function testMatchURLForCDN( $url, $cdnUrls, $matchOrder, $expected ) {
+		$this->setServerVars( [ 'REQUEST_URI' => $url ] );
+		$this->overrideConfigValues( [
+			MainConfigNames::InternalServer => self::INTERNAL_SERVER,
+			MainConfigNames::CdnMatchParameterOrder => $matchOrder,
+		] );
+		$request = new WebRequest();
+		$this->assertEquals( $expected, $request->matchURLForCDN( $cdnUrls ) );
+	}
+
+	public static function provideMatchURLForCDN() {
+		$cdnUrls = [
+			self::INTERNAL_SERVER . '/Title',
+			self::INTERNAL_SERVER . '/w/index.php?title=Title&action=history',
+		];
+		return [
+			[ self::INTERNAL_SERVER . '/Title', $cdnUrls, /* matchOrder= */ false, true ],
+			[ self::INTERNAL_SERVER . '/Title', $cdnUrls, /* matchOrder= */ true, true ],
+			[ self::INTERNAL_SERVER . '/Foo', $cdnUrls, /* matchOrder= */ false, false ],
+			[ self::INTERNAL_SERVER . '/Foo', $cdnUrls, /* matchOrder= */ true, false ],
+			[ self::INTERNAL_SERVER . '/Thing', $cdnUrls, /* matchOrder= */ false, false ],
+			[ self::INTERNAL_SERVER . '/Thing', $cdnUrls, /* matchOrder= */ true, false ],
+			[ self::INTERNAL_SERVER . '/w/index.php?action=history&title=Foo', $cdnUrls, /* matchOrder= */ false, false ],
+			[ self::INTERNAL_SERVER . '/w/index.php?action=history&title=Foo', $cdnUrls, /* matchOrder= */ true, false ],
+			[ self::INTERNAL_SERVER . '/w/index.php?title=Thing&action=history', $cdnUrls, /* matchOrder= */ false, false ],
+			[ self::INTERNAL_SERVER . '/w/index.php?action=history&title=Thing', $cdnUrls, /* matchOrder= */ true, false ],
+			[ self::INTERNAL_SERVER . '/w/index.php?action=history&title=Title', $cdnUrls, /* matchOrder= */ false, true ],
+			[ self::INTERNAL_SERVER . '/w/index.php?action=history&title=Title', $cdnUrls, /* matchOrder= */ true, false ],
+		];
 	}
 }

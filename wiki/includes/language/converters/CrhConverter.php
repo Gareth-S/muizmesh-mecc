@@ -1,9 +1,5 @@
 <?php
 /**
- * Crimean Tatar (Qırımtatarca) specific code.
- *
- * Adapted from https://crh.wikipedia.org/wiki/Qullan%C4%B1c%C4%B1:Don_Alessandro/Translit
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -20,13 +16,14 @@
  * http://www.gnu.org/copyleft/gpl.html
  *
  * @file
- * @ingroup Language
  */
 
 /**
- * Crimean Tatar (Qırımtatarca) converter routines
+ * Crimean Tatar (Qırımtatarca) converter routines.
  *
- * @ingroup Language
+ * Adapted from https://crh.wikipedia.org/wiki/Qullan%C4%B1c%C4%B1:Don_Alessandro/Translit
+ *
+ * @ingroup Languages
  */
 class CrhConverter extends LanguageConverterSpecific {
 	// Defines working character ranges
@@ -109,7 +106,7 @@ class CrhConverter extends LanguageConverterSpecific {
 	}
 
 	/**
-	 * @param Language $langobj
+	 * @param Language|StubUserLang $langobj
 	 */
 	public function __construct( $langobj ) {
 		parent::__construct( $langobj );
@@ -250,14 +247,14 @@ class CrhConverter extends LanguageConverterSpecific {
 				$ret = '';
 				foreach ( $matches as $m ) {
 					// copy over Roman numerals
-					$ret .= substr( $text, $mstart, $m[1] - $mstart );
+					$ret .= substr( $text, $mstart, (int)$m[1] - $mstart );
 
 					// process everything else
 					if ( $m[0] !== '' ) {
 						$ret .= $this->regsConverter( $m[0], $toVariant );
 					}
 
-					$mstart = $m[1] + strlen( $m[0] );
+					$mstart = (int)$m[1] + strlen( $m[0] );
 				}
 
 				return $ret;
@@ -268,7 +265,9 @@ class CrhConverter extends LanguageConverterSpecific {
 	}
 
 	private function regsConverter( $text, $toVariant ) {
-		if ( $text == '' ) return $text;
+		if ( $text == '' ) {
+			return $text;
+		}
 
 		$pat = [];
 		$rep = [];

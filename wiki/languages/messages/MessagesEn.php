@@ -22,12 +22,6 @@ $fallback = false;
 $rtl = false;
 
 /**
- * Should all nouns (not just proper ones) be capitalized?
- * Enabling this property will add the capitalize-all-nouns class to the <body> tag
- */
-$capitalizeAllNouns = false;
-
-/**
  * Optional array mapping ASCII digits 0-9 to local digits.
  */
 $digitTransformTable = null;
@@ -216,6 +210,7 @@ $bookstoreList = [
 $magicWords = [
 #   ID                               CASE  SYNONYMS
 	'!'                       => [ 1, '!' ],
+	'='                       => [ 1, '=' ],
 	'anchorencode'            => [ 0, 'ANCHORENCODE' ],
 	'articlepath'             => [ 0, 'ARTICLEPATH' ],
 	'basepagename'            => [ 1, 'BASEPAGENAME' ],
@@ -421,6 +416,7 @@ $specialPageAliases = [
 	'CreateAccount'             => [ 'CreateAccount' ],
 	'Deadendpages'              => [ 'DeadendPages' ],
 	'DeletedContributions'      => [ 'DeletedContributions' ],
+	'DeletePage'                => [ 'DeletePage', 'Delete' ],
 	'Diff'                      => [ 'Diff' ],
 	'DoubleRedirects'           => [ 'DoubleRedirects' ],
 	'EditPage'                  => [ 'EditPage', 'Edit' ],
@@ -462,7 +458,7 @@ $specialPageAliases = [
 	'Mostrevisions'             => [ 'MostRevisions' ],
 	'Movepage'                  => [ 'MovePage' ],
 	'Mute'                      => [ 'Mute' ],
-	'Mycontributions'           => [ 'MyContributions' ],
+	'Mycontributions'           => [ 'MyContributions', 'MyContribs' ],
 	'MyLanguage'                => [ 'MyLanguage' ],
 	'Mypage'                    => [ 'MyPage' ],
 	'Mytalk'                    => [ 'MyTalk' ],
@@ -482,6 +478,7 @@ $specialPageAliases = [
 	'Prefixindex'               => [ 'PrefixIndex' ],
 	'Protectedpages'            => [ 'ProtectedPages' ],
 	'Protectedtitles'           => [ 'ProtectedTitles' ],
+	'ProtectPage'               => [ 'ProtectPage', 'Protect' ],
 	'Purge'                     => [ 'Purge' ],
 	'RandomInCategory'          => [ 'RandomInCategory' ],
 	'Randompage'                => [ 'Random', 'RandomPage' ],

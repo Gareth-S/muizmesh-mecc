@@ -4,10 +4,10 @@ declare( strict_types = 1 );
 namespace Wikimedia\Parsoid\Utils;
 
 use Wikimedia\Parsoid\Config\Env;
-use Wikimedia\Parsoid\Config\WikitextConstants as Consts;
 use Wikimedia\Parsoid\Core\DomSourceRange;
 use Wikimedia\Parsoid\Core\Sanitizer;
 use Wikimedia\Parsoid\Tokens\Token;
+use Wikimedia\Parsoid\Wikitext\Consts;
 
 /**
  * This file contains general utilities for token transforms.
@@ -50,7 +50,7 @@ class Utils {
 	 */
 	public static function isParsoidObjectId( string $aboutId ): bool {
 		// 'mwt' is the prefix used for new ids
-		return (bool)preg_match( '/^#mwt/', $aboutId );
+		return str_starts_with( $aboutId, '#mwt' );
 	}
 
 	/**
@@ -125,6 +125,7 @@ class Utils {
 	 * @return string
 	 */
 	public static function phpURLEncode( $txt ) {
+		// @phan-suppress-previous-line PhanPluginNeverReturnMethod
 		throw new \BadMethodCallException( 'Use urlencode( $txt ) instead' );
 	}
 
@@ -161,7 +162,7 @@ class Utils {
 		return preg_replace_callback(
 			// phpcs:ignore Generic.Files.LineLength.TooLong
 			'/%[0-7][0-9A-F]|%[CD][0-9A-F]%[89AB][0-9A-F]|%E[0-9A-F](?:%[89AB][0-9A-F]){2}|%F[0-4](?:%[89AB][0-9A-F]){3}/i',
-			function ( $match ) {
+			static function ( $match ) {
 				$ret = rawurldecode( $match[0] );
 				return mb_check_encoding( $ret, 'UTF-8' ) ? $ret : $match[0];
 			}, $s
@@ -387,6 +388,7 @@ class Utils {
 	 * @return object
 	 */
 	public static function getStar( $revision ) {
+		// @phan-suppress-previous-line PhanPluginNeverReturnMethod
 		/*
 		$content = $revision;
 		if ( $revision && isset( $revision->slots ) ) {
@@ -399,6 +401,7 @@ class Utils {
 	}
 
 	/**
+	 * FIXME: This feels broken.
 	 * Magic words masquerading as templates.
 	 * @return array
 	 */
@@ -416,11 +419,13 @@ class Utils {
 	 * 3. '-', though allowed in Icelandic (possibly due to a bug), is disallowed.
 	 * 4. '1', though allowed in Lak (possibly due to a bug), is disallowed.
 	 */
+	// phpcs:disable Generic.Files.LineLength.TooLong
 	public static $linkTrailRegex =
 		'/^[^\0-`{÷ĀĈ-ČĎĐĒĔĖĚĜĝĠ-ĪĬ-įĲĴ-ĹĻ-ĽĿŀŅņŉŊŌŎŏŒŔŖ-ŘŜŝŠŤŦŨŪ-ŬŮŲ-ŴŶŸ' .
 		'ſ-ǤǦǨǪ-Ǯǰ-ȗȜ-ȞȠ-ɘɚ-ʑʓ-ʸʽ-̂̄-΅·΋΍΢Ϗ-ЯѐѝѠѢѤѦѨѪѬѮѰѲѴѶѸѺ-ѾҀ-҃҅-ҐҒҔҕҘҚҜ-ҠҤ-ҪҬҭҰҲ' .
 		'Ҵ-ҶҸҹҼ-ҿӁ-ӗӚ-ӜӞӠ-ӢӤӦӪ-ӲӴӶ-ՠֈ-׏׫-ؠً-ٳٵ-ٽٿ-څڇ-ڗڙ-ڨڪ-ڬڮڰ-ڽڿ-ۅۈ-ۊۍ-۔ۖ-਀਄਋-਎਑਒' .
 		'਩਱਴਷਺਻਽੃-੆੉੊੎-੘੝੟-੯ੴ-჏ჱ-ẼẾ-\x{200b}\x{200d}-‒—-‗‚‛”--\x{fffd}]+$/D';
+	// phpcs:enable Generic.Files.LineLength.TooLong
 
 	/**
 	 * Check whether some text is a valid link trail.

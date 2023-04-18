@@ -3,9 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
- *
+ * @ingroup Languages
  */
 
 $namespaceNames = [
@@ -44,3 +43,5 @@ $namespaceAliases = [
 
 // Remove Russian gender aliases
 $namespaceGenderAliases = [];
+
+$linkTrail = '/^([a-zабвгдеёжзийклмнопрстуфхцчшщъыьэюяӀ]+)(.*)$/sDu';

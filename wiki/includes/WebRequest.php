@@ -23,10 +23,12 @@
  * @file
  */
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Session\Session;
 use MediaWiki\Session\SessionId;
 use MediaWiki\Session\SessionManager;
+use MediaWiki\User\UserIdentity;
 use Wikimedia\IPUtils;
 
 // The point of this class is to be a wrapper around super globals
@@ -164,6 +166,7 @@ class WebRequest {
 			$path = $a['path'] ?? '';
 
 			global $wgScript;
+			// @phan-suppress-next-line PhanPossiblyUndeclaredVariable False positive
 			if ( $path == $wgScript && $want !== 'all' ) {
 				// Script inside a rewrite path?
 				// Abort to keep from breaking...
@@ -173,6 +176,7 @@ class WebRequest {
 			$router = new PathRouter;
 
 			// Raw PATH_INFO style
+			// @phan-suppress-next-line PhanPossiblyUndeclaredVariable False positive
 			$router->add( "$wgScript/$1" );
 
 			global $wgArticlePath;
@@ -189,11 +193,13 @@ class WebRequest {
 
 			global $wgVariantArticlePath;
 			if ( $wgVariantArticlePath ) {
+				$services = MediaWikiServices::getInstance();
 				$router->validateRoute( $wgVariantArticlePath, 'wgVariantArticlePath' );
 				$router->add( $wgVariantArticlePath,
 					[ 'variant' => '$2' ],
-					[ '$2' => MediaWikiServices::getInstance()->getContentLanguage()->
-					getVariants() ]
+					[ '$2' => $services->getLanguageConverterFactory()
+						->getLanguageConverter( $services->getContentLanguage() )
+						->getVariants() ]
 				);
 			}
 
@@ -239,7 +245,7 @@ class WebRequest {
 		} else {
 			$requestPath = $requestUrl;
 		}
-		if ( substr( $requestPath, 0, strlen( $basePath ) ) !== $basePath ) {
+		if ( !str_starts_with( $requestPath, $basePath ) ) {
 			return false;
 		}
 		return rawurldecode( substr( $requestPath, strlen( $basePath ) ) );
@@ -249,10 +255,17 @@ class WebRequest {
 	 * Work out an appropriate URL prefix containing scheme and host, based on
 	 * information detected from $_SERVER
 	 *
+	 * @param bool|null $assumeProxiesUseDefaultProtocolPorts When the wiki is running behind a proxy
+	 * and this is set to true, assumes that the proxy exposes the wiki on the standard ports
+	 * (443 for https and 80 for http). Added in 1.38. Calls without this argument are
+	 * supported for backwards compatibility but deprecated.
+	 *
 	 * @return string
 	 */
-	public static function detectServer() {
-		global $wgAssumeProxiesUseDefaultProtocolPorts;
+	public static function detectServer( $assumeProxiesUseDefaultProtocolPorts = null ) {
+		if ( $assumeProxiesUseDefaultProtocolPorts === null ) {
+			$assumeProxiesUseDefaultProtocolPorts = $GLOBALS['wgAssumeProxiesUseDefaultProtocolPorts'];
+		}
 
 		$proto = self::detectProtocol();
 		$stdPort = $proto === 'https' ? 443 : 80;
@@ -272,7 +285,7 @@ class WebRequest {
 			}
 
 			$host = $parts[0];
-			if ( $wgAssumeProxiesUseDefaultProtocolPorts && isset( $_SERVER['HTTP_X_FORWARDED_PROTO'] ) ) {
+			if ( $assumeProxiesUseDefaultProtocolPorts && isset( $_SERVER['HTTP_X_FORWARDED_PROTO'] ) ) {
 				// T72021: Assume that upstream proxy is running on the default
 				// port based on the protocol. We have no reliable way to determine
 				// the actual port in use upstream.
@@ -372,11 +385,6 @@ class WebRequest {
 	 * available variant URLs.
 	 */
 	public function interpolateTitle() {
-		// T18019: title interpolation on API queries is useless and sometimes harmful
-		if ( defined( 'MW_API' ) ) {
-			return;
-		}
-
 		$matches = self::getPathInfo( 'title' );
 		foreach ( $matches as $key => $val ) {
 			$this->data[$key] = $this->queryAndPathParams[$key] = $val;
@@ -466,16 +474,16 @@ class WebRequest {
 	}
 
 	/**
-	 * Fetch a scalar from the input without normalization, or return $default
-	 * if it's not set.
+	 * Fetch a string WITHOUT any Unicode or line break normalization. This is a fast alternative
+	 * for values that are known to be simple, e.g. pure ASCII. When reading user input, use
+	 * {@see getText} instead.
 	 *
-	 * Unlike self::getVal(), this does not perform any normalization on the
-	 * input value.
+	 * Array values are discarded for security reasons. Use {@see getArray} or {@see getIntArray}.
 	 *
 	 * @since 1.28
 	 * @param string $name
 	 * @param string|null $default
-	 * @return string|null
+	 * @return string|null The value, or $default if none set
 	 */
 	public function getRawVal( $name, $default = null ) {
 		$name = strtr( $name, '.', '_' ); // See comment in self::getGPCVal()
@@ -484,33 +492,54 @@ class WebRequest {
 		} else {
 			$val = $default;
 		}
-		if ( $val === null ) {
-			return $val;
-		} else {
-			return (string)$val;
-		}
+
+		return $val === null ? null : (string)$val;
 	}
 
 	/**
-	 * Fetch a scalar from the input or return $default if it's not set.
-	 * Returns a string. Arrays are discarded. Useful for
-	 * non-freeform text inputs (e.g. predefined internal text keys
-	 * selected by a drop-down menu). For freeform input, see getText().
+	 * Fetch a text string and partially normalized it.
+	 *
+	 * Use of this method is discouraged. It doesn't normalize line breaks and defaults to null
+	 * instead of the empty string. Instead:
+	 * - Use {@see getText} when reading user input or form fields that are expected to contain
+	 *   non-ASCII characters.
+	 * - Use {@see getRawVal} when reading ASCII strings, such as parameters used to select
+	 *   predefined behaviour in the software.
+	 *
+	 * Array values are discarded for security reasons. Use {@see getArray} or {@see getIntArray}.
 	 *
 	 * @param string $name
-	 * @param string|null $default Optional default (or null)
-	 * @return string|null
+	 * @param string|null $default
+	 * @return string|null The input value, or $default if none set
 	 */
 	public function getVal( $name, $default = null ) {
 		$val = $this->getGPCVal( $this->data, $name, $default );
 		if ( is_array( $val ) ) {
 			$val = $default;
 		}
-		if ( $val === null ) {
-			return $val;
-		} else {
-			return (string)$val;
-		}
+
+		return $val === null ? null : (string)$val;
+	}
+
+	/**
+	 * Fetch a text string and return it in normalized form.
+	 *
+	 * This normalizes Unicode sequences (via {@see getGPCVal}) and line breaks.
+	 *
+	 * This should be used for all user input and form fields that are expected to contain non-ASCII
+	 * characters, especially if the value will be stored or compared against stored values. Without
+	 * normalization, logically identically values might not match when they are typed on different
+	 * OS' or keyboards.
+	 *
+	 * Array values are discarded for security reasons. Use {@see getArray} or {@see getIntArray}.
+	 *
+	 * @param string $name
+	 * @param string $default
+	 * @return string The normalized input value, or $default if none set
+	 */
+	public function getText( $name, $default = '' ) {
+		$val = $this->getVal( $name, $default );
+		return str_replace( "\r\n", "\n", $val );
 	}
 
 	/**
@@ -588,6 +617,7 @@ class WebRequest {
 	 * @return int
 	 */
 	public function getInt( $name, $default = 0 ) {
+		// @phan-suppress-next-line PhanTypeMismatchArgument getRawVal does not return null here
 		return intval( $this->getRawVal( $name, $default ) );
 	}
 
@@ -617,6 +647,7 @@ class WebRequest {
 	 * @return float
 	 */
 	public function getFloat( $name, $default = 0.0 ) {
+		// @phan-suppress-next-line PhanTypeMismatchArgument getRawVal does not return null here
 		return floatval( $this->getRawVal( $name, $default ) );
 	}
 
@@ -630,6 +661,7 @@ class WebRequest {
 	 * @return bool
 	 */
 	public function getBool( $name, $default = false ) {
+		// @phan-suppress-next-line PhanTypeMismatchArgument getRawVal does not return null here
 		return (bool)$this->getRawVal( $name, $default );
 	}
 
@@ -659,21 +691,6 @@ class WebRequest {
 		# Checkboxes and buttons are only present when clicked
 		# Presence connotes truth, absence false
 		return $this->getRawVal( $name, null ) !== null;
-	}
-
-	/**
-	 * Fetch a text string from the given array or return $default if it's not
-	 * set. Carriage returns are stripped from the text. This should generally
-	 * be used for form "<textarea>" and "<input>" fields, and for
-	 * user-supplied freeform text input.
-	 *
-	 * @param string $name
-	 * @param string $default Optional
-	 * @return string
-	 */
-	public function getText( $name, $default = '' ) {
-		$val = $this->getVal( $name, $default );
-		return str_replace( "\r\n", "\n", $val );
 	}
 
 	/**
@@ -1003,18 +1020,20 @@ class WebRequest {
 	 * defaults if not given. The limit must be positive and is capped at 5000.
 	 * Offset must be positive but is not capped.
 	 *
-	 * @param User $user User to get option for
+	 * @param UserIdentity $user UserIdentity to get option for
 	 * @param int $deflimit Limit to use if no input and the user hasn't set the option.
 	 * @param string $optionname To specify an option other than rclimit to pull from.
 	 * @return int[] First element is limit, second is offset
 	 */
-	public function getLimitOffsetForUser( User $user, $deflimit = 50, $optionname = 'rclimit' ) {
+	public function getLimitOffsetForUser( UserIdentity $user, $deflimit = 50, $optionname = 'rclimit' ) {
 		$limit = $this->getInt( 'limit', 0 );
 		if ( $limit < 0 ) {
 			$limit = 0;
 		}
 		if ( ( $limit == 0 ) && ( $optionname != '' ) ) {
-			$limit = $user->getIntOption( $optionname );
+			$limit = MediaWikiServices::getInstance()
+				->getUserOptionsLookup()
+				->getIntOption( $user, $optionname );
 		}
 		if ( $limit <= 0 ) {
 			$limit = $deflimit;
@@ -1038,8 +1057,7 @@ class WebRequest {
 	 * @return string|null String or null if no such file.
 	 */
 	public function getFileTempname( $key ) {
-		$file = new WebRequestUpload( $this, $key );
-		return $file->getTempName();
+		return $this->getUpload( $key )->getTempName();
 	}
 
 	/**
@@ -1049,8 +1067,7 @@ class WebRequest {
 	 * @return int
 	 */
 	public function getUploadError( $key ) {
-		$file = new WebRequestUpload( $this, $key );
-		return $file->getError();
+		return $this->getUpload( $key )->getError();
 	}
 
 	/**
@@ -1065,8 +1082,7 @@ class WebRequest {
 	 * @return string|null String or null if no such file.
 	 */
 	public function getFileName( $key ) {
-		$file = new WebRequestUpload( $this, $key );
-		return $file->getName();
+		return $this->getUpload( $key )->getName();
 	}
 
 	/**
@@ -1161,20 +1177,6 @@ class WebRequest {
 	}
 
 	/**
-	 * This function formerly did a security check to prevent an XSS
-	 * vulnerability in IE6, as documented in T30235. Since IE6 support has
-	 * been dropped, this function now returns true unconditionally.
-	 *
-	 * @deprecated since 1.35
-	 * @param array $extWhitelist
-	 * @return bool
-	 */
-	public function checkUrlExtension( $extWhitelist = [] ) {
-		wfDeprecated( __METHOD__, '1.35' );
-		return true;
-	}
-
-	/**
 	 * Parse the Accept-Language header sent by the client into an array
 	 *
 	 * @return array [ languageCode => q-value ] sorted by q-value in
@@ -1238,23 +1240,18 @@ class WebRequest {
 	 * Fetch the raw IP from the request
 	 *
 	 * @since 1.19
-	 *
-	 * @throws MWException
 	 * @return string|null
 	 */
 	protected function getRawIP() {
-		if ( !isset( $_SERVER['REMOTE_ADDR'] ) ) {
+		$remoteAddr = $_SERVER['REMOTE_ADDR'] ?? null;
+		if ( !$remoteAddr ) {
 			return null;
 		}
-
-		if ( is_array( $_SERVER['REMOTE_ADDR'] ) || strpos( $_SERVER['REMOTE_ADDR'], ',' ) !== false ) {
-			throw new MWException( __METHOD__
-				. " : Could not determine the remote IP address due to multiple values." );
-		} else {
-			$ipchain = $_SERVER['REMOTE_ADDR'];
+		if ( is_array( $remoteAddr ) || str_contains( $remoteAddr, ',' ) ) {
+			throw new MWException( 'Remote IP must not contain multiple values' );
 		}
 
-		return IPUtils::canonicalize( $ipchain );
+		return IPUtils::canonicalize( $remoteAddr );
 	}
 
 	/**
@@ -1262,8 +1259,6 @@ class WebRequest {
 	 * For trusted proxies, use the XFF client IP (first of the chain)
 	 *
 	 * @since 1.19
-	 *
-	 * @throws MWException
 	 * @return string
 	 */
 	public function getIP() {
@@ -1274,7 +1269,7 @@ class WebRequest {
 			return $this->ip;
 		}
 
-		# collect the originating ips
+		# collect the originating IPs
 		$ip = $this->getRawIP();
 		if ( !$ip ) {
 			throw new MWException( 'Unable to determine IP.' );
@@ -1308,7 +1303,8 @@ class WebRequest {
 				if (
 					IPUtils::isPublic( $ipchain[$i + 1] ) ||
 					$wgUsePrivateIPs ||
-					$proxyLookup->isConfiguredProxy( $curIP ) // T50919; treat IP as sane
+					// T50919; treat IP as valid
+					$proxyLookup->isConfiguredProxy( $curIP )
 				) {
 					$nextIP = $ipchain[$i + 1];
 
@@ -1330,11 +1326,15 @@ class WebRequest {
 			}
 		}
 
-		# Allow extensions to improve our guess
-		Hooks::runner()->onGetIP( $ip );
+		// Allow extensions to modify the result
+		// Optimisation: Hot code called on most requests (T85805).
+		if ( Hooks::isRegistered( 'GetIP' ) ) {
+			// @phan-suppress-next-line PhanTypeMismatchArgument Type mismatch on pass-by-ref args
+			Hooks::runner()->onGetIP( $ip );
+		}
 
 		if ( !$ip ) {
-			throw new MWException( "Unable to determine IP." );
+			throw new MWException( 'Unable to determine IP.' );
 		}
 
 		$this->ip = $ip;
@@ -1425,5 +1425,51 @@ class WebRequest {
 	 */
 	public function markAsSafeRequest() {
 		$this->markedAsSafe = true;
+	}
+
+	/**
+	 * Determine if the request URL matches one of a given set of canonical CDN URLs.
+	 *
+	 * MediaWiki uses this to determine whether to set a long 'Cache-Control: s-maxage='
+	 * header on the response. {@see MainConfigNames::CdnMatchParameterOrder} controls whether
+	 * the matching is sensitive to the order of query parameters.
+	 *
+	 * @param string[] $cdnUrls URLs to match against
+	 * @return bool
+	 * @since 1.39
+	 */
+	public function matchURLForCDN( array $cdnUrls ) {
+		$reqUrl = wfExpandUrl( $this->getRequestURL(), PROTO_INTERNAL );
+		$config = MediaWikiServices::getInstance()->getMainConfig();
+		if ( $config->get( MainConfigNames::CdnMatchParameterOrder ) ) {
+			// Strict matching
+			return in_array( $reqUrl, $cdnUrls, true );
+		}
+
+		// Loose matching (order of query parameters is ignored)
+		$reqUrlParts = explode( '?', $reqUrl, 2 );
+		$reqUrlBase = $reqUrlParts[0];
+		$reqUrlParams = count( $reqUrlParts ) === 2 ? explode( '&', $reqUrlParts[1] ) : [];
+		// The order of parameters after the sort() call below does not match
+		// the order set by the CDN, and does not need to. The CDN needs to
+		// take special care to preserve the relative order of duplicate keys
+		// and array-like parameters.
+		sort( $reqUrlParams );
+		foreach ( $cdnUrls as $cdnUrl ) {
+			if ( strlen( $reqUrl ) !== strlen( $cdnUrl ) ) {
+				continue;
+			}
+			$cdnUrlParts = explode( '?', $cdnUrl, 2 );
+			$cdnUrlBase = $cdnUrlParts[0];
+			if ( $reqUrlBase !== $cdnUrlBase ) {
+				continue;
+			}
+			$cdnUrlParams = count( $cdnUrlParts ) === 2 ? explode( '&', $cdnUrlParts[1] ) : [];
+			sort( $cdnUrlParams );
+			if ( $reqUrlParams === $cdnUrlParams ) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

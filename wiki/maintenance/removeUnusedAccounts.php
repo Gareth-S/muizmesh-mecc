@@ -23,6 +23,9 @@
  * @author Rob Church <robchur@gmail.com>
  */
 
+use MediaWiki\MediaWikiServices;
+use MediaWiki\User\UserIdentity;
+
 require_once __DIR__ . '/Maintenance.php';
 
 /**
@@ -39,6 +42,9 @@ class RemoveUnusedAccounts extends Maintenance {
 	}
 
 	public function execute() {
+		$services = MediaWikiServices::getInstance();
+		$userFactory = $services->getUserFactory();
+		$userGroupManager = $services->getUserGroupManager();
 		$this->output( "Remove unused accounts\n\n" );
 
 		# Do an initial scan for inactive accounts and report the result
@@ -67,10 +73,12 @@ class RemoveUnusedAccounts extends Maintenance {
 		foreach ( $res as $row ) {
 			# Check the account, but ignore it if it's within a $excludedGroups
 			# group or if it's touched within the $touchedSeconds seconds.
-			$instance = User::newFromId( $row->user_id );
-			if ( count( array_intersect( $instance->getEffectiveGroups(), $excludedGroups ) ) == 0
-				&& $this->isInactiveAccount( $row->user_id, $row->actor_id ?? null, true )
-				&& wfTimestamp( TS_UNIX, $row->user_touched ) < wfTimestamp( TS_UNIX, time() - $touchedSeconds )
+			$instance = $userFactory->newFromId( $row->user_id );
+			if ( count(
+				array_intersect( $userGroupManager->getUserEffectiveGroups( $instance ), $excludedGroups ) ) == 0
+				&& $this->isInactiveAccount( $instance, $row->actor_id ?? null, true )
+				&& wfTimestamp( TS_UNIX, $row->user_touched ) < wfTimestamp( TS_UNIX, time() - $touchedSeconds
+				)
 			) {
 				# Inactive; print out the name and flag it
 				$delUser[] = $row->user_id;
@@ -86,7 +94,7 @@ class RemoveUnusedAccounts extends Maintenance {
 		# If required, go back and delete each marked account
 		if ( $count > 0 && $this->hasOption( 'delete' ) ) {
 			$this->output( "\nDeleting unused accounts..." );
-			$dbw = $this->getDB( DB_MASTER );
+			$dbw = $this->getDB( DB_PRIMARY );
 			$dbw->delete( 'user', [ 'user_id' => $delUser ], __METHOD__ );
 			# Keep actor rows referenced from ipblocks
 			$keep = $dbw->selectFieldValues(
@@ -123,12 +131,12 @@ class RemoveUnusedAccounts extends Maintenance {
 	 * Could the specified user account be deemed inactive?
 	 * (No edits, no deleted edits, no log entries, no current/old uploads)
 	 *
-	 * @param int $id User's ID
+	 * @param UserIdentity $user
 	 * @param int|null $actor User's actor ID
-	 * @param bool $master Perform checking on the master
+	 * @param bool $primary Perform checking on the primary DB
 	 * @return bool
 	 */
-	private function isInactiveAccount( $id, $actor, $master = false ) {
+	private function isInactiveAccount( $user, $actor, $primary = false ) {
 		if ( $actor === null ) {
 			// There's no longer a way for a user to be active in any of
 			// these tables without having an actor ID. The only way to link
@@ -136,7 +144,7 @@ class RemoveUnusedAccounts extends Maintenance {
 			return true;
 		}
 
-		$dbo = $this->getDB( $master ? DB_MASTER : DB_REPLICA );
+		$dbo = $this->getDB( $primary ? DB_PRIMARY : DB_REPLICA );
 		$checks = [
 			'archive' => 'ar',
 			'image' => 'img',
@@ -158,7 +166,6 @@ class RemoveUnusedAccounts extends Maintenance {
 		}
 
 		// Delete this special case when the actor migration is complete
-		$user = User::newFromAnyId( $id, null, $actor );
 		$actorQuery = ActorMigration::newMigration()->getWhere( $dbo, 'rev_user', $user );
 		$count += (int)$dbo->selectField(
 			[ 'revision' ] + $actorQuery['tables'],

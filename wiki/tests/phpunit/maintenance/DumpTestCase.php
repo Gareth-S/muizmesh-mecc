@@ -10,7 +10,7 @@ use ExecutableFinder;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\RevisionAccessException;
 use MediaWiki\Revision\RevisionRecord;
-use MediaWiki\Storage\SlotRecord;
+use MediaWiki\Revision\SlotRecord;
 use MediaWikiLangTestCase;
 use MWException;
 use WikiExporter;
@@ -168,7 +168,7 @@ abstract class DumpTestCase extends MediaWikiLangTestCase {
 		);
 	}
 
-	public static function setUpBeforeClass() : void {
+	public static function setUpBeforeClass(): void {
 		parent::setUpBeforeClass();
 
 		if ( !function_exists( 'libxml_set_external_entity_loader' ) ) {
@@ -203,7 +203,7 @@ abstract class DumpTestCase extends MediaWikiLangTestCase {
 	 *
 	 * Reports errors from addDBData to PHPUnit
 	 */
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		// Check if any Exception is stored for rethrowing from addDBData

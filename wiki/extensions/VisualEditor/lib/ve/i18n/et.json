@@ -8,7 +8,6 @@
 		]
 	},
 	"visualeditor": "Visuaaltoimeti",
-	"visualeditor-aliencontextitem-title": "Element",
 	"visualeditor-aliennode-tooltip": "Seda elementi saab praegu redigeerida vaid lähtekoodirežiimis.",
 	"visualeditor-align-widget-center": "Keskel",
 	"visualeditor-align-widget-left": "Vasakul",
@@ -153,6 +152,7 @@
 	"visualeditor-table-move-col-before": "Liiguta vasakule",
 	"visualeditor-table-move-row-after": "Liiguta alla",
 	"visualeditor-table-move-row-before": "Liiguta üles",
+	"visualeditor-table-sum": "Summa: $1, keskmine: $2",
 	"visualeditor-tablecell-contextitem": "Tabelilahter",
 	"visualeditor-tablecell-tooltip": "Lahtri redigeerimiseks tee topeltklõps",
 	"visualeditor-toolbar-format-tooltip": "Lõigu vorming",

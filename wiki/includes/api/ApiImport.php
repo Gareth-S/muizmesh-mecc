@@ -20,6 +20,9 @@
  * @file
  */
 
+use MediaWiki\MainConfigNames;
+use Wikimedia\ParamValidator\ParamValidator;
+
 /**
  * API module that imports an XML file like Special:Import does
  *
@@ -27,9 +30,26 @@
  */
 class ApiImport extends ApiBase {
 
+	/** @var WikiImporterFactory */
+	private $wikiImporterFactory;
+
+	/**
+	 * @param ApiMain $main
+	 * @param string $action
+	 * @param WikiImporterFactory $wikiImporterFactory
+	 */
+	public function __construct(
+		ApiMain $main,
+		$action,
+		WikiImporterFactory $wikiImporterFactory
+	) {
+		parent::__construct( $main, $action );
+
+		$this->wikiImporterFactory = $wikiImporterFactory;
+	}
+
 	public function execute() {
 		$this->useTransactionalTimeLimit();
-		$user = $this->getUser();
 		$params = $this->extractRequestParams();
 
 		$this->requireMaxOneParameter( $params, 'namespace', 'rootpage' );
@@ -73,7 +93,7 @@ class ApiImport extends ApiBase {
 			}
 		}
 
-		$importer = new WikiImporter( $source->value, $this->getConfig() );
+		$importer = $this->wikiImporterFactory->getWikiImporter( $source->value );
 		if ( isset( $params['namespace'] ) ) {
 			$importer->setTargetNamespace( $params['namespace'] );
 		} elseif ( isset( $params['rootpage'] ) ) {
@@ -113,7 +133,7 @@ class ApiImport extends ApiBase {
 	 * @since 1.27
 	 */
 	public function getAllowedImportSources() {
-		$importSources = $this->getConfig()->get( 'ImportSources' );
+		$importSources = $this->getConfig()->get( MainConfigNames::ImportSources );
 		$this->getHookRunner()->onImportSources( $importSources );
 
 		$result = [];
@@ -141,25 +161,25 @@ class ApiImport extends ApiBase {
 		return [
 			'summary' => null,
 			'xml' => [
-				ApiBase::PARAM_TYPE => 'upload',
+				ParamValidator::PARAM_TYPE => 'upload',
 			],
 			'interwikiprefix' => [
-				ApiBase::PARAM_TYPE => 'string',
+				ParamValidator::PARAM_TYPE => 'string',
 			],
 			'interwikisource' => [
-				ApiBase::PARAM_TYPE => $this->getAllowedImportSources(),
+				ParamValidator::PARAM_TYPE => $this->getAllowedImportSources(),
 			],
 			'interwikipage' => null,
 			'fullhistory' => false,
 			'templates' => false,
 			'namespace' => [
-				ApiBase::PARAM_TYPE => 'namespace'
+				ParamValidator::PARAM_TYPE => 'namespace'
 			],
 			'assignknownusers' => false,
 			'rootpage' => null,
 			'tags' => [
-				ApiBase::PARAM_TYPE => 'tags',
-				ApiBase::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_TYPE => 'tags',
+				ParamValidator::PARAM_ISMULTI => true,
 			],
 		];
 	}

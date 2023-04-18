@@ -1,7 +1,12 @@
-[10-Feb-2023 16:11:50 UTC] PHP Fatal error:  Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 7.4.0". You are running 7.3.33. in /home/sexthera/public_html/muizenmesh.co.za/kanban/vendor/composer/platform_check.php on line 24
-[10-Feb-2023 16:11:58 UTC] PHP Fatal error:  Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 7.4.0". You are running 7.3.33. in /home/sexthera/public_html/muizenmesh.co.za/kanban/vendor/composer/platform_check.php on line 24
-[10-Feb-2023 16:12:18 UTC] PHP Fatal error:  Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 7.4.0". You are running 7.3.33. in /home/sexthera/public_html/muizenmesh.co.za/kanban/vendor/composer/platform_check.php on line 24
-[10-Feb-2023 16:15:17 UTC] PHP Fatal error:  Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 7.4.0". You are running 7.3.33. in /home/sexthera/public_html/muizenmesh.co.za/kanban/vendor/composer/platform_check.php on line 24
-[10-Feb-2023 16:15:21 UTC] PHP Fatal error:  Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 7.4.0". You are running 7.3.33. in /home/sexthera/public_html/muizenmesh.co.za/kanban/vendor/composer/platform_check.php on line 24
-[10-Feb-2023 16:15:33 UTC] PHP Fatal error:  Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 7.4.0". You are running 7.3.33. in /home/sexthera/public_html/muizenmesh.co.za/kanban/vendor/composer/platform_check.php on line 24
-[10-Feb-2023 19:01:02 UTC] PHP Fatal error:  Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 7.4.0". You are running 7.3.33. in /home/sexthera/public_html/muizenmesh.co.za/kanban/vendor/composer/platform_check.php on line 24
+[27-Mar-2023 15:13:07 UTC] Kanboard: user kanguest authentication failure with IP address: 165.0.131.172
+[27-Mar-2023 15:13:42 UTC] Kanboard: user kanguest authentication failure with IP address: 165.0.131.172
+[27-Mar-2023 15:24:37 UTC] Kanboard: user kanguest authentication failure with IP address: 165.0.131.172
+[27-Mar-2023 15:24:54 UTC] Kanboard: user kanguest authentication failure with IP address: 165.0.131.172
+[27-Mar-2023 18:14:58 UTC] Kanboard: user Cryptomanjo authentication failure with IP address: 41.216.204.241
+[27-Mar-2023 18:16:34 UTC] Kanboard: user joah.pereira@gmail.com authentication failure with IP address: 41.216.204.241
+[29-Mar-2023 17:51:00 UTC] Kanboard: user Gareth authentication failure with IP address: 169.1.248.137
+[10-Apr-2023 13:50:48 UTC] Kanboard: user Community Internet authentication failure with IP address: 165.0.131.172
+[10-Apr-2023 13:51:01 UTC] Kanboard: user ubuntupunk@gmail.com authentication failure with IP address: 165.0.131.172
+[10-Apr-2023 13:51:36 UTC] Kanboard: user Community Internet authentication failure with IP address: 165.0.131.172
+[11-Apr-2023 13:06:08 UTC] Kanboard: user joah.pereira@gmail.com authentication failure with IP address: 41.216.204.39
+[11-Apr-2023 16:35:26 UTC] Kanboard: user s.gareth@gmail.com authentication failure with IP address: 41.13.194.30

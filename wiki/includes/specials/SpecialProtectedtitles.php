@@ -22,6 +22,7 @@
  */
 
 use MediaWiki\Cache\LinkBatchFactory;
+use MediaWiki\MainConfigNames;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -66,14 +67,14 @@ class SpecialProtectedtitles extends SpecialPage {
 
 		$pager = new ProtectedTitlesPager(
 			$this,
+			$this->linkBatchFactory,
+			$this->loadBalancer,
 			[],
 			$type,
 			$level,
 			$NS,
 			$sizetype,
-			$size,
-			$this->linkBatchFactory,
-			$this->loadBalancer
+			$size
 		);
 
 		$this->getOutput()->addHTML( $this->showOptions( $NS, $type, $level ) );
@@ -157,7 +158,7 @@ class SpecialProtectedtitles extends SpecialPage {
 		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $this->getContext() )
 			->setMethod( 'get' )
 			->setWrapperLegendMsg( 'protectedtitles' )
-			->setSubmitText( $this->msg( 'protectedtitles-submit' )->text() );
+			->setSubmitTextMsg( 'protectedtitles-submit' );
 
 		return $htmlForm->prepareForm()->getHTML( false );
 	}
@@ -173,7 +174,7 @@ class SpecialProtectedtitles extends SpecialPage {
 		$options = [];
 
 		// First pass to load the log names
-		foreach ( $this->getConfig()->get( 'RestrictionLevels' ) as $type ) {
+		foreach ( $this->getConfig()->get( MainConfigNames::RestrictionLevels ) as $type ) {
 			if ( $type != '' && $type != '*' ) {
 				// Messages: restriction-level-sysop, restriction-level-autoconfirmed
 				$text = $this->msg( "restriction-level-$type" )->text();

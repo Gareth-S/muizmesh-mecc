@@ -22,8 +22,8 @@ namespace MediaWiki\User;
 
 use MediaWiki\Config\ServiceOptions;
 use MediaWiki\DAO\WikiAwareEntity;
+use MediaWiki\MainConfigNames;
 use Psr\Log\LoggerInterface;
-use WikiMap;
 use Wikimedia\Rdbms\ILBFactory;
 use Wikimedia\Rdbms\ILoadBalancer;
 
@@ -37,8 +37,8 @@ class ActorStoreFactory {
 
 	/** @internal */
 	public const CONSTRUCTOR_OPTIONS = [
-		'SharedDB',
-		'SharedTables',
+		MainConfigNames::SharedDB,
+		MainConfigNames::SharedTables,
 	];
 
 	/** @var ILBFactory */
@@ -73,14 +73,14 @@ class ActorStoreFactory {
 	) {
 		$options->assertRequiredOptions( self::CONSTRUCTOR_OPTIONS );
 		$this->loadBalancerFactory = $loadBalancerFactory;
-		$this->sharedDB = $options->get( 'SharedDB' );
-		$this->sharedTables = $options->get( 'SharedTables' );
+		$this->sharedDB = $options->get( MainConfigNames::SharedDB );
+		$this->sharedTables = $options->get( MainConfigNames::SharedTables );
 		$this->userNameUtils = $userNameUtils;
 		$this->logger = $logger;
 	}
 
 	/**
-	 * @param bool $wikiId
+	 * @param string|false $wikiId
 	 * @return ActorNormalization
 	 */
 	public function getActorNormalization( $wikiId = WikiAwareEntity::LOCAL ): ActorNormalization {
@@ -95,7 +95,7 @@ class ActorStoreFactory {
 		// During the transition from User, we still have old User objects
 		// representing users from a different wiki, so we still have IDatabase::getDomainId
 		// passed as $wikiId, so we need to remap it back to LOCAL.
-		if ( is_string( $wikiId ) && WikiMap::isCurrentWikiDbDomain( $wikiId ) ) {
+		if ( is_string( $wikiId ) && $this->loadBalancerFactory->getLocalDomainID() === $wikiId ) {
 			$wikiId = WikiAwareEntity::LOCAL;
 		}
 

@@ -113,10 +113,9 @@ class SpecialPagesWithProp extends QueryPage {
 			]
 		];
 
-		$context = new DerivativeContext( $this->getContext() );
-		$context->setTitle( $this->getPageTitle() ); // Remove subpage
-		$form = HTMLForm::factory( 'ooui', $fields, $context )
+		$form = HTMLForm::factory( 'ooui', $fields, $this->getContext() )
 			->setMethod( 'get' )
+			->setTitle( $this->getPageTitle() ) // Remove subpage
 			->setSubmitCallback( [ $this, 'onSubmit' ] )
 			->setWrapperLegendMsg( 'pageswithprop-legend' )
 			->addHeaderText( $this->msg( 'pageswithprop-text' )->parseAsBlock() )
@@ -153,6 +152,20 @@ class SpecialPagesWithProp extends QueryPage {
 	 */
 	public function isSyndicated() {
 		return false;
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	protected function linkParameters() {
+		$params = [
+			'reverse' => $this->reverse,
+			'sortbyvalue' => $this->sortByValue,
+		];
+		if ( $this->ns !== null ) {
+			$params['namespace'] = $this->ns;
+		}
+		return $params;
 	}
 
 	public function getQueryInfo() {
@@ -215,7 +228,7 @@ class SpecialPagesWithProp extends QueryPage {
 			if ( $isBinary || $isTooLong ) {
 				$message = $this
 					->msg( $isBinary ? 'pageswithprop-prophidden-binary' : 'pageswithprop-prophidden-long' )
-					->params( $this->getLanguage()->formatSize( $valueLength ) );
+					->sizeParams( $valueLength );
 
 				$propValue = Html::element( 'span', [ 'class' => 'prop-value-hidden' ], $message->text() );
 			} else {

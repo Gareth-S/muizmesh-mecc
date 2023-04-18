@@ -49,7 +49,7 @@ class HTMLTagMultiselectField extends HTMLTextField {
 				return $result;
 			}
 
-			if ( !$this->mParams['allowArbitrary'] && $tag ) {
+			if ( empty( $this->mParams['allowArbitrary'] ) && $tag ) {
 				$allowedValues = $this->mParams['allowedValues'] ?? [];
 				if ( !in_array( $tag, $allowedValues ) ) {
 					return $this->msg( 'htmlform-tag-not-allowed', $tag )->escaped();
@@ -80,11 +80,8 @@ class HTMLTagMultiselectField extends HTMLTextField {
 			$params['default'] = $this->mParams['default'];
 		}
 
-		if ( isset( $this->mParams['placeholder'] ) ) {
-			$params['placeholder'] = $this->mParams['placeholder'];
-		} else {
-			$params['placeholder'] = $this->msg( 'mw-widgets-tagmultiselect-placeholder' )->plain();
-		}
+		$params['placeholder'] = $this->mParams['placeholder'] ??
+			$this->msg( 'mw-widgets-tagmultiselect-placeholder' )->plain();
 
 		if ( isset( $this->mParams['max'] ) ) {
 			$params['tagLimit'] = $this->mParams['max'];
@@ -109,7 +106,7 @@ class HTMLTagMultiselectField extends HTMLTextField {
 
 		// Make the field auto-infusable when it's used inside a legacy HTMLForm rather than OOUIHTMLForm
 		$params['infusable'] = true;
-		$params['classes'] = [ 'mw-htmlform-field-autoinfuse' ];
+		$params['classes'] = [ 'mw-htmlform-autoinfuse' ];
 		$widget = new TagMultiselectWidget( $params );
 		$widget->setAttributes( [ 'data-mw-modules' => implode( ',', $this->getOOUIModules() ) ] );
 

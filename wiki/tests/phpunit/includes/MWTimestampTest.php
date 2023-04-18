@@ -1,43 +1,29 @@
 <?php
 
+use MediaWiki\User\StaticUserOptionsLookup;
 use MediaWiki\User\UserIdentityValue;
-use MediaWiki\User\UserOptionsLookup;
 
 /**
  * Tests timestamp parsing and output.
  */
 class MWTimestampTest extends MediaWikiLangTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
-		// Avoid 'GetHumanTimestamp' hook and others
-		$this->setMwGlobals( 'wgHooks', [] );
+		// Avoid 'GetHumanTimestamp' hook
+		$this->clearHook( 'GetHumanTimestamp' );
 	}
 
 	private function setMockUserOptions( array $options ) {
 		$defaults = $this->getServiceContainer()->getMainConfig()->get( 'DefaultUserOptions' );
 
-		$mock = $this->createNoOpMock(
-			UserOptionsLookup::class,
-			[ 'getOption', 'getIntOption', 'getDefaultOption' ]
-		);
-		$mock->method( 'getOption' )
-			->willReturnCallback( function ( $user, $name ) use ( $options, $defaults ) {
-				return $options[$name] ?? $defaults[ $name ];
-			}
-		);
-		$mock->method( 'getIntOption' )
-			->willReturnCallback( function ( $user, $name ) use ( $options, $defaults ) {
-				return $options[$name] ?? $defaults[ $name ];
-			}
-		);
-		$mock->method( 'getDefaultOption' )
-			->willReturnCallback( function ( $name ) use ( $defaults ) {
-				return $defaults[$name];
-			}
+		// $options are set as the options for "Pamela", the name used in the tests
+		$userOptionsLookup = new StaticUserOptionsLookup(
+			[ 'Pamela' => $options ],
+			$defaults
 		);
 
-		$this->setService( 'UserOptionsLookup', $mock );
+		$this->setService( 'UserOptionsLookup', $userOptionsLookup );
 	}
 
 	/**
@@ -52,6 +38,7 @@ class MWTimestampTest extends MediaWikiLangTestCase {
 		$expectedOutput, // The expected output
 		$desc // Description
 	) {
+		$this->hideDeprecated( 'MWTimestamp::getHumanTimestamp' );
 		$this->setMockUserOptions( [
 			'timecorrection' => $timeCorrection,
 			'date' => $dateFormat
@@ -116,7 +103,7 @@ class MWTimestampTest extends MediaWikiLangTestCase {
 				'20120716193700',
 				'Offset|0',
 				'mdy',
-				'15:15, January 30, 1991',
+				'January 30, 1991',
 				'Different year',
 			],
 			[
@@ -164,7 +151,7 @@ class MWTimestampTest extends MediaWikiLangTestCase {
 				'20120716193700',
 				'Offset|0',
 				'ISO 8601',
-				'1991-01-30T15:15:00',
+				'1991-01-30',
 				'Different year with ISO-8601',
 			],
 		];

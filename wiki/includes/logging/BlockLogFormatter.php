@@ -22,6 +22,8 @@
  * @since 1.25
  */
 
+use MediaWiki\MainConfigNames;
+
 /**
  * This class formats block log entries.
  *
@@ -49,21 +51,21 @@ class BlockLogFormatter extends LogFormatter {
 		$subtype = $this->entry->getSubtype();
 		if ( $subtype === 'block' || $subtype === 'reblock' ) {
 			if ( !isset( $params[4] ) ) {
-				// Very old log entry without duration: means infinite
-				$params[4] = 'infinite';
+				// Very old log entry without duration: means infinity
+				$params[4] = 'infinity';
 			}
 			// Localize the duration, and add a tooltip
 			// in English to help visitors from other wikis.
 			// The lrm is needed to make sure that the number
 			// is shown on the correct side of the tooltip text.
+			// @phan-suppress-next-line SecurityCheck-DoubleEscaped
 			$durationTooltip = '&lrm;' . htmlspecialchars( $params[4] );
 			$blockExpiry = $this->context->getLanguage()->translateBlockExpiry(
 				$params[4],
 				$this->context->getUser(),
-				wfTimestamp( TS_UNIX, $this->entry->getTimestamp() )
+				(int)wfTimestamp( TS_UNIX, $this->entry->getTimestamp() )
 			);
 			if ( $this->plaintext ) {
-				// @phan-suppress-next-line SecurityCheck-XSS Plain text
 				$params[4] = Message::rawParam( $blockExpiry );
 			} else {
 				$params[4] = Message::rawParam(
@@ -88,10 +90,24 @@ class BlockLogFormatter extends LogFormatter {
 					$text = (int)$ns === NS_MAIN
 						? $this->msg( 'blanknamespace' )->escaped()
 						: htmlspecialchars( $this->context->getLanguage()->getFormattedNsText( $ns ) );
-					$params = [ 'namespace' => $ns ];
-
-					return $this->makePageLink( SpecialPage::getTitleFor( 'Allpages' ), $params, $text );
+					if ( $this->plaintext ) {
+						// Because the plaintext cannot link to the Special:AllPages
+						// link that is linked to in non-plaintext mode, just return
+						// the name of the namespace.
+						return $text;
+					} else {
+						return $this->makePageLink(
+							SpecialPage::getTitleFor( 'Allpages' ),
+							[ 'namespace' => $ns ],
+							$text
+						);
+					}
 				}, $namespaces );
+
+				$actions = $params[6]['actions'] ?? [];
+				$actions = array_map( function ( $actions ) {
+					return $this->msg( 'ipb-action-' . $actions )->text();
+				}, $actions );
 
 				$restrictions = [];
 				if ( $pages ) {
@@ -105,8 +121,14 @@ class BlockLogFormatter extends LogFormatter {
 						->numParams( count( $namespaces ) )
 						->rawParams( $this->context->getLanguage()->listToText( $namespaces ) )->text();
 				}
+				$enablePartialActionBlocks = $this->context->getConfig()
+					->get( MainConfigNames::EnablePartialActionBlocks );
+				if ( $actions && $enablePartialActionBlocks ) {
+					$restrictions[] = $this->msg( 'logentry-partialblock-block-action' )
+						->numParams( count( $actions ) )
+						->rawParams( $this->context->getLanguage()->listToText( $actions ) )->text();
+				}
 
-				// @phan-suppress-next-line SecurityCheck-XSS the restrictions contains raw params, false positive
 				$params[6] = Message::rawParam( $this->context->getLanguage()->listToText( $restrictions ) );
 			}
 		}
@@ -198,7 +220,7 @@ class BlockLogFormatter extends LogFormatter {
 	/**
 	 * Translate a block log flag if possible
 	 *
-	 * @param int $flag Flag to translate
+	 * @param string $flag Flag to translate
 	 * @param Language $lang Language object to use
 	 * @return string
 	 */
@@ -251,7 +273,7 @@ class BlockLogFormatter extends LogFormatter {
 		if ( $subtype === 'block' || $subtype === 'reblock' ) {
 			// Defaults for old log entries missing some fields
 			$params += [
-				'5::duration' => 'infinite',
+				'5::duration' => 'infinity',
 				'6:array:flags' => [],
 			];
 
@@ -262,8 +284,11 @@ class BlockLogFormatter extends LogFormatter {
 					: explode( ',', $params['6:array:flags'] );
 			}
 
-			if ( !wfIsInfinity( $params['5::duration'] ) ) {
-				$ts = wfTimestamp( TS_UNIX, $entry->getTimestamp() );
+			if ( wfIsInfinity( $params['5::duration'] ) ) {
+				// Normalize all possible values to one for pre-T241709 rows
+				$params['5::duration'] = 'infinity';
+			} else {
+				$ts = (int)wfTimestamp( TS_UNIX, $entry->getTimestamp() );
 				$expiry = strtotime( $params['5::duration'], $ts );
 				if ( $expiry !== false && $expiry > 0 ) {
 					$params[':timestamp:expiry'] = $expiry;
@@ -292,6 +317,7 @@ class BlockLogFormatter extends LogFormatter {
 		}
 
 		if ( isset( $ret['restrictions']['namespaces'] ) ) {
+			// @phan-suppress-next-line PhanTypeMismatchArgument False positive
 			ApiResult::setIndexedTagName( $ret['restrictions']['namespaces'], 'ns' );
 		}
 

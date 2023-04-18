@@ -33,9 +33,15 @@ class user_logout_options {
 	}
 
 	function getOptionsSupported() {
-		return array(gettext('Login form') => array('key'			 => 'user_logout_login_form', 'type'		 => OPTION_TYPE_RADIO,
-										'buttons'	 => array(gettext('None') => 0, gettext('Form') => 1, gettext('Colorbox') => 2),
-										'desc'		 => gettext('If the user is not logged-in display an <em>in-line</em> logon form or a link to a modal <em>Colorbox</em> form.'))
+		return array(gettext(
+								'Login form') => array(
+						'key' => 'user_logout_login_form',
+						'type' => OPTION_TYPE_RADIO,
+						'buttons' => array(
+								gettext('None') => 0,
+								gettext('Form') => 1,
+								gettext('Colorbox') => 2),
+						'desc' => gettext('If the user is not logged-in display an <em>in-line</em> logon form or a link to a modal <em>Colorbox</em> form.'))
 		);
 	}
 
@@ -45,57 +51,6 @@ class user_logout_options {
 
 }
 
-if (in_context(ZP_INDEX)) {
-	if (isset($_GET['userlog'])) { // process the logout.
-		if ($_GET['userlog'] == 0) {
-			if (!$location = Zenphoto_Authority::handleLogout()) {
-				$__redirect = array();
-				if (in_context(ZP_ALBUM)) {
-					$__redirect['album'] = $_zp_current_album->name;
-				}
-				if (in_context(ZP_IMAGE)) {
-					$__redirect['image'] = $_zp_current_image->filename;
-				}
-				if (in_context(ZP_ZENPAGE_PAGE)) {
-					$__redirect['title'] = $_zp_current_zenpage_page->getTitlelink();
-				}
-				if (in_context(ZP_ZENPAGE_NEWS_ARTICLE)) {
-					$__redirect['title'] = $_zp_current_zenpage_news->getTitlelink();
-				}
-				if (in_context(ZP_ZENPAGE_NEWS_CATEGORY)) {
-					$__redirect['category'] = $_zp_current_category->getTitlelink();
-				}
-				if (isset($_GET['p'])) {
-					$__redirect['p'] = sanitize($_GET['p']);
-				}
-				if (isset($_GET['searchfields'])) {
-					$__redirect['searchfields'] = sanitize($_GET['searchfields']);
-				}
-				if (isset($_GET['words'])) {
-					$__redirect['words'] = sanitize($_GET['words']);
-				}
-				if (isset($_GET['date'])) {
-					$__redirect['date'] = sanitize($_GET['date']);
-				}
-				if (isset($_GET['title'])) {
-					$__redirect['title'] = sanitize($_GET['title']);
-				}
-				if (isset($_GET['page'])) {
-					$__redirect['page'] = sanitize($_GET['page']);
-				}
-
-				$params = '';
-				if (!empty($__redirect)) {
-					foreach ($__redirect as $param => $value) {
-						$params .= '&' . $param . '=' . $value;
-					}
-				}
-				$location = FULLWEBPATH . '/index.php?fromlogout' . $params;
-			}
-			redirectURL($location);
-		}
-	}
-}
 
 /**
  * Prints the logout link if the user is logged in.
@@ -110,16 +65,11 @@ if (in_context(ZP_INDEX)) {
  * @param string $logouttext optional replacement text for "Logout"
  */
 function printUserLogin_out($before = '', $after = '', $showLoginForm = NULL, $logouttext = NULL) {
-	global $_zp_gallery, $__redirect, $_zp_current_admin_obj, $_zp_login_error, $_zp_gallery_page;
+	global $_zp_gallery, $_zp_current_admin_obj, $_zp_login_error, $_zp_gallery_page;
 	$excludedPages = array('password.php', 'register.php', 'favorites.php', '404.php');
 	$logintext = gettext('Login');
-	if (is_null($logouttext))
+	if (is_null($logouttext)) {
 		$logouttext = gettext("Logout");
-	$params = array("'userlog=0'");
-	if (!empty($__redirect)) {
-		foreach ($__redirect as $param => $value) {
-			$params[] .= "'" . $param . '=' . urlencode($value) . "'";
-		}
 	}
 	if (is_null($showLoginForm)) {
 		$showLoginForm = getOption('user_logout_login_form');
@@ -129,7 +79,7 @@ function printUserLogin_out($before = '', $after = '', $showLoginForm = NULL, $l
 			return;
 		}
 	} 
-	$cookies = Zenphoto_Authority::getAuthCookies();
+	$cookies = Authority::getAuthCookies();
 	if (empty($cookies) || !zp_loggedin()) {
 		if (!in_array($_zp_gallery_page, $excludedPages)) {
 			switch ($showLoginForm) {
@@ -174,11 +124,15 @@ function printUserLogin_out($before = '', $after = '', $showLoginForm = NULL, $l
 			}
 		}
 	} else {
-		if ($before) { echo '<span class="beforetext">' . html_encodeTagged($before) . '</span>'; }
-		$logoutlink = "javascript:launchScript('" . FULLWEBPATH . "/',[" . implode(',', $params) . "]);";
+		if ($before) { 
+			echo '<span class="beforetext">' . html_encodeTagged($before) . '</span>';
+		}
+		$logoutlink = Authority::getLogoutURL('frontend');
 		?>
 		<a class="logoutlink" href="<?php echo $logoutlink; ?>" title="<?php echo $logouttext; ?>"><?php echo $logouttext; ?></a>
-		<?php if ($after) { echo '<span class="aftertext">' . html_encodeTagged($after) . '</span>'; }
+		<?php 
+		if ($after) { 
+			echo '<span class="aftertext">' . html_encodeTagged($after) . '</span>'; 
+		}
 	}
 }
-?>

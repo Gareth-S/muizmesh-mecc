@@ -8,7 +8,7 @@
 // force UTF-8 Ø
 
 define('OFFSET_PATH', 3);
-require_once(dirname(dirname(dirname(__FILE__))) . '/functions.php');
+require_once(dirname(dirname(dirname(__FILE__))) . '/functions/functions.php');
 if (getOption('gmap_sessions')) {
 	zp_session_start();
 }
@@ -33,7 +33,7 @@ header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
 				} else {
 					$data = gzuncompress($param);
 				}
-				$map_data = sanitize(unserialize($data), 4);
+				$map_data = sanitize(unserialize($data, ['allowed_classes' => false]), 4);
 			}
 		}
 

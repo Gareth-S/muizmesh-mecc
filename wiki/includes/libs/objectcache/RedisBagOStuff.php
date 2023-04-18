@@ -85,7 +85,8 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 
 		$this->automaticFailover = $params['automaticFailover'] ?? true;
 
-		$this->attrMap[self::ATTR_SYNCWRITES] = self::QOS_SYNCWRITES_NONE;
+		// ...and uses rdb snapshots (redis.conf default)
+		$this->attrMap[self::ATTR_DURABILITY] = self::QOS_DURABILITY_DISK;
 	}
 
 	protected function doGet( $key, $flags = 0, &$casToken = null ) {
@@ -100,22 +101,27 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 		$e = null;
 		try {
 			$blob = $conn->get( $key );
-			if ( $getToken && $blob !== false ) {
+			if ( $blob !== false ) {
+				$value = $this->unserialize( $blob );
+				$valueSize = strlen( $blob );
+			} else {
+				$value = false;
+				$valueSize = false;
+			}
+			if ( $getToken && $value !== false ) {
 				$casToken = $blob;
 			}
-			$result = $this->unserialize( $blob );
-			$valueSize = strlen( $blob );
 		} catch ( RedisException $e ) {
-			$result = false;
+			$value = false;
 			$valueSize = false;
 			$this->handleException( $conn, $e );
 		}
 
 		$this->logRequest( 'get', $key, $conn->getServer(), $e );
 
-		$this->updateOpStats( self::METRIC_OP_GET, [ $key => [ null, $valueSize ] ] );
+		$this->updateOpStats( self::METRIC_OP_GET, [ $key => [ 0, $valueSize ] ] );
 
-		return $result;
+		return $value;
 	}
 
 	protected function doSet( $key, $value, $exptime = 0, $flags = 0 ) {
@@ -142,7 +148,7 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 
 		$this->logRequest( 'set', $key, $conn->getServer(), $e );
 
-		$this->updateOpStats( self::METRIC_OP_SET, [ $key => [ $valueSize, null ] ] );
+		$this->updateOpStats( self::METRIC_OP_SET, [ $key => [ $valueSize, 0 ] ] );
 
 		return $result;
 	}
@@ -225,7 +231,7 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 			} else {
 				$valueSize = false;
 			}
-			$valueSizesByKey[$key] = [ null, $valueSize ];
+			$valueSizesByKey[$key] = [ 0, $valueSize ];
 		}
 
 		$this->updateOpStats( self::METRIC_OP_GET, $valueSizesByKey );
@@ -268,7 +274,7 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 					} else {
 						$conn->set( $key, $serialized );
 					}
-					$valueSizesByKey[$key] = [ strlen( $serialized ), null ];
+					$valueSizesByKey[$key] = [ strlen( $serialized ), 0 ];
 				}
 				$batchResult = $conn->exec();
 				if ( $batchResult === false ) {
@@ -419,7 +425,7 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 
 		$this->logRequest( 'add', $key, $conn->getServer(), $result );
 
-		$this->updateOpStats( self::METRIC_OP_ADD, [ $key => [ $valueSize, null ] ] );
+		$this->updateOpStats( self::METRIC_OP_ADD, [ $key => [ $valueSize, 0 ] ] );
 
 		return $result;
 	}
@@ -470,6 +476,37 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 		$this->updateOpStats( self::METRIC_OP_DECR, [ $key ] );
 
 		return $result;
+	}
+
+	protected function doIncrWithInit( $key, $exptime, $step, $init, $flags ) {
+		$conn = $this->getConnection( $key );
+		if ( !$conn ) {
+			return false;
+		}
+
+		$ttl = $this->getExpirationAsTTL( $exptime );
+
+		try {
+			if ( $init === $step && $exptime == self::TTL_INDEFINITE ) {
+				$newValue = $conn->incrBy( $key, $step );
+			} else {
+				$conn->multi( Redis::PIPELINE );
+				$conn->set(
+					$key,
+					(string)( $init - $step ),
+					$ttl ? [ 'nx', 'ex' => $ttl ] : [ 'nx' ]
+				);
+				$conn->incrBy( $key, $step );
+				$batchResult = $conn->exec();
+				$newValue = ( $batchResult === false ) ? false : $batchResult[1];
+				$this->logRequest( 'incrWithInit', $key, $conn->getServer(), $newValue === false );
+			}
+		} catch ( RedisException $e ) {
+			$newValue = false;
+			$this->handleException( $conn, $e );
+		}
+
+		return $newValue;
 	}
 
 	protected function doChangeTTL( $key, $exptime, $flags ) {
@@ -578,7 +615,7 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 	 * @param string $op
 	 * @param string $keys
 	 * @param string $server
-	 * @param Exception|true|null $e
+	 * @param Exception|bool|null $e
 	 */
 	public function logRequest( $op, $keys, $server, $e = null ) {
 		$this->debug( "$op($keys) on $server: " . ( $e ? "failure" : "success" ) );
@@ -589,6 +626,7 @@ class RedisBagOStuff extends MediumSpecificBagOStuff {
 	}
 
 	protected function convertGenericKey( $key ) {
-		return $key; // short-circuit; already uses "generic" keys
+		// short-circuit; already uses "generic" keys
+		return $key;
 	}
 }

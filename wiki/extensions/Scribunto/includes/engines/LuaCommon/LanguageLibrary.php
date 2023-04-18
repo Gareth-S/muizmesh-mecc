@@ -46,11 +46,10 @@ class Scribunto_LuaLanguageLibrary extends Scribunto_LuaLibraryBase {
 		foreach ( $statics as $name ) {
 			$lib[$name] = [ $this, $name ];
 		}
-		$ths = $this;
 		foreach ( $methods as $name ) {
-			$lib[$name] = function () use ( $ths, $name ) {
+			$lib[$name] = function () use ( $name ) {
 				$args = func_get_args();
-				return $ths->languageMethod( $name, $args );
+				return $this->languageMethod( $name, $args );
 			};
 		}
 		return $this->getEngine()->registerInterface( 'mw.language.lua', $lib );
@@ -132,7 +131,7 @@ class Scribunto_LuaLanguageLibrary extends Scribunto_LuaLibraryBase {
 	 * @internal
 	 * @param null|string $inLanguage
 	 * @param null|string $include
-	 * @return array[][]
+	 * @return string[][]
 	 */
 	public function fetchLanguageNames( $inLanguage, $include ) {
 		$this->checkTypeOptional( 'fetchLanguageNames', 1, $inLanguage, 'string', null );
@@ -283,7 +282,7 @@ class Scribunto_LuaLanguageLibrary extends Scribunto_LuaLibraryBase {
 				$parserOptions = $this->getParserOptions();
 				if ( $parserOptions->getInterfaceMessage() ) {
 					$genderCache = MediaWikiServices::getInstance()->getGenderCache();
-					$gender = $genderCache->getGenderOf( $parserOptions->getUser(), __METHOD__ );
+					$gender = $genderCache->getGenderOf( $parserOptions->getUserIdentity(), __METHOD__ );
 				}
 			}
 		}
@@ -409,7 +408,6 @@ class Scribunto_LuaLanguageLibrary extends Scribunto_LuaLibraryBase {
 		$this->checkTypeOptional( 'formatDuration', 2, $args[1], 'table', [] );
 
 		list( $seconds, $chosenIntervals ) = $args;
-		$langcode = $lang->getCode();
 		$chosenIntervals = array_values( $chosenIntervals );
 
 		$ret = $lang->formatDuration( $seconds, $chosenIntervals );
@@ -428,7 +426,6 @@ class Scribunto_LuaLanguageLibrary extends Scribunto_LuaLibraryBase {
 		$this->checkTypeOptional( 'getDurationIntervals', 2, $args[1], 'table', [] );
 
 		list( $seconds, $chosenIntervals ) = $args;
-		$langcode = $lang->getCode();
 		$chosenIntervals = array_values( $chosenIntervals );
 
 		$ret = $lang->getDurationIntervals( $seconds, $chosenIntervals );

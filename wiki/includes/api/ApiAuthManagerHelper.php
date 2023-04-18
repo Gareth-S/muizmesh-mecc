@@ -27,6 +27,7 @@ use MediaWiki\Auth\AuthManager;
 use MediaWiki\Auth\CreateFromLoginAuthenticationRequest;
 use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\MediaWikiServices;
+use Wikimedia\ParamValidator\ParamValidator;
 
 /**
  * Helper class for AuthManager-using API modules. Intended for use via
@@ -111,9 +112,11 @@ class ApiAuthManagerHelper {
 
 			case AuthManager::SEC_REAUTH:
 				$this->module->dieWithError( 'apierror-reauthenticate' );
+				// dieWithError prevents continuation
 
 			case AuthManager::SEC_FAIL:
 				$this->module->dieWithError( 'apierror-cannotreauthenticate' );
+				// dieWithError prevents continuation
 
 			default:
 				throw new UnexpectedValueException( "Unknown status \"$status\"" );
@@ -128,7 +131,7 @@ class ApiAuthManagerHelper {
 	 */
 	public static function blacklistAuthenticationRequests( array $reqs, array $remove ) {
 		if ( $remove ) {
-			$remove = array_flip( $remove );
+			$remove = array_fill_keys( $remove, true );
 			$reqs = array_filter( $reqs, static function ( $req ) use ( $remove ) {
 				return !isset( $remove[get_class( $req )] );
 			} );
@@ -149,7 +152,7 @@ class ApiAuthManagerHelper {
 		// Filter requests, if requested to do so
 		$wantedRequests = null;
 		if ( isset( $params['requests'] ) ) {
-			$wantedRequests = array_flip( $params['requests'] );
+			$wantedRequests = array_fill_keys( $params['requests'], true );
 		} elseif ( isset( $params['request'] ) ) {
 			$wantedRequests = [ $params['request'] => true ];
 		}
@@ -361,34 +364,34 @@ class ApiAuthManagerHelper {
 	public static function getStandardParams( $action, ...$wantedParams ) {
 		$params = [
 			'requests' => [
-				ApiBase::PARAM_TYPE => 'string',
-				ApiBase::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_TYPE => 'string',
+				ParamValidator::PARAM_ISMULTI => true,
 				ApiBase::PARAM_HELP_MSG => [ 'api-help-authmanagerhelper-requests', $action ],
 			],
 			'request' => [
-				ApiBase::PARAM_TYPE => 'string',
-				ApiBase::PARAM_REQUIRED => true,
+				ParamValidator::PARAM_TYPE => 'string',
+				ParamValidator::PARAM_REQUIRED => true,
 				ApiBase::PARAM_HELP_MSG => [ 'api-help-authmanagerhelper-request', $action ],
 			],
 			'messageformat' => [
-				ApiBase::PARAM_DFLT => 'wikitext',
-				ApiBase::PARAM_TYPE => [ 'html', 'wikitext', 'raw', 'none' ],
+				ParamValidator::PARAM_DEFAULT => 'wikitext',
+				ParamValidator::PARAM_TYPE => [ 'html', 'wikitext', 'raw', 'none' ],
 				ApiBase::PARAM_HELP_MSG => 'api-help-authmanagerhelper-messageformat',
 			],
 			'mergerequestfields' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => 'api-help-authmanagerhelper-mergerequestfields',
 			],
 			'preservestate' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => 'api-help-authmanagerhelper-preservestate',
 			],
 			'returnurl' => [
-				ApiBase::PARAM_TYPE => 'string',
+				ParamValidator::PARAM_TYPE => 'string',
 				ApiBase::PARAM_HELP_MSG => 'api-help-authmanagerhelper-returnurl',
 			],
 			'continue' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => 'api-help-authmanagerhelper-continue',
 			],
 		];

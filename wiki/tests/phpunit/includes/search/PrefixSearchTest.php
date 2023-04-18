@@ -1,5 +1,7 @@
 <?php
 
+use MediaWiki\MainConfigNames;
+
 /**
  * @group Search
  * @group Database
@@ -34,9 +36,9 @@ class PrefixSearchTest extends MediaWikiLangTestCase {
 
 		$this->insertPage( 'User:Example' );
 
-		$this->setMwGlobals( [
-			'wgExtraNamespaces' => [ self::NS_NONCAP => 'NonCap' ],
-			'wgCapitalLinkOverrides' => [ self::NS_NONCAP => false ],
+		$this->overrideConfigValues( [
+			MainConfigNames::ExtraNamespaces => [ self::NS_NONCAP => 'NonCap' ],
+			MainConfigNames::CapitalLinkOverrides => [ self::NS_NONCAP => false ],
 		] );
 
 		$this->insertPage( Title::makeTitle( self::NS_NONCAP, 'Bar' ) );
@@ -44,7 +46,7 @@ class PrefixSearchTest extends MediaWikiLangTestCase {
 		$this->insertPage( Title::makeTitle( self::NS_NONCAP, 'sandbox' ) );
 	}
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		if ( !$this->isWikitextNS( NS_MAIN ) ) {
@@ -52,26 +54,25 @@ class PrefixSearchTest extends MediaWikiLangTestCase {
 		}
 
 		// Avoid special pages from extensions interfering with the tests
-		$this->setMwGlobals( [
-			'wgSpecialPages' => [],
-			'wgHooks' => [],
-			'wgExtraNamespaces' => [ self::NS_NONCAP => 'NonCap' ],
-			'wgCapitalLinkOverrides' => [ self::NS_NONCAP => false ],
+		$this->overrideConfigValues( [
+			MainConfigNames::SpecialPages => [],
+			MainConfigNames::Hooks => [],
+			MainConfigNames::ExtraNamespaces => [ self::NS_NONCAP => 'NonCap' ],
+			MainConfigNames::CapitalLinkOverrides => [ self::NS_NONCAP => false ],
 		] );
 	}
 
 	protected function searchProvision( array $results = null ) {
 		if ( $results === null ) {
-			$this->setMwGlobals( 'wgHooks', [] );
+			$this->overrideConfigValue( MainConfigNames::Hooks, [] );
 		} else {
-			$this->setMwGlobals( 'wgHooks', [
-				'PrefixSearchBackend' => [
-					static function ( $namespaces, $search, $limit, &$srchres ) use ( $results ) {
-						$srchres = $results;
-						return false;
-					}
-				],
-			] );
+			$this->setTemporaryHook(
+				'PrefixSearchBackend',
+				static function ( $namespaces, $search, $limit, &$srchres ) use ( $results ) {
+					$srchres = $results;
+					return false;
+				}
+			);
 		}
 	}
 
@@ -190,16 +191,9 @@ class PrefixSearchTest extends MediaWikiLangTestCase {
 	 * @covers PrefixSearch::searchBackend
 	 */
 	public function testSearch( array $case ) {
-		// FIXME: fails under postgres
-		$this->markTestSkippedIfDbType( 'postgres' );
 		$this->searchProvision( null );
 
 		$namespaces = $case['namespaces'] ?? [];
-
-		if ( wfGetDB( DB_REPLICA )->getType() === 'postgres' ) {
-			// Postgres will sort lexicographically on utf8 code units (" " before "/")
-			sort( $case['results'], SORT_STRING );
-		}
 
 		$searcher = new StringPrefixSearch;
 		$results = $searcher->search( $case['query'], 3, $namespaces );
@@ -216,19 +210,12 @@ class PrefixSearchTest extends MediaWikiLangTestCase {
 	 * @covers PrefixSearch::searchBackend
 	 */
 	public function testSearchWithOffset( array $case ) {
-		// FIXME: fails under postgres
-		$this->markTestSkippedIfDbType( 'postgres' );
 		$this->searchProvision( null );
 
 		$namespaces = $case['namespaces'] ?? [];
 
 		$searcher = new StringPrefixSearch;
 		$results = $searcher->search( $case['query'], 3, $namespaces, 1 );
-
-		if ( wfGetDB( DB_REPLICA )->getType() === 'postgres' ) {
-			// Postgres will sort lexicographically on utf8 code units (" " before "/")
-			sort( $case['results'], SORT_STRING );
-		}
 
 		// We don't expect the first result when offsetting
 		array_shift( $case['results'] );

@@ -1,5 +1,6 @@
 <?php
 
+#[\AllowDynamicProperties]
 class TestDeprecatedClass {
 
 	use DeprecationHelper;
@@ -9,6 +10,8 @@ class TestDeprecatedClass {
 	private $privateDeprecated = 1;
 	private $privateNonDeprecated = 1;
 	private $fallbackDeprecated = 1;
+
+	private $foo = 'FOO';
 
 	public function __construct() {
 		$this->deprecatePublicProperty( 'protectedDeprecated', '1.23' );
@@ -21,6 +24,10 @@ class TestDeprecatedClass {
 			function ( $value ) {
 				$this->fallbackDeprecated = $value;
 			}
+		);
+		$this->deprecatePublicPropertyFallback( 'fallbackDeprecatedMethodName', '1.26',
+			'getFoo',
+			'setFoo'
 		);
 		$this->deprecatePublicPropertyFallback( 'fallbackGetterOnly', '1.25',
 			static function () {
@@ -45,4 +52,11 @@ class TestDeprecatedClass {
 		];
 	}
 
+	public function getFoo() {
+		return $this->foo;
+	}
+
+	public function setFoo( $foo ) {
+		$this->foo = $foo;
+	}
 }

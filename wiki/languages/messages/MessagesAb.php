@@ -1,11 +1,10 @@
 <?php
-/** Abkhazian (Аҧсшәа)
+/** Abkhazian (аԥсшәа)
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
- *
+ * @ingroup Languages
  */
 
 $fallback = 'ru';
@@ -64,7 +63,7 @@ $specialPageAliases = [
 	'Newpages'                  => [ 'АдаҟьақәаҾыц' ],
 	'Randompage'                => [ 'Машәырлатәи' ],
 	'Recentchanges'             => [ 'АрҽеираҾыцқәа' ],
-	'Search'                    => [ 'Аҧшаара' ],
+	'Search'                    => [ 'Аԥшаара', 'Аҧшаара' ],
 	'Specialpages'              => [ 'ЦастәиАдаҟьақәа' ],
 	'Upload'                    => [ 'Аҭагалара' ],
 ];
@@ -76,4 +75,4 @@ $magicWords = [
 	'special'                   => [ '0', 'цастәи', 'служебная', 'special' ],
 ];
 
-$linkTrail = '/^([a-zабвгҕдежзӡикқҟлмнопҧрстҭуфхҳцҵчҷҽҿшыҩџьә]+)(.*)$/sDu';
+$linkTrail = '/^([a-zабвгӷҕдежзӡикқҟлмнопԥҧрстҭуфхҳцҵчҷҽҿшыҩџьә]+)(.*)$/sDu';

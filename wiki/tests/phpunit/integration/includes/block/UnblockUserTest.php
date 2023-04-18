@@ -4,7 +4,6 @@ namespace MediaWiki\Tests\Block;
 
 use MediaWiki\Block\DatabaseBlock;
 use MediaWiki\Block\UnblockUserFactory;
-use MediaWiki\MediaWikiServices;
 use MediaWiki\Tests\Unit\Permissions\MockAuthorityTrait;
 use MediaWikiIntegrationTestCase;
 use User;
@@ -26,20 +25,14 @@ class UnblockUserTest extends MediaWikiIntegrationTestCase {
 	 */
 	private $unblockUserFactory;
 
-	public function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		// Prepare users
 		$this->user = $this->getTestUser()->getUser();
 
 		// Prepare factory
-		$this->unblockUserFactory = MediaWikiServices::getInstance()->getUnblockUserFactory();
-	}
-
-	private function convertErrorsArray( $arr ) {
-		return array_map( static function ( $el ) {
-			return $el[0];
-		}, $arr );
+		$this->unblockUserFactory = $this->getServiceContainer()->getUnblockUserFactory();
 	}
 
 	/**
@@ -51,7 +44,7 @@ class UnblockUserTest extends MediaWikiIntegrationTestCase {
 			'address' => $this->user->getName(),
 			'by' => $performer->getUser()
 		] );
-		MediaWikiServices::getInstance()->getDatabaseBlockStore()->insertBlock( $block );
+		$this->getServiceContainer()->getDatabaseBlockStore()->insertBlock( $block );
 
 		$this->assertInstanceOf( DatabaseBlock::class, $this->user->getBlock() );
 		$status = $this->unblockUserFactory->newUnblockUser(
@@ -59,7 +52,7 @@ class UnblockUserTest extends MediaWikiIntegrationTestCase {
 			$performer,
 			'test'
 		)->unblock();
-		$this->assertTrue( $status->isOK() );
+		$this->assertStatusOK( $status );
 		$this->assertNotInstanceOf(
 			DatabaseBlock::class,
 			User::newFromName(
@@ -79,12 +72,10 @@ class UnblockUserTest extends MediaWikiIntegrationTestCase {
 			$this->mockRegisteredUltimateAuthority(),
 			'test'
 		)->unblock();
-		$this->assertFalse( $status->isOK() );
+		$this->assertStatusNotOK( $status );
 		$this->assertContains(
 			'ipb_cant_unblock',
-			$this->convertErrorsArray(
-				$status->getErrorsArray()
-			)
+			array_column( $status->getErrorsArray(), 0 )
 		);
 	}
 }

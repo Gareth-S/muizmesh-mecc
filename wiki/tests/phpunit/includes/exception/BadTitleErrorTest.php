@@ -6,12 +6,10 @@
 class BadTitleErrorTest extends MediaWikiIntegrationTestCase {
 
 	public function testExceptionSetsStatusCode() {
-		$mockOut = $this->getMockBuilder( OutputPage::class )
-			->disableOriginalConstructor()
-			->getMock();
+		$mockOut = $this->createMock( OutputPage::class );
 		$mockOut->expects( $this->once() )
 			->method( 'setStatusCode' )
-			->with( 400 );
+			->with( 404 );
 		$this->setMwGlobals( 'wgOut', $mockOut );
 
 		try {

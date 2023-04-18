@@ -19,6 +19,7 @@
  * @ingroup RevisionDelete
  */
 
+use MediaWiki\Page\PageIdentity;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\LBFactory;
 
@@ -44,7 +45,7 @@ class RevDelFileList extends RevDelList {
 
 	/**
 	 * @param IContextSource $context
-	 * @param Title $title
+	 * @param PageIdentity $page
 	 * @param array $ids
 	 * @param LBFactory $lbFactory
 	 * @param HtmlCacheUpdater $htmlCacheUpdater
@@ -52,13 +53,13 @@ class RevDelFileList extends RevDelList {
 	 */
 	public function __construct(
 		IContextSource $context,
-		Title $title,
+		PageIdentity $page,
 		array $ids,
 		LBFactory $lbFactory,
 		HtmlCacheUpdater $htmlCacheUpdater,
 		RepoGroup $repoGroup
 	) {
-		parent::__construct( $context, $title, $ids, $lbFactory );
+		parent::__construct( $context, $page, $ids, $lbFactory );
 		$this->htmlCacheUpdater = $htmlCacheUpdater;
 		$this->repoGroup = $repoGroup;
 	}
@@ -86,7 +87,7 @@ class RevDelFileList extends RevDelList {
 	public function doQuery( $db ) {
 		$archiveNames = [];
 		foreach ( $this->ids as $timestamp ) {
-			$archiveNames[] = $timestamp . '!' . $this->title->getDBkey();
+			$archiveNames[] = $timestamp . '!' . $this->page->getDBkey();
 		}
 
 		$oiQuery = OldLocalFile::getQueryInfo();
@@ -94,7 +95,7 @@ class RevDelFileList extends RevDelList {
 			$oiQuery['tables'],
 			$oiQuery['fields'],
 			[
-				'oi_name' => $this->title->getDBkey(),
+				'oi_name' => $this->page->getDBkey(),
 				'oi_archive_name' => $archiveNames
 			],
 			__METHOD__,
@@ -138,14 +139,14 @@ class RevDelFileList extends RevDelList {
 	}
 
 	public function doPostCommitUpdates( array $visibilityChangeMap ) {
-		$file = $this->repoGroup->getLocalRepo()->newFile( $this->title );
+		$file = $this->repoGroup->getLocalRepo()->newFile( $this->page );
 		$file->purgeCache();
 		$file->purgeDescription();
 
 		// Purge full images from cache
 		$purgeUrls = [];
 		foreach ( $this->ids as $timestamp ) {
-			$archiveName = $timestamp . '!' . $this->title->getDBkey();
+			$archiveName = $timestamp . '!' . $this->page->getDBkey();
 			$file->purgeOldThumbnails( $archiveName );
 			$purgeUrls[] = $file->getArchiveUrl( $archiveName );
 		}

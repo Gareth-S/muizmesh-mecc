@@ -24,7 +24,7 @@
 namespace MediaWiki\Session;
 
 use MediaWiki\MediaWikiServices;
-use MediaWiki\User\UserFactory;
+use MediaWiki\User\UserRigorOptions;
 use User;
 
 /**
@@ -58,7 +58,8 @@ final class UserInfo {
 	private $user = null;
 
 	private function __construct( ?User $user, $verified ) {
-		if ( $user && $user->isAnon() && !User::isUsableName( $user->getName() ) ) {
+		$userNameUtils = MediaWikiServices::getInstance()->getUserNameUtils();
+		if ( $user && $user->isAnon() && !$userNameUtils->isUsable( $user->getName() ) ) {
 			$this->verified = true;
 			$this->user = null;
 		} else {
@@ -105,7 +106,7 @@ final class UserInfo {
 	public static function newFromName( $name, $verified = false ) {
 		$user = MediaWikiServices::getInstance()->getUserFactory()->newFromName(
 			(string)$name,
-			UserFactory::RIGOR_USABLE
+			UserRigorOptions::RIGOR_USABLE
 		);
 		if ( !$user ) {
 			throw new \InvalidArgumentException( 'Invalid user name' );
@@ -169,7 +170,7 @@ final class UserInfo {
 	 * @return User
 	 */
 	public function getUser() {
-		return $this->user === null ? new User : $this->user;
+		return $this->user ?? new User;
 	}
 
 	/**

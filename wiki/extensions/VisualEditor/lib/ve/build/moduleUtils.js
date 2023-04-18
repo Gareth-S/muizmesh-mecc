@@ -56,7 +56,6 @@ const self = module.exports = {
 				}
 				targets[ variant ].push( filepath[ variant ] );
 			}
-
 		} );
 		return targets;
 	},
@@ -128,7 +127,7 @@ const self = module.exports = {
 			}
 
 			// Append target load module to the end of the current list
-			if ( list.indexOf( module ) === -1 ) {
+			if ( !list.includes( module ) ) {
 				list.push( module );
 			}
 		}

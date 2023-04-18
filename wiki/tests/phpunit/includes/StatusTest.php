@@ -1,5 +1,6 @@
 <?php
 
+use Wikimedia\Message\MessageValue;
 use Wikimedia\TestingAccessWrapper;
 
 /**
@@ -168,7 +169,7 @@ class StatusTest extends MediaWikiLangTestCase {
 		$this->assertSame( count( $messages ), count( $warnings ) );
 		foreach ( $messages as $key => $message ) {
 			$expectedArray = array_merge( [ $message->getKey() ], $message->getParams() );
-			$this->assertEquals( $warnings[$key], $expectedArray );
+			$this->assertEquals( $expectedArray, $warnings[$key] );
 		}
 	}
 
@@ -191,7 +192,7 @@ class StatusTest extends MediaWikiLangTestCase {
 		$this->assertSame( count( $messages ), count( $errors ) );
 		foreach ( $messages as $key => $message ) {
 			$expectedArray = array_merge( [ $message->getKey() ], $message->getParams() );
-			$this->assertEquals( $errors[$key], $expectedArray );
+			$this->assertEquals( $expectedArray, $errors[$key] );
 		}
 	}
 
@@ -213,9 +214,9 @@ class StatusTest extends MediaWikiLangTestCase {
 		$this->assertSame( count( $messages ), count( $errors ) );
 		foreach ( $messages as $key => $message ) {
 			$expectedArray = array_merge( [ $message->getKey() ], $message->getParams() );
-			$this->assertEquals( $errors[$key], $expectedArray );
+			$this->assertEquals( $expectedArray, $errors[$key] );
 		}
-		$this->assertFalse( $status->isOK() );
+		$this->assertStatusNotOK( $status );
 	}
 
 	/**
@@ -282,9 +283,13 @@ class StatusTest extends MediaWikiLangTestCase {
 		$status = new Status();
 		$status->fatal( 'bad' );
 		$status->fatal( wfMessage( 'bad-msg' ) );
+		$status->fatal( new MessageValue( 'bad-msg-value' ) );
 		$this->assertTrue( $status->hasMessage( 'bad' ) );
 		$this->assertTrue( $status->hasMessage( 'bad-msg' ) );
 		$this->assertTrue( $status->hasMessage( wfMessage( 'bad-msg' ) ) );
+		$this->assertTrue( $status->hasMessage( wfMessage( 'bad-msg-value' ) ) );
+		$this->assertTrue( $status->hasMessage( new MessageValue( 'bad-msg' ) ) );
+		$this->assertTrue( $status->hasMessage( new MessageValue( 'bad-msg-value' ) ) );
 		$this->assertFalse( $status->hasMessage( 'good' ) );
 	}
 
@@ -507,8 +512,8 @@ class StatusTest extends MediaWikiLangTestCase {
 		];
 
 		$status = new Status();
-		$status->warning( new Message( 'fooBar!', [ 'foo', 'bar' ] ) );
-		$status->warning( new Message( 'fooBar2!' ) );
+		$status->warning( new MessageValue( 'fooBar!', [ 'foo', 'bar' ] ) );
+		$status->warning( new MessageValue( 'fooBar2!' ) );
 		$testCases['2MessageWarnings'] = [
 			$status,
 			[
@@ -532,6 +537,20 @@ class StatusTest extends MediaWikiLangTestCase {
 		$newMessage = new Message( 'key2', [ 'foo2', 'bar2' ] );
 
 		$status->replaceMessage( $message, $newMessage );
+
+		$this->assertEquals( $newMessage, $status->errors[0]['message'] );
+	}
+
+	/**
+	 * @covers Status::replaceMessage
+	 */
+	public function testReplaceMessageByKey() {
+		$status = new Status();
+
+		$status->error( new Message( 'key1', [ 'foo1', 'bar1' ] ) );
+		$newMessage = new Message( 'key2', [ 'foo2', 'bar2' ] );
+
+		$status->replaceMessage( 'key1', $newMessage );
 
 		$this->assertEquals( $newMessage, $status->errors[0]['message'] );
 	}
@@ -737,7 +756,7 @@ class StatusTest extends MediaWikiLangTestCase {
 		$status->fatal( 'bar' );
 
 		$messageLocalizer = $this->getMockBuilder( MessageLocalizer::class )
-			->setMethods( [ 'msg' ] )
+			->onlyMethods( [ 'msg' ] )
 			->getMockForAbstractClass();
 		$messageLocalizer->expects( $this->atLeastOnce() )
 			->method( 'msg' )
@@ -747,7 +766,7 @@ class StatusTest extends MediaWikiLangTestCase {
 		/** @var MessageLocalizer $messageLocalizer */
 		$status->setMessageLocalizer( $messageLocalizer );
 		$status->getWikiText();
-		$status->getWikiText( null, null, 'en' );
+		$status->getWikiText( false, false, 'en' );
 		$status->getWikiText( 'wrap-short', 'wrap-long' );
 	}
 
@@ -904,7 +923,7 @@ class StatusTest extends MediaWikiLangTestCase {
 		$status->error( $message1 );
 		$message2 = new Message( 'foo', [ 1, 2 ] );
 		$status->error( $message2 );
-		$this->assertEquals( count( $status->errors ), 1 );
+		$this->assertCount( 1, $status->errors );
 	}
 
 	/**
@@ -985,4 +1004,35 @@ class StatusTest extends MediaWikiLangTestCase {
 			]
 		], $status->errors );
 	}
+
+	/**
+	 * @covers Status::__toString
+	 */
+	public function testToString() {
+		$loremIpsum = 'Lorem ipsum dolor sit amet, consectetur adipisici elit, sed eiusmod tempor' .
+			' incidunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud ' .
+			'exercitation ullamco laboris nisi ut aliquid ex ea commodi consequat. Quis aute iure ' .
+			'reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.';
+		$abc = [
+			'x' => [ 'a', 'b', 'c' ],
+			'z' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFGHIJKLMNOPQRSTUVWXYZ ' .
+				'ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFGHIJKLMNOPQRSTUVWXYZ '
+		];
+
+		// This is a debug method, we don't care about the exact output. But it shouldn't cause
+		// an error as it's called in various logging code.
+		$this->expectNotToPerformAssertions();
+		(string)Status::newGood();
+		(string)Status::newGood( new MessageValue( 'foo' ) );
+		(string)Status::newFatal( 'foo' );
+		(string)Status::newFatal( 'foo', $loremIpsum, $abc );
+		(string)Status::newFatal( wfMessage( 'foo' ) );
+		(string)( Status::newFatal( 'foo' )->fatal( 'bar' ) );
+
+		$status = Status::newGood();
+		$status->warning( 'foo', $loremIpsum );
+		$status->error( 'bar', $abc );
+		(string)$status;
+	}
+
 }

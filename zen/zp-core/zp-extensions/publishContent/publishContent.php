@@ -12,8 +12,8 @@ function unpublishSubalbums($album) {
 	global $_zp_gallery, $_zp_current_admin_obj;
 	$albums = $album->getAlbums();
 	foreach ($albums as $albumname) {
-		$subalbum = newAlbum($albumname);
-		$subalbum->setShow(false);
+		$subalbum = AlbumBase::newAlbum($albumname);
+		$subalbum->setPublished(false);
 		$subalbum->setLastChangeUser($_zp_current_admin_obj->getUser());
 		$subalbum->save();
 		unpublishSubalbums($subalbum);
@@ -38,8 +38,8 @@ if (isset($_POST['set_defaults'])) {
 		case 'albums':
 			unset($_POST['checkAllAuto']);
 			foreach ($_POST as $key => $albumid) {
-				$album = newAlbum(postIndexDecode($key));
-				$album->setShow(1);
+				$album = AlbumBase::newAlbum(postIndexDecode($key));
+				$album->setPublished(1);
 				$album->setLastChangeUser($_zp_current_admin_obj->getUser());
 				$album->save();
 			}
@@ -49,13 +49,13 @@ if (isset($_POST['set_defaults'])) {
 			foreach ($_POST as $action) {
 				$i = strrpos($action, '_');
 				$imageid = sanitize_numeric(substr($action, $i + 1));
-				$rowi = query_single_row('SELECT * FROM ' . prefix('images') . ' WHERE `id`=' . $imageid);
-				$rowa = query_single_row('SELECT * FROM ' . prefix('albums') . ' WHERE `id`=' . $rowi['albumid']);
-				$album = newAlbum($rowa['folder']);
-				$image = newImage($album, $rowi['filename']);
+				$rowi = $_zp_db->querySingleRow('SELECT * FROM ' . $_zp_db->prefix('images') . ' WHERE `id`=' . $imageid);
+				$rowa = $_zp_db->querySingleRow('SELECT * FROM ' . $_zp_db->prefix('albums') . ' WHERE `id`=' . $rowi['albumid']);
+				$album = AlbumBase::newAlbum($rowa['folder']);
+				$image = Image::newImage($album, $rowi['filename']);
 				switch (substr($action, 0, $i)) {
 					case 'pub':
-						$image->setShow(1);
+						$image->setPublished(1);
 						$image->setLastChangeUser($_zp_current_admin_obj->getUser());
 						$image->save();
 						break;
@@ -70,7 +70,7 @@ if (isset($_POST['set_defaults'])) {
 			$report = 'categories';
 			foreach ($_POST as $key => $titlelink) {
 				$obj = new ZenpageCategory($titlelink);
-				$obj->setShow(1);
+				$obj->setPublished(1);
 				$obj->setLastChangeUser($_zp_current_admin_obj->getUser());
 				$obj->save();
 			}
@@ -79,7 +79,7 @@ if (isset($_POST['set_defaults'])) {
 			$report = 'news';
 			foreach ($_POST as $key => $titlelink) {
 				$obj = new ZenpageNews($titlelink);
-				$obj->setShow(1);
+				$obj->setPublished(1);
 				$obj->setLastChangeUser($_zp_current_admin_obj->getUser());
 				$obj->save();
 			}
@@ -87,7 +87,7 @@ if (isset($_POST['set_defaults'])) {
 		case 'pages':
 			foreach ($_POST as $key => $titlelink) {
 				$obj = new ZenpagePage($titlelink);
-				$obj->setShow(1);
+				$obj->setPublished(1);
 				$obj->setLastChangeUser($_zp_current_admin_obj->getUser());
 				$obj->save();
 			}
@@ -102,7 +102,7 @@ if ($report) {
 		$report = sanitize($_GET['report']);
 	}
 }
-$zenphoto_tabs['overview']['subtabs'] = array(gettext('Content') => FULLWEBPATH . '/' . ZENFOLDER . '/' . PLUGIN_FOLDER . '/publishContent/publishContent.php');
+$_zp_admin_menu['overview']['subtabs'] = array(gettext('Content') => FULLWEBPATH . '/' . ZENFOLDER . '/' . PLUGIN_FOLDER . '/publishContent/publishContent.php');
 printAdminHeader('overview', gettext('Content'));
 datepickerJS();
 ?>
@@ -147,7 +147,7 @@ echo '</head>';
 							$albumidlist .= ' OR ';
 							$albumids .= ' OR ';
 						}
-						$albumidlist .= prefix('images') . '.albumid=' . $ID;
+						$albumidlist .= $_zp_db->prefix('images') . '.albumid=' . $ID;
 						$albumids .= '`id`=' . $ID;
 						$i++;
 					}
@@ -158,7 +158,7 @@ echo '</head>';
 				}
 				if (isset($_GET['propagate_unpublished'])) {
 					foreach ($albumlist as $albumname) {
-						$album = newAlbum($albumname);
+						$album = AlbumBase::newAlbum($albumname);
 						if (!$album->isPublished()) {
 							unpublishSubalbums($album);
 						}
@@ -168,17 +168,17 @@ echo '</head>';
 				}
 
 				$mtime = dateTimeConvert($requestdate, true);
-				$sql = "SELECT `folder`, `id` FROM " . prefix('albums') . ' WHERE `show`="0"' . $albumids;
-				$result = query_full_array($sql);
+				$sql = "SELECT `folder`, `id` FROM " . $_zp_db->prefix('albums') . ' WHERE `show`="0"' . $albumids;
+				$result = $_zp_db->queryFullArray($sql);
 				if (is_array($result)) {
 					foreach ($result as $row) {
 						$publish_albums_list[$row['folder']] = $row['id'];
 					}
 				}
-				$sql = 'SELECT `filename`, ' . prefix('images') . '.id as id, folder FROM ' . prefix('images') . ',' . prefix('albums') . ' WHERE ' .
-								prefix('images') . '.show="0" AND ' . prefix('images') . '.mtime < "' . $mtime . '" AND ' . prefix('albums') . '.id=' .
-								prefix('images') . '.albumid' . $albumidlist;
-				$result = query_full_array($sql);
+				$sql = 'SELECT `filename`, ' . $_zp_db->prefix('images') . '.id as id, folder FROM ' . $_zp_db->prefix('images') . ',' . $_zp_db->prefix('albums') . ' WHERE ' .
+								$_zp_db->prefix('images') . '.show="0" AND ' . $_zp_db->prefix('images') . '.mtime < "' . $mtime . '" AND ' . $_zp_db->prefix('albums') . '.id=' .
+								$_zp_db->prefix('images') . '.albumid' . $albumidlist;
+				$result = $_zp_db->queryFullArray($sql);
 				if (is_array($result)) {
 					foreach ($result as $row) {
 						$publish_images_list[$row['folder']][$row['filename']] = $row['id'];
@@ -223,7 +223,7 @@ echo '</head>';
 					<?php
 				}
 				?>
-				<p class="notebox smallbox"><strong>Note: </strong><?php echo gettext('The number of un-published items does <strong>not</strong> include items that are un-published by <a href="http://www.zenphoto.org/news/an-overview-of-zenphoto-users#rules-of-protection-andvisibility-for-zenphoto-obj">inheritance</a>.'); ?></p>
+				<p class="notebox smallbox"><strong>Note: </strong><?php echo gettext('The number of un-published items does <strong>not</strong> include items that are un-published by <a href="https://www.zenphoto.org/news/an-overview-of-zenphoto-users#rules-of-protection-andvisibility-for-zenphoto-obj">inheritance</a>.'); ?></p>
 				<?php $visible = $report == 'albums' || $report == 'propagate'; ?>
 				<fieldset class="smallbox">
 					<legend><?php
@@ -265,7 +265,7 @@ echo '</head>';
 								<ul class="schedulealbumchecklist">
 									<?php
 									foreach ($publish_albums_list as $analbum => $albumid) {
-										$album = newAlbum($analbum);
+										$album = AlbumBase::newAlbum($analbum);
 										?>
 										<li>
 											<label>
@@ -388,7 +388,7 @@ echo '</head>';
 								<ul class="scheduleimagechecklist">
 									<?php
 									foreach ($publish_images_list as $key => $imagelist) {
-										$album = newAlbum($key);
+										$album = AlbumBase::newAlbum($key);
 										$albumid = $album->getID();
 										$imagelist = array_flip($imagelist);
 										sortArray($imagelist);
@@ -433,7 +433,7 @@ echo '</head>';
 																</td>
 																<td>
 																	<?php 
-																	$image = newImage($album, $display); 
+																	$image = Image::newImage($album, $display); 
 																	printAdminThumb($image, 'large', '', '', '', $image->filename);
 																	?>
 																</td>

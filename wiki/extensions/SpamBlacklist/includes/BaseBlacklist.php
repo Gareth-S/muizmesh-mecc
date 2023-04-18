@@ -1,7 +1,14 @@
 <?php
 
+namespace MediaWiki\Extension\SpamBlacklist;
+
+use Exception;
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Storage\SlotRecord;
+use MediaWiki\Revision\SlotRecord;
+use ObjectCache;
+use TextContent;
+use Title;
+use User;
 
 /**
  * Base class for different kinds of blacklists
@@ -44,8 +51,8 @@ abstract class BaseBlacklist {
 	 * @var array
 	 */
 	private static $blacklistTypes = [
-		'spam' => 'SpamBlacklist',
-		'email' => 'EmailBlacklist',
+		'spam' => SpamBlacklist::class,
+		'email' => EmailBlacklist::class,
 	];
 
 	/**
@@ -103,6 +110,7 @@ abstract class BaseBlacklist {
 	 * @return SpamBlacklist
 	 */
 	public static function getSpamBlacklist() {
+		// @phan-suppress-next-line PhanTypeMismatchReturnSuperType
 		return self::getInstance( 'spam' );
 	}
 
@@ -110,6 +118,7 @@ abstract class BaseBlacklist {
 	 * @return EmailBlacklist
 	 */
 	public static function getEmailBlacklist() {
+		// @phan-suppress-next-line PhanTypeMismatchReturnSuperType
 		return self::getInstance( 'email' );
 	}
 
@@ -444,3 +453,5 @@ abstract class BaseBlacklist {
 		// subclass this
 	}
 }
+
+class_alias( BaseBlacklist::class, 'BaseBlacklist' );

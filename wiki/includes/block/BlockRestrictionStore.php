@@ -22,12 +22,13 @@
 
 namespace MediaWiki\Block;
 
+use MediaWiki\Block\Restriction\ActionRestriction;
 use MediaWiki\Block\Restriction\NamespaceRestriction;
 use MediaWiki\Block\Restriction\PageRestriction;
 use MediaWiki\Block\Restriction\Restriction;
+use MediaWiki\DAO\WikiAwareEntity;
 use MWException;
 use stdClass;
-use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\ILoadBalancer;
 use Wikimedia\Rdbms\IResultWrapper;
 
@@ -39,6 +40,7 @@ class BlockRestrictionStore {
 	private const TYPES_MAP = [
 		PageRestriction::TYPE_ID => PageRestriction::class,
 		NamespaceRestriction::TYPE_ID => NamespaceRestriction::class,
+		ActionRestriction::TYPE_ID => ActionRestriction::class,
 	];
 
 	/**
@@ -47,10 +49,20 @@ class BlockRestrictionStore {
 	private $loadBalancer;
 
 	/**
-	 * @param ILoadBalancer $loadBalancer load balancer for acquiring database connections
+	 * @var string|false
 	 */
-	public function __construct( ILoadBalancer $loadBalancer ) {
+	private $wikiId;
+
+	/**
+	 * @param ILoadBalancer $loadBalancer load balancer for acquiring database connections
+	 * @param string|false $wikiId
+	 */
+	public function __construct(
+		ILoadBalancer $loadBalancer,
+		$wikiId = WikiAwareEntity::LOCAL
+	) {
 		$this->loadBalancer = $loadBalancer;
+		$this->wikiId = $wikiId;
 	}
 
 	/**
@@ -58,15 +70,14 @@ class BlockRestrictionStore {
 	 *
 	 * @since 1.33
 	 * @param int|array $blockId
-	 * @param IDatabase|null $db
 	 * @return Restriction[]
 	 */
-	public function loadByBlockId( $blockId, IDatabase $db = null ) {
+	public function loadByBlockId( $blockId ) {
 		if ( $blockId === null || $blockId === [] ) {
 			return [];
 		}
 
-		$db = $db ?: $this->loadBalancer->getConnectionRef( DB_REPLICA );
+		$db = $this->loadBalancer->getConnectionRef( DB_REPLICA, [], $this->wikiId );
 
 		$result = $db->select(
 			[ 'ipblocks_restrictions', 'page' ],
@@ -104,7 +115,7 @@ class BlockRestrictionStore {
 			return false;
 		}
 
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY, [], $this->wikiId );
 
 		$dbw->insert(
 			'ipblocks_restrictions',
@@ -125,7 +136,7 @@ class BlockRestrictionStore {
 	 * @return bool
 	 */
 	public function update( array $restrictions ) {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY, [], $this->wikiId );
 
 		$dbw->startAtomic( __METHOD__ );
 
@@ -197,7 +208,7 @@ class BlockRestrictionStore {
 
 		$parentBlockId = (int)$parentBlockId;
 
-		$db = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$db = $this->loadBalancer->getConnectionRef( DB_PRIMARY, [], $this->wikiId );
 
 		$db->startAtomic( __METHOD__ );
 
@@ -230,7 +241,7 @@ class BlockRestrictionStore {
 	 * @return bool
 	 */
 	public function delete( array $restrictions ) {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY, [], $this->wikiId );
 		$result = true;
 		foreach ( $restrictions as $restriction ) {
 			if ( !$restriction instanceof Restriction ) {
@@ -260,7 +271,7 @@ class BlockRestrictionStore {
 	 * @return bool
 	 */
 	public function deleteByBlockId( $blockId ) {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY, [], $this->wikiId );
 		return $dbw->delete(
 			'ipblocks_restrictions',
 			[ 'ir_ipb_id' => $blockId ],
@@ -277,7 +288,7 @@ class BlockRestrictionStore {
 	 * @return bool
 	 */
 	public function deleteByParentBlockId( $parentBlockId ) {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY, [], $this->wikiId );
 		return $dbw->deleteJoin(
 			'ipblocks_restrictions',
 			'ipblocks',

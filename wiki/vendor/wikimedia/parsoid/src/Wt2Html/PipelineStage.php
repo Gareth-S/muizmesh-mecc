@@ -3,10 +3,9 @@ declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\Wt2Html;
 
-use DOMDocument;
 use Generator;
-
 use Wikimedia\Parsoid\Config\Env;
+use Wikimedia\Parsoid\DOM\Document;
 use Wikimedia\Parsoid\Tokens\SourceRange;
 use Wikimedia\Parsoid\Wt2Html\TT\TokenHandler;
 
@@ -122,9 +121,12 @@ abstract class PipelineStage {
 	 * will be processed by this pipeline stage and no further input or an EOF
 	 * signal will follow.
 	 *
-	 * @param string|array|DOMDocument $input
+	 * @param string|array|Document $input
 	 * @param ?array $options
-	 * @return array|DOMDocument
+	 *  - atTopLevel: (bool) Whether we are processing the top-level document
+	 *  - sol: (bool) Whether input should be processed in start-of-line context
+	 *  - chunky (bool) Whether we are processing the input chunkily.
+	 * @return array|Document
 	 */
 	abstract public function process( $input, ?array $options = null );
 
@@ -137,8 +139,10 @@ abstract class PipelineStage {
 	 * Implementations that don't consume tokens (ex: Tokenizer, DOMPostProcessor)
 	 * will provide specialized implementations that handle their input type.
 	 *
-	 * @param string|array|DOMDocument $input
+	 * @param string|array|Document $input
 	 * @param ?array $options
+	 *  - atTopLevel: (bool) Whether we are processing the top-level document
+	 *  - sol: (bool) Whether input should be processed in start-of-line context
 	 * @return Generator
 	 */
 	abstract public function processChunkily(

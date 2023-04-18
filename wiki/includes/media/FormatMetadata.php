@@ -113,6 +113,7 @@ class FormatMetadata extends ContextSource {
 		unset( $tags['AuthorsPosition'] );
 		unset( $tags['LocationCreated'] );
 		unset( $tags['LocationShown'] );
+		unset( $tags['GPSAltitudeRef'] );
 
 		foreach ( $tags as $tag => &$vals ) {
 			// This seems ugly to wrap non-array's in an array just to unwrap again,
@@ -142,9 +143,9 @@ class FormatMetadata extends ContextSource {
 			if ( $tag == 'GPSTimeStamp' && count( $vals ) === 3 ) {
 				// hour min sec array
 
-				$h = explode( '/', $vals[0] );
-				$m = explode( '/', $vals[1] );
-				$s = explode( '/', $vals[2] );
+				$h = explode( '/', $vals[0], 2 );
+				$m = explode( '/', $vals[1], 2 );
+				$s = explode( '/', $vals[2], 2 );
 
 				// this should already be validated
 				// when loaded from file, but it could
@@ -159,9 +160,9 @@ class FormatMetadata extends ContextSource {
 				) {
 					continue;
 				}
-				$vals = str_pad( intval( $h[0] / $h[1] ), 2, '0', STR_PAD_LEFT )
-					. ':' . str_pad( intval( $m[0] / $m[1] ), 2, '0', STR_PAD_LEFT )
-					. ':' . str_pad( intval( $s[0] / $s[1] ), 2, '0', STR_PAD_LEFT );
+				$vals = str_pad( (string)( (int)$h[0] / (int)$h[1] ), 2, '0', STR_PAD_LEFT )
+					. ':' . str_pad( (string)( (int)$m[0] / (int)$m[1] ), 2, '0', STR_PAD_LEFT )
+					. ':' . str_pad( (string)( (int)$s[0] / (int)$s[1] ), 2, '0', STR_PAD_LEFT );
 
 				try {
 					$time = wfTimestamp( TS_MW, '1971:01:01 ' . $vals );
@@ -858,9 +859,9 @@ class FormatMetadata extends ContextSource {
 					case 'MaxApertureValue':
 						if ( strpos( $val, '/' ) !== false ) {
 							// need to expand this earlier to calculate fNumber
-							list( $n, $d ) = explode( '/', $val );
+							list( $n, $d ) = explode( '/', $val, 2 );
 							if ( is_numeric( $n ) && is_numeric( $d ) ) {
-								$val = $n / $d;
+								$val = (int)$n / (int)$d;
 							}
 						}
 						if ( is_numeric( $val ) ) {
@@ -901,6 +902,7 @@ class FormatMetadata extends ContextSource {
 									'iimcategory',
 									$val
 								);
+								break;
 							default:
 								$val = $this->literal( $val );
 						}
@@ -1108,18 +1110,16 @@ class FormatMetadata extends ContextSource {
 	 * @param bool|IContextSource $context
 	 * @return string Single value (in wiki-syntax).
 	 * @since 1.23
-	 * @deprecated since 1.36, appears to have no callers
+	 * @deprecated since 1.36, appears to have no callers. Hard deprecated since 1.39.
 	 */
 	public static function flattenArrayContentLang( $vals, $type = 'ul',
 		$noHtml = false, $context = false
 	) {
+		wfDeprecated( __METHOD__, '1.36' );
 		// Allow $noHtml to be omitted.
 		if ( $noHtml instanceof IContextSource ) {
 			$context = $noHtml;
 			$noHtml = false;
-		}
-		if ( $noHtml ) {
-			wfDeprecated( __METHOD__ . ' with $noHtml = true', '1.36' );
 		}
 		$obj = new FormatMetadata;
 		if ( $context ) {
@@ -1166,6 +1166,12 @@ class FormatMetadata extends ContextSource {
 
 			return ""; // paranoia. This should never happen
 		} else {
+			// Check if $vals contains nested arrays
+			$containsNestedArrays = in_array( true, array_map( 'is_array', $vals ), true );
+			if ( $containsNestedArrays ) {
+				wfLogWarning( __METHOD__ . ': Invalid $vals, contains nested arrays: ' . json_encode( $vals ) );
+			}
+
 			/* @todo FIXME: This should hide some of the list entries if there are
 			 * say more than four. Especially if a field is translated into 20
 			 * languages, we don't want to show them all by default
@@ -1173,8 +1179,7 @@ class FormatMetadata extends ContextSource {
 			switch ( $type ) {
 				case 'lang':
 					// Display default, followed by ContentLanguage,
-					// followed by the rest in no particular
-					// order.
+					// followed by the rest in no particular order.
 
 					// Todo: hide some items if really long list.
 
@@ -1185,12 +1190,9 @@ class FormatMetadata extends ContextSource {
 					$defaultLang = false;
 
 					// If default is set, save it for later,
-					// as we don't know if it's equal to
-					// one of the lang codes. (In xmp
-					// you specify the language for a
-					// default property by having both
-					// a default prop, and one in the language
-					// that are identical)
+					// as we don't know if it's equal to one of the lang codes.
+					// (In xmp you specify the language for a default property by having
+					// both a default prop, and one in the language that are identical)
 					if ( isset( $vals['x-default'] ) ) {
 						$defaultItem = $vals['x-default'];
 						unset( $vals['x-default'] );
@@ -1202,15 +1204,12 @@ class FormatMetadata extends ContextSource {
 								$defaultItem = false;
 								$isDefault = true;
 							}
-							$content .= $this->langItem(
-								$vals[$pLang], $pLang,
-								$isDefault, $noHtml );
+							$content .= $this->langItem( $vals[$pLang], $pLang, $isDefault, $noHtml );
 
 							unset( $vals[$pLang] );
 
 							if ( $this->singleLang ) {
-								return Html::rawElement( 'span',
-									[ 'lang' => $pLang ], $vals[$pLang] );
+								return Html::rawElement( 'span', [ 'lang' => $pLang ], $vals[$pLang] );
 							}
 						}
 					}
@@ -1221,17 +1220,13 @@ class FormatMetadata extends ContextSource {
 							$defaultLang = $lang;
 							continue;
 						}
-						$content .= $this->langItem( $item,
-							$lang, false, $noHtml );
+						$content .= $this->langItem( $item, $lang, false, $noHtml );
 						if ( $this->singleLang ) {
-							return Html::rawElement( 'span',
-								[ 'lang' => $lang ], $item );
+							return Html::rawElement( 'span', [ 'lang' => $lang ], $item );
 						}
 					}
 					if ( $defaultItem !== false ) {
-						$content = $this->langItem( $defaultItem,
-								$defaultLang, true, $noHtml ) .
-							$content;
+						$content = $this->langItem( $defaultItem, $defaultLang, true, $noHtml ) . $content;
 						if ( $this->singleLang ) {
 							return $defaultItem;
 						}
@@ -1240,9 +1235,7 @@ class FormatMetadata extends ContextSource {
 						return $content;
 					}
 
-					return '<ul class="metadata-langlist">' .
-					$content .
-					'</ul>';
+					return '<ul class="metadata-langlist">' . $content . '</ul>';
 				case 'ol':
 					if ( $noHtml ) {
 						return "\n#" . implode( "\n#", $vals );
@@ -1272,15 +1265,13 @@ class FormatMetadata extends ContextSource {
 	 */
 	private function langItem( $value, $lang, $default = false, $noHtml = false ) {
 		if ( $lang === false && $default === false ) {
-			throw new MWException( '$lang and $default cannot both '
-				. 'be false.' );
+			throw new MWException( '$lang and $default cannot both be false.' );
 		}
 
 		if ( $noHtml ) {
 			$wrappedValue = $this->literal( $value );
 		} else {
-			$wrappedValue = '<span class="mw-metadata-lang-value">'
-				. $this->literal( $value ) . '</span>';
+			$wrappedValue = '<span class="mw-metadata-lang-value">' . $this->literal( $value ) . '</span>';
 		}
 
 		if ( $lang === false ) {
@@ -1289,9 +1280,7 @@ class FormatMetadata extends ContextSource {
 				return $msg->text() . "\n\n";
 			} /* else */
 
-			return '<li class="mw-metadata-lang-default">'
-				. $msg->text()
-				. "</li>\n";
+			return '<li class="mw-metadata-lang-default">' . $msg->text() . "</li>\n";
 		}
 
 		$lowLang = strtolower( $lang );
@@ -1313,8 +1302,7 @@ class FormatMetadata extends ContextSource {
 			return '*' . $msg->text();
 		} /* else: */
 
-		$item = '<li class="mw-metadata-lang-code-'
-			. $lang;
+		$item = '<li class="mw-metadata-lang-code-' . $lang;
 		if ( $default ) {
 			$item .= ' mw-metadata-lang-default';
 		}
@@ -1366,7 +1354,7 @@ class FormatMetadata extends ContextSource {
 	 * numbers, joins arrays of numbers with commas.
 	 *
 	 * @param mixed $num The value to format
-	 * @param float|int|bool $round Digits to round to or false.
+	 * @param float|int|false $round Digits to round to or false.
 	 * @param string|null $tagName (optional) The name of the tag (for debugging)
 	 * @return mixed A floating point number or whatever we were fed
 	 */
@@ -1388,7 +1376,7 @@ class FormatMetadata extends ContextSource {
 		}
 		if ( preg_match( '/^(-?\d+)\/(\d+)$/', $num, $m ) ) {
 			if ( $m[2] != 0 ) {
-				$newNum = $m[1] / $m[2];
+				$newNum = (int)$m[1] / (int)$m[2];
 				if ( $round !== false ) {
 					$newNum = round( $newNum, $round );
 				}
@@ -1441,7 +1429,7 @@ class FormatMetadata extends ContextSource {
 		/*
 			// https://en.wikipedia.org/wiki/Euclidean_algorithm
 			// Recursive form would be:
-			if( $b == 0 )
+			if ( $b == 0 )
 				return $a;
 			else
 				return gcd( $b, $a % $b );
@@ -1680,15 +1668,13 @@ class FormatMetadata extends ContextSource {
 			}
 			if ( isset( $vals['CiAdrPcode'] ) ) {
 				$postal = '<span class="postal-code">'
-					. $this->literal(
-						$vals['CiAdrPcode'] )
+					. $this->literal( $vals['CiAdrPcode'] )
 					. '</span>';
 			}
 			if ( isset( $vals['CiAdrRegion'] ) ) {
 				// Note this is province/state.
 				$region = '<span class="region">'
-					. $this->literal(
-						$vals['CiAdrRegion'] )
+					. $this->literal( $vals['CiAdrRegion'] )
 					. '</span>';
 			}
 			if ( isset( $vals['CiUrlWork'] ) ) {
@@ -1698,8 +1684,7 @@ class FormatMetadata extends ContextSource {
 			}
 
 			return $this->msg( 'exif-contact-value', $email, $url,
-				$street, $city, $region, $postal, $country,
-				$tel )->text();
+				$street, $city, $region, $postal, $country, $tel )->text();
 		}
 	}
 
@@ -1840,7 +1825,7 @@ class FormatMetadata extends ContextSource {
 			$maxCacheTime
 		);
 
-		$visible = array_flip( self::getVisibleFields() );
+		$visible = array_fill_keys( self::getVisibleFields(), true );
 		foreach ( $extendedMetadata as $key => $value ) {
 			if ( !isset( $visible[strtolower( $key )] ) ) {
 				$extendedMetadata[$key]['hidden'] = '';

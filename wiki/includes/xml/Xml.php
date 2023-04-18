@@ -20,6 +20,8 @@
  * @file
  */
 
+use MediaWiki\Languages\LanguageNameUtils;
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
 
 /**
@@ -181,7 +183,7 @@ class Xml {
 			$timestamp = MWTimestamp::getInstance();
 			$thisMonth = intval( $timestamp->format( 'n' ) );
 			$thisYear = intval( $timestamp->format( 'Y' ) );
-			if ( intval( $encMonth ) > $thisMonth ) {
+			if ( $encMonth > $thisMonth ) {
 				$thisYear--;
 			}
 			$encYear = $thisYear;
@@ -192,7 +194,7 @@ class Xml {
 		return self::label( wfMessage( 'year' )->text(), 'year' ) . ' ' .
 			Html::input( 'year', $encYear, 'number', $inputAttribs ) . ' ' .
 			self::label( wfMessage( 'month' )->text(), 'month' ) . ' ' .
-			self::monthSelector( $encMonth, -1 );
+			self::monthSelector( $encMonth, '-1' );
 	}
 
 	/**
@@ -208,17 +210,18 @@ class Xml {
 	public static function languageSelector( $selected, $customisedOnly = true,
 		$inLanguage = null, $overrideAttrs = [], Message $msg = null
 	) {
-		global $wgLanguageCode;
+		$languageCode = MediaWikiServices::getInstance()->getMainConfig()
+			->get( MainConfigNames::LanguageCode );
 
-		$include = $customisedOnly ? 'mwfile' : 'mw';
+		$include = $customisedOnly ? LanguageNameUtils::SUPPORTED : LanguageNameUtils::DEFINED;
 		$languages = MediaWikiServices::getInstance()
 			->getLanguageNameUtils()
 			->getLanguageNames( $inLanguage, $include );
 
 		// Make sure the site language is in the list;
 		// a custom language code might not have a defined name...
-		if ( !array_key_exists( $wgLanguageCode, $languages ) ) {
-			$languages[$wgLanguageCode] = $wgLanguageCode;
+		if ( !array_key_exists( $languageCode, $languages ) ) {
+			$languages[$languageCode] = $languageCode;
 			// Sort the array again
 			ksort( $languages );
 		}
@@ -228,7 +231,7 @@ class Xml {
 		 * Otherwise, no default is selected and the user ends up
 		 * with Afrikaans since it's first in the list.
 		 */
-		$selected = isset( $languages[$selected] ) ? $selected : $wgLanguageCode;
+		$selected = isset( $languages[$selected] ) ? $selected : $languageCode;
 		$options = "\n";
 		foreach ( $languages as $code => $name ) {
 			$options .= self::option( "$code - $name", $code, $code == $selected ) . "\n";
@@ -423,12 +426,13 @@ class Xml {
 	 * @return string HTML
 	 */
 	public static function checkLabel( $label, $name, $id, $checked = false, $attribs = [] ) {
-		global $wgUseMediaWikiUIEverywhere;
+		$useMediaWikiUIEverywhere = MediaWikiServices::getInstance()->getMainConfig()
+			->get( MainConfigNames::UseMediaWikiUIEverywhere );
 		$chkLabel = self::check( $name, $checked, [ 'id' => $id ] + $attribs ) .
 			"\u{00A0}" .
 			self::label( $label, $id, $attribs );
 
-		if ( $wgUseMediaWikiUIEverywhere ) {
+		if ( $useMediaWikiUIEverywhere ) {
 			$chkLabel = self::openElement( 'div', [ 'class' => 'mw-ui-checkbox' ] ) .
 				$chkLabel . self::closeElement( 'div' );
 		}
@@ -463,7 +467,8 @@ class Xml {
 	 * @return string HTML
 	 */
 	public static function submitButton( $value, $attribs = [] ) {
-		global $wgUseMediaWikiUIEverywhere;
+		$useMediaWikiUIEverywhere = MediaWikiServices::getInstance()->getMainConfig()
+			->get( MainConfigNames::UseMediaWikiUIEverywhere );
 		$baseAttrs = [
 			'type' => 'submit',
 			'value' => $value,
@@ -471,10 +476,10 @@ class Xml {
 		// Done conditionally for time being as it is possible
 		// some submit forms
 		// might need to be mw-ui-destructive (e.g. delete a page)
-		if ( $wgUseMediaWikiUIEverywhere ) {
+		if ( $useMediaWikiUIEverywhere ) {
 			$baseAttrs['class'] = 'mw-ui-button mw-ui-progressive';
 		}
-		// Any custom attributes will take precendence of anything in baseAttrs e.g. override the class
+		// Any custom attributes will take precedence of anything in baseAttrs e.g. override the class
 		$attribs += $baseAttrs;
 		return Html::element( 'input', $attribs );
 	}
@@ -554,7 +559,8 @@ class Xml {
 			$value = trim( $option );
 			if ( $value == '' ) {
 				continue;
-			} elseif ( substr( $value, 0, 1 ) == '*' && substr( $value, 1, 1 ) != '*' ) {
+			}
+			if ( substr( $value, 0, 1 ) == '*' && substr( $value, 1, 1 ) != '*' ) {
 				# A new group is starting...
 				$value = trim( substr( $value, 1 ) );
 				if ( $value !== '' &&
@@ -716,7 +722,7 @@ class Xml {
 		$parser = xml_parser_create( "UTF-8" );
 
 		# case folding violates XML standard, turn it off
-		xml_parser_set_option( $parser, XML_OPTION_CASE_FOLDING, false );
+		xml_parser_set_option( $parser, XML_OPTION_CASE_FOLDING, 0 );
 
 		if ( !xml_parse( $parser, $text, true ) ) {
 			// $err = xml_error_string( xml_get_error_code( $parser ) );

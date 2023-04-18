@@ -1,6 +1,7 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
+use MediaWiki\User\UserOptionsLookup;
 
 /**
  * @group Database
@@ -15,12 +16,12 @@ class WatchedItemQueryServiceIntegrationTest extends MediaWikiIntegrationTestCas
 		$this->tablesUsed[] = 'watchlist';
 		$this->tablesUsed[] = 'watchlist_expiry';
 
-		$this->setMwGlobals( 'wgWatchlistExpiry', true );
+		$this->overrideConfigValue( MainConfigNames::WatchlistExpiry, true );
 	}
 
 	public function testGetWatchedItemsForUser(): void {
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
-		$queryService = MediaWikiServices::getInstance()->getWatchedItemQueryService();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
+		$queryService = $this->getServiceContainer()->getWatchedItemQueryService();
 		$user = self::getTestUser()->getUser();
 		$initialCount = count( $store->getWatchedItemsForUser( $user ) );
 
@@ -70,9 +71,9 @@ class WatchedItemQueryServiceIntegrationTest extends MediaWikiIntegrationTestCas
 	}
 
 	public function testGetWatchedItemsForUserWithExpiriesDisabled() {
-		$this->setMwGlobals( 'wgWatchlistExpiry', false );
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
-		$queryService = MediaWikiServices::getInstance()->getWatchedItemQueryService();
+		$this->overrideConfigValue( MainConfigNames::WatchlistExpiry, false );
+		$store = $this->getServiceContainer()->getWatchedItemStore();
+		$queryService = $this->getServiceContainer()->getWatchedItemQueryService();
 		$user = self::getTestUser()->getUser();
 		$initialCount = count( $store->getWatchedItemsForUser( $user ) );
 		$store->addWatch( $user, new TitleValue( 0, __METHOD__ ), '1 week ago' );
@@ -81,8 +82,8 @@ class WatchedItemQueryServiceIntegrationTest extends MediaWikiIntegrationTestCas
 	}
 
 	public function testGetWatchedItemsWithRecentChangeInfo_watchlistExpiry(): void {
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
-		$queryService = MediaWikiServices::getInstance()->getWatchedItemQueryService();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
+		$queryService = $this->getServiceContainer()->getWatchedItemQueryService();
 		$user = self::getTestUser()->getUser();
 		$options = [];
 		$startFrom = null;
@@ -91,14 +92,14 @@ class WatchedItemQueryServiceIntegrationTest extends MediaWikiIntegrationTestCas
 
 		// Add two watched items, one of which is already expired, and check that only 1 is returned.
 		$userEditTarget1 = new TitleValue( 0, __METHOD__ . ' no expiry 1' );
-		$this->editPage( $userEditTarget1->getDBkey(), 'First Revision' );
+		$this->editPage( $userEditTarget1->getDBkey(), 'First revision' );
 		$store->addWatch(
 			$user,
 			$userEditTarget1
 		);
 
 		$userEditTarget2 = new TitleValue( 0, __METHOD__ . ' expired a week ago or in a week' );
-		$this->editPage( $userEditTarget2->getDBkey(), 'First Revision' );
+		$this->editPage( $userEditTarget2->getDBkey(), 'First revision' );
 		$store->addWatch(
 			$user,
 			$userEditTarget2,
@@ -110,14 +111,14 @@ class WatchedItemQueryServiceIntegrationTest extends MediaWikiIntegrationTestCas
 
 		// Add another of each type of item, and make sure the new results are as expected.
 		$userEditTarget3 = new TitleValue( 0, __METHOD__ . ' no expiry 2' );
-		$this->editPage( $userEditTarget3->getDBkey(), 'First Revision' );
+		$this->editPage( $userEditTarget3->getDBkey(), 'First revision' );
 		$store->addWatch(
 			$user,
 			$userEditTarget3
 		);
 
 		$userEditTarget4 = new TitleValue( 0, __METHOD__ . ' expired a week ago 2' );
-		$this->editPage( $userEditTarget4->getDBkey(), 'First Revision' );
+		$this->editPage( $userEditTarget4->getDBkey(), 'First revision' );
 		$store->addWatch(
 			$user,
 			$userEditTarget4,
@@ -158,8 +159,6 @@ class WatchedItemQueryServiceIntegrationTest extends MediaWikiIntegrationTestCas
 	public function testGetWatchedItemsWithRecentChangeInfo_watchlistOwnerAndInvalidToken( $token ) {
 		// Moved from the Unit test because the ApiUsageException call creates a Message object
 		// and down the line needs MediaWikiServices
-		$queryService = MediaWikiServices::getInstance()->getWatchedItemQueryService();
-
 		$user = $this->createNoOpMock(
 			User::class,
 			[ 'isRegistered', 'getId', 'useRCPatrol' ]
@@ -170,15 +169,21 @@ class WatchedItemQueryServiceIntegrationTest extends MediaWikiIntegrationTestCas
 
 		$otherUser = $this->createNoOpMock(
 			User::class,
-			[ 'isRegistered', 'getId', 'useRCPatrol', 'getOption' ]
+			[ 'isRegistered', 'getId', 'useRCPatrol' ]
 		);
 		$otherUser->method( 'isRegistered' )->willReturn( true );
 		$otherUser->method( 'getId' )->willReturn( 2 );
 		$otherUser->method( 'useRCPatrol' )->willReturn( true );
-		$otherUser->expects( $this->once() )
+
+		$userOptionsLookup = $this->createMock( UserOptionsLookup::class );
+		$userOptionsLookup->expects( $this->once() )
 			->method( 'getOption' )
-			->with( 'watchlisttoken' )
+			->with( $otherUser, 'watchlisttoken' )
 			->willReturn( '0123456789abcdef' );
+
+		$this->setService( 'UserOptionsLookup', $userOptionsLookup );
+
+		$queryService = $this->getServiceContainer()->getWatchedItemQueryService();
 
 		$this->expectException( ApiUsageException::class );
 		$this->expectExceptionMessage( 'Incorrect watchlist token provided' );

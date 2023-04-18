@@ -29,12 +29,26 @@ use Wikimedia\Parsoid\Utils\PHPUtils;
 		}
 		return $g->parse( $contents );
 	}
+
+	private function addLines( int $lineStart, array $item ) {
+		$item['filename'] = $this->filename;
+		$item['lineNumStart'] = $lineStart;
+		$item['lineNumEnd'] = $this->lineNum;
+		return $item;
+	}
 }
 
-testfile = format? testfile_options? lined_chunk+
+testfile =
+	comment_or_blank_line*
+	format?
+	comment_or_blank_line*
+	testfile_options?
+	lined_chunk+
 
-testfile_options = sec:option_section end_section {
-	return $sec['text'];
+testfile_options =
+	l:("" { return $this->lineNum; })
+	sec:option_section end_section {
+	return $this->addLines( $l, $sec );
 }
 
 /* Line number bookkeeping.
@@ -43,10 +57,7 @@ testfile_options = sec:option_section end_section {
 eol = nl:"\n" { $this->lineNum++; return $nl; }
 
 lined_chunk = l:("" { return $this->lineNum; }) c:chunk {
-	$c['filename'] = $this->filename;
-	$c['lineNumStart'] = $l;
-	$c['lineNumEnd'] = $this->lineNum;
-	return $c;
+	return $this->addLines($l, $c);
 }
 
 whitespace = [ \t]+
@@ -69,22 +80,33 @@ text = lines:line*
 }
 
 chunk =
-	comment
+	comment_or_blank_line
 	/ article
 	/ test
-	/ l: line { return [ 'type' => 'line', 'text' => $l ]; }
 	/ hooks
 	/ functionhooks
 
+	/* Final fallback production is a catch-all, since some ancient
+	 * parserTest files have garbage text between tests and in the old
+	 * hand-coded parser test parser this was just ignored as a comment.
+	 * We'll go ahead and parse it, then emit a warning in TestFileReader.
+	 */
+	/ l: line { return [ 'type' => 'line', 'text' => $l ]; }
+
 format =
+	l:("" { return $this->lineNum; })
 	"!!" ws? version_keyword ws+ v:$([0-9]+) rest_of_line {
-		return [ 'type' => 'version', 'text' => $v ];
+		return $this->addLines( $l, [ 'type' => 'version', 'text' => $v ] );
 	}
 
-version_keyword = [vV] [eE] [rR] [sS] [iI] [oO] [nN]
+version_keyword = 'version'i
 
 comment =
 	"#" text:rest_of_line { return [ 'type' => 'comment', 'text' => $text ]; }
+
+comment_or_blank_line =
+	comment
+	/ ws? nl:eol { return [ 'type' => 'line', 'text' => $nl ]; }
 
 article =
 	start_article title:line start_text text:text ( end_article / end_section )
@@ -121,7 +143,7 @@ end_functionhooks =
 test =
 	start_test
 	testName:text
-	sections:(section / option_section)*
+	sections:(section / config_section / option_section)*
 	end_section
 {
 	$test = [
@@ -160,10 +182,24 @@ test =
 }
 
 section =
-	"!!" ws? (!"end") (!"options") name:(c:[^ \t\r\n]+ { return implode( $c ); }) rest_of_line
+	"!!" ws? (!"test") (!"end") (!"options") (!"config") name:(c:[^ \t\r\n]+ { return implode( $c ); }) rest_of_line
 	text:text
 {
 	return [ 'name' => $name, 'text' => $text ];
+}
+
+config_section =
+	"!!" ws? "config" ws? eol
+        items:config_list?
+{
+	$c = [];
+	if ( $items && count($items) > 0 ) {
+		foreach ( $items as $item ) {
+			$c[$item['k']] = $item['v'];
+		}
+	}
+
+	return [ 'type' => 'section', 'name' => 'config', 'text' => $c ];
 }
 
 option_section =
@@ -177,7 +213,16 @@ option_section =
 		}
 	}
 
-	return [ 'name' => 'options', 'text' => $o ];
+	return [ 'type' => 'section', 'name' => 'options', 'text' => $o ];
+}
+
+config_list = c:a_config_line eol+ rest:config_list?
+{
+	$result = [ $c ];
+	if ( $rest && count( $rest ) > 0 ) {
+		$result = array_merge( $result, $rest );
+	}
+	return $result;
 }
 
 option_list = o:an_option ([ \t] / eol)+ rest:option_list?
@@ -187,6 +232,25 @@ option_list = o:an_option ([ \t] / eol)+ rest:option_list?
 		$result = array_merge( $result, $rest );
 	}
 	return $result;
+}
+
+a_config_line = k:option_name v:config_value
+{
+	return [ 'k' => $k, 'v' => $v ];
+}
+
+config_value = ws? "=" ws? v:valid_json_value { return $v; }
+
+valid_json_value = v:$(quoted_value / plain_value / array_value / json_value) &{
+  // validate this as acceptable JSON
+  // (this ensures that wikipeg throws a syntax error if
+  // the JSON is invalid; note that PHP 7.3 would allow us
+  // to use JSON_THROW_ON_ERROR instead of json_last_error()...)
+  $ignore = json_decode($v, true, 100);
+  return (json_last_error() === JSON_ERROR_NONE);
+} {
+  // The value is valid JSON; return the decoded value.
+  return json_decode($v, true);
 }
 
 // from PHP parser in tests/parser/parserTest.inc:parseOptions()
@@ -245,6 +309,11 @@ quoted_value = [\"] v:( [^\\\"\n] / ("\\" c:[^\n] { return "\\" . $c; } ) )* [\"
 plain_value = v:[^ \t\n\"\'\[\]=,!\{]+
 {
 	return implode( $v );
+}
+
+array_value = "[" v:( [^\"\[\]\n] / quoted_value / array_value / eol )* "]"
+{
+	return "[" . implode( $v ) . "]";
 }
 
 json_value = "{" v:( [^\"\{\}\n] / quoted_value / json_value / eol )* "}"

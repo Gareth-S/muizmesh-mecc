@@ -1,9 +1,13 @@
 {
 	"@metadata": {
 		"authors": [
-			"Meerrahtar"
+			"Amire80",
+			"Meerrahtar",
+			"Merrahtar"
 		]
 	},
+	"vector-languages": "Кӣл",
+	"vector-language-button-label": "{{PLURAL:$1|$1 кӣлл|$1 кӣл|$1 кӣллэ}}",
 	"vector-action-addsection": "Лажьхэ тема",
 	"vector-action-delete": "Вэ̄цксэ",
 	"vector-action-move": "Вуайхэ нэ̄м",
@@ -12,5 +16,6 @@
 	"vector-view-edit": "Вуайхэ",
 	"vector-view-history": "История",
 	"vector-view-view": "Ло̄гкэ",
-	"vector-more-actions": "Вя̄л"
+	"vector-more-actions": "Вя̄л",
+	"vector-searchsuggest-containing": "О̄дзэ лыстэнҍ, мэ̄йн лӣ <strong class=\"cdx-typeahead-search__search-footer__query\">$1</strong>"
 }

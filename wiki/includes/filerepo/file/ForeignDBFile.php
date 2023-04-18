@@ -1,7 +1,5 @@
 <?php
 /**
- * Foreign file with an accessible MediaWiki database.
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -18,15 +16,14 @@
  * http://www.gnu.org/copyleft/gpl.html
  *
  * @file
- * @ingroup FileAbstraction
  */
 
 use MediaWiki\MediaWikiServices;
+use MediaWiki\User\UserIdentity;
 use Wikimedia\Rdbms\DBUnexpectedError;
 
-// @phan-file-suppress PhanTypeMissingReturn false positives
 /**
- * Foreign file with an accessible MediaWiki database
+ * Foreign file from a reachable database in the same wiki farm.
  *
  * @ingroup FileAbstraction
  */
@@ -51,7 +48,7 @@ class ForeignDBFile extends LocalFile {
 	}
 
 	/**
-	 * @param array $versions
+	 * @param int[] $versions
 	 * @param bool $unsuppress
 	 * @return Status
 	 * @throws MWException
@@ -62,12 +59,12 @@ class ForeignDBFile extends LocalFile {
 
 	/**
 	 * @param string $reason
-	 * @param User $user
+	 * @param UserIdentity $user
 	 * @param bool $suppress
 	 * @return Status
 	 * @throws MWException
 	 */
-	public function deleteFile( $reason, User $user, $suppress = false ) {
+	public function deleteFile( $reason, UserIdentity $user, $suppress = false ) {
 		$this->readOnlyError();
 	}
 
@@ -145,7 +142,7 @@ class ForeignDBFile extends LocalFile {
 	/**
 	 * Get short description URL for a file based on the page ID.
 	 *
-	 * @return string
+	 * @return string|null
 	 * @throws DBUnexpectedError
 	 * @since 1.27
 	 */

@@ -59,16 +59,16 @@ class DOMFragmentBuilder extends TokenHandler {
 
 	/**
 	 * @param Token $scopeToken
-	 * @return array|null
+	 * @return TokenHandlerResult
 	 */
-	private function buildDOMFragment( Token $scopeToken ) {
+	private function buildDOMFragment( Token $scopeToken ): TokenHandlerResult {
 		$contentKV = $scopeToken->getAttributeKV( 'content' );
 		$content = $contentKV->v;
 		if ( is_string( $content ) ||
 			$this->subpipelineUnnecessary( $content, $scopeToken->getAttribute( 'contextTok' ) )
 		) {
 			// New pipeline not needed. Pass them through
-			return [ 'tokens' => is_string( $content ) ? [ $content ] : $content ];
+			return new TokenHandlerResult( is_string( $content ) ? [ $content ] : $content );
 		} else {
 			// Source offsets of content
 			$srcOffsets = $contentKV->srcOffsets;
@@ -78,7 +78,7 @@ class DOMFragmentBuilder extends TokenHandler {
 			// mw:dom-fragment-token should always set offsets on content
 			// that comes from the top-level document.
 			Assert::invariant(
-				!empty( $this->options['inTemplate'] ) || (bool)$srcOffsets,
+				$this->options['inTemplate'] || (bool)$srcOffsets,
 				'Processing top-level content without source offsets'
 			);
 
@@ -88,12 +88,15 @@ class DOMFragmentBuilder extends TokenHandler {
 				'inTemplate' => $this->options['inTemplate']
 			];
 
+			// Append EOF
+			$content[] = new EOFTk();
+
 			// Process tokens
 			$domFragment = PipelineUtils::processContentInPipeline(
-				$this->manager->env,
+				$this->env,
 				$this->manager->getFrame(),
 				// Append EOF
-				array_merge( $content, [ new EOFTk() ] ),
+				$content,
 				[
 					'pipelineType' => 'tokens/x-mediawiki/expanded',
 					'pipelineOpts' => $pipelineOpts,
@@ -103,21 +106,21 @@ class DOMFragmentBuilder extends TokenHandler {
 			);
 
 			$toks = PipelineUtils::tunnelDOMThroughTokens(
-				$this->manager->env,
+				$this->env,
 				$scopeToken,
 				$domFragment,
 				[ "pipelineOpts" => $pipelineOpts ]
 			);
 
-			return [ 'tokens' => $toks ];
+			return new TokenHandlerResult( $toks );
 		}
 	}
 
 	/**
 	 * @inheritDoc
 	 */
-	public function onTag( Token $token ) {
+	public function onTag( Token $token ): ?TokenHandlerResult {
 		return $token->getName() === 'mw:dom-fragment-token' ?
-			$this->buildDOMFragment( $token ) : $token;
+			$this->buildDOMFragment( $token ) : null;
 	}
 }

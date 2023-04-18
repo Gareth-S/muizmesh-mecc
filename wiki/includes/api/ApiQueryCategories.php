@@ -20,6 +20,9 @@
  * @file
  */
 
+use Wikimedia\ParamValidator\ParamValidator;
+use Wikimedia\ParamValidator\TypeDef\IntegerDef;
+
 /**
  * A query module to enumerate categories the set of pages belong to.
  *
@@ -51,13 +54,14 @@ class ApiQueryCategories extends ApiQueryGeneratorBase {
 	 * @param ApiPageSet|null $resultPageSet
 	 */
 	private function run( $resultPageSet = null ) {
-		if ( $this->getPageSet()->getGoodTitleCount() == 0 ) {
+		$pages = $this->getPageSet()->getGoodPages();
+		if ( $pages === [] ) {
 			return; // nothing to do
 		}
 
 		$params = $this->extractRequestParams();
-		$prop = array_flip( (array)$params['prop'] );
-		$show = array_flip( (array)$params['show'] );
+		$prop = array_fill_keys( (array)$params['prop'], true );
+		$show = array_fill_keys( (array)$params['show'], true );
 
 		$this->addFields( [
 			'cl_from',
@@ -68,7 +72,7 @@ class ApiQueryCategories extends ApiQueryGeneratorBase {
 		$this->addFieldsIf( 'cl_timestamp', isset( $prop['timestamp'] ) );
 
 		$this->addTables( 'categorylinks' );
-		$this->addWhereFld( 'cl_from', array_keys( $this->getPageSet()->getGoodTitles() ) );
+		$this->addWhereFld( 'cl_from', array_keys( $pages ) );
 		if ( $params['categories'] ) {
 			$cats = [];
 			foreach ( $params['categories'] as $cat ) {
@@ -123,7 +127,7 @@ class ApiQueryCategories extends ApiQueryGeneratorBase {
 
 		$sort = ( $params['dir'] == 'descending' ? ' DESC' : '' );
 		// Don't order by cl_from if it's constant in the WHERE clause
-		if ( count( $this->getPageSet()->getGoodTitles() ) == 1 ) {
+		if ( count( $pages ) === 1 ) {
 			$this->addOption( 'ORDER BY', 'cl_to' . $sort );
 		} else {
 			$this->addOption( 'ORDER BY', [
@@ -184,8 +188,8 @@ class ApiQueryCategories extends ApiQueryGeneratorBase {
 	public function getAllowedParams() {
 		return [
 			'prop' => [
-				ApiBase::PARAM_ISMULTI => true,
-				ApiBase::PARAM_TYPE => [
+				ParamValidator::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_TYPE => [
 					'sortkey',
 					'timestamp',
 					'hidden',
@@ -193,28 +197,28 @@ class ApiQueryCategories extends ApiQueryGeneratorBase {
 				ApiBase::PARAM_HELP_MSG_PER_VALUE => [],
 			],
 			'show' => [
-				ApiBase::PARAM_ISMULTI => true,
-				ApiBase::PARAM_TYPE => [
+				ParamValidator::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_TYPE => [
 					'hidden',
 					'!hidden',
 				]
 			],
 			'limit' => [
-				ApiBase::PARAM_DFLT => 10,
-				ApiBase::PARAM_TYPE => 'limit',
-				ApiBase::PARAM_MIN => 1,
-				ApiBase::PARAM_MAX => ApiBase::LIMIT_BIG1,
-				ApiBase::PARAM_MAX2 => ApiBase::LIMIT_BIG2
+				ParamValidator::PARAM_DEFAULT => 10,
+				ParamValidator::PARAM_TYPE => 'limit',
+				IntegerDef::PARAM_MIN => 1,
+				IntegerDef::PARAM_MAX => ApiBase::LIMIT_BIG1,
+				IntegerDef::PARAM_MAX2 => ApiBase::LIMIT_BIG2
 			],
 			'continue' => [
 				ApiBase::PARAM_HELP_MSG => 'api-help-param-continue',
 			],
 			'categories' => [
-				ApiBase::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_ISMULTI => true,
 			],
 			'dir' => [
-				ApiBase::PARAM_DFLT => 'ascending',
-				ApiBase::PARAM_TYPE => [
+				ParamValidator::PARAM_DEFAULT => 'ascending',
+				ParamValidator::PARAM_TYPE => [
 					'ascending',
 					'descending'
 				]

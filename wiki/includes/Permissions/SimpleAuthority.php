@@ -21,6 +21,7 @@
 namespace MediaWiki\Permissions;
 
 use InvalidArgumentException;
+use MediaWiki\Block\Block;
 use MediaWiki\Page\PageIdentity;
 use MediaWiki\User\UserIdentity;
 
@@ -38,17 +39,26 @@ class SimpleAuthority implements Authority {
 	/** @var UserIdentity */
 	private $actor;
 
-	/** @var array permissions (stored in the keys, values are ignured) */
+	/** @var bool */
+	private $isTemp;
+
+	/** @var true[] permissions (stored in the keys, values are ignored) */
 	private $permissions;
 
 	/**
 	 * @stable to call
 	 * @param UserIdentity $actor
 	 * @param string[] $permissions A list of permissions to grant to the actor
+	 * @param bool $isTemp Whether the user is auto-created (since 1.39)
 	 */
-	public function __construct( UserIdentity $actor, array $permissions ) {
+	public function __construct(
+		UserIdentity $actor,
+		array $permissions,
+		bool $isTemp = false
+	) {
 		$this->actor = $actor;
-		$this->permissions = array_flip( $permissions );
+		$this->isTemp = $isTemp;
+		$this->permissions = array_fill_keys( $permissions, true );
 	}
 
 	/**
@@ -58,6 +68,16 @@ class SimpleAuthority implements Authority {
 	 */
 	public function getUser(): UserIdentity {
 		return $this->actor;
+	}
+
+	/**
+	 * @param int $freshness
+	 *
+	 * @return ?Block always null
+	 * @since 1.37
+	 */
+	public function getBlock( int $freshness = self::READ_NORMAL ): ?Block {
+		return null;
 	}
 
 	/**
@@ -190,5 +210,17 @@ class SimpleAuthority implements Authority {
 		PermissionStatus $status = null
 	): bool {
 		return $this->checkPermission( $action, $status );
+	}
+
+	public function isRegistered(): bool {
+		return $this->actor->isRegistered();
+	}
+
+	public function isTemp(): bool {
+		return $this->isTemp;
+	}
+
+	public function isNamed(): bool {
+		return $this->isRegistered() && !$this->isTemp();
 	}
 }

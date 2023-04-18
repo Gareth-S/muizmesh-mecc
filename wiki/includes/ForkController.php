@@ -46,17 +46,7 @@ class ForkController {
 	/** @var int */
 	protected $procsToStart = 0;
 
-	protected const RESTARTABLE_SIGNALS = [
-		SIGFPE,
-		SIGILL,
-		SIGSEGV,
-		SIGBUS,
-		SIGABRT,
-		SIGSYS,
-		SIGPIPE,
-		SIGXCPU,
-		SIGXFSZ,
-	];
+	protected static $RESTARTABLE_SIGNALS = [];
 
 	/**
 	 * Pass this flag to __construct() to cause the class to automatically restart
@@ -71,9 +61,19 @@ class ForkController {
 	public function __construct( $numProcs, $flags = 0 ) {
 		if ( !wfIsCLI() ) {
 			throw new MWException( "ForkController cannot be used from the web." );
+		} elseif ( !extension_loaded( 'pcntl' ) ) {
+			throw new MWException( 'ForkController requires pcntl extension to be installed.' );
+		} elseif ( !extension_loaded( 'posix' ) ) {
+			throw new MWException( 'ForkController requires posix extension to be installed.' );
 		}
 		$this->procsToStart = $numProcs;
 		$this->flags = $flags;
+
+		// Define this only after confirming PCNTL support
+		self::$RESTARTABLE_SIGNALS = [
+			SIGFPE, SIGILL, SIGSEGV, SIGBUS,
+			SIGABRT, SIGSYS, SIGPIPE, SIGXCPU,SIGXFSZ,
+		];
 	}
 
 	/**
@@ -112,7 +112,7 @@ class ForkController {
 						// Restart if the signal was abnormal termination
 						// Don't restart if it was deliberately killed
 						$signal = pcntl_wtermsig( $status );
-						if ( in_array( $signal, self::RESTARTABLE_SIGNALS ) ) {
+						if ( in_array( $signal, self::$RESTARTABLE_SIGNALS ) ) {
 							echo "Worker exited with signal $signal, restarting\n";
 							$this->procsToStart++;
 						}
@@ -167,7 +167,6 @@ class ForkController {
 	protected function prepareEnvironment() {
 		// Don't share DB, storage, or memcached connections
 		MediaWikiServices::resetChildProcessServices();
-		JobQueueGroup::destroySingletons();
 		ObjectCache::clear();
 		RedisConnectionPool::destroySingletons();
 	}
@@ -185,7 +184,7 @@ class ForkController {
 		for ( $i = 0; $i < $numProcs; $i++ ) {
 			// Do the fork
 			$pid = pcntl_fork();
-			if ( $pid === -1 || $pid === false ) {
+			if ( $pid === -1 ) {
 				echo "Error creating child processes\n";
 				exit( 1 );
 			}

@@ -1,6 +1,6 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
 
 /**
  * @coversDefaultClass LocalRepo
@@ -47,8 +47,6 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 
 		$row = (object)[
 			"{$prefix}_name" => 'Test_file',
-			// We cheat and include this for img_ too, it will be ignored
-			"{$prefix}_archive_name" => 'Archive_name',
 			"{$prefix}_user" => '1',
 			"{$prefix}_timestamp" => '12345678910111',
 			"{$prefix}_metadata" => '',
@@ -57,13 +55,18 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 			"{$prefix}_height" => '0',
 			"{$prefix}_width" => '0',
 			"{$prefix}_bits" => '0',
+			"{$prefix}_media_type" => 'UNKNOWN',
 			"{$prefix}_description_text" => '',
 			"{$prefix}_description_data" => null,
 		];
+		if ( $prefix === 'oi' ) {
+			$row->oi_archive_name = 'Archive_name';
+			$row->oi_deleted = '0';
+		}
 		$file = $this->newRepo()->newFileFromRow( $row );
 		$this->assertInstanceOf( $expectedClass, $file );
 		$this->assertSame( 'Test_file', $file->getName() );
-		$this->assertSame( 1, $file->getUser( 'id' ) );
+		$this->assertSame( 1, $file->getUploader()->getId() );
 	}
 
 	public static function provideNewFileFromRow() {
@@ -102,6 +105,11 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 		$this->editPage( 'File:Test_file', 'Some description' );
 
 		$file = $this->newRepo()->newFromArchiveName( 'Test_file', 'b' );
+		$this->assertInstanceOf( OldLocalFile::class, $file );
+		$this->assertSame( 'Test_file', $file->getName() );
+
+		$page = $this->getExistingTestPage( 'File:Test_file' );
+		$file = $this->newRepo()->newFromArchiveName( $page, 'b' );
 		$this->assertInstanceOf( OldLocalFile::class, $file );
 		$this->assertSame( 'Test_file', $file->getName() );
 	}
@@ -159,9 +167,13 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 	 */
 	public function testCheckRedirect_redirect() {
 		$this->editPage( 'File:Redirect', '#REDIRECT [[File:Target]]' );
-		$this->assertEquals( 'File:Target',
-			$this->newRepo()->checkRedirect( Title::makeTitle( NS_FILE, 'Redirect' ) )
-				->getPrefixedText() );
+
+		$target = $this->newRepo()->checkRedirect( Title::makeTitle( NS_FILE, 'Redirect' ) );
+		$this->assertEquals( 'File:Target', $target->getPrefixedText() );
+
+		$page = $this->getExistingTestPage( 'File:Redirect' );
+		$target = $this->newRepo()->checkRedirect( $page );
+		$this->assertEquals( 'File:Target', $target->getPrefixedText() );
 	}
 
 	/**
@@ -179,7 +191,7 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 			->withConsecutive(
 				[ 'filerepo-file-redirect', 'local', md5( 'Redirect' ) ]
 			);
-		$mockBag->expects( $this->exactly( 1 ) )
+		$mockBag->expects( $this->once() )
 			->method( 'makeGlobalKey' )
 			->withConsecutive(
 				[ 'filerepo-file-redirect', $dbDomain, md5( 'Redirect' ) ]
@@ -214,7 +226,7 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 
 		$repo = $this->newRepo();
 
-		$tmpFileFactory = MediaWikiServices::getInstance()->getTempFSFileFactory();
+		$tmpFileFactory = $this->getServiceContainer()->getTempFSFileFactory();
 		foreach ( [ 'File1', 'File2', 'File3' ] as $name ) {
 			$fsFile = $tmpFileFactory->newTempFSFile( '' );
 			file_put_contents( $fsFile->getPath(), "$name contents" );
@@ -259,12 +271,13 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 	 * @covers ::getInfo
 	 */
 	public function testGetInfo() {
-		$this->setMwGlobals( [
-			'wgFavicon' => '//example.com/favicon.ico',
-			'wgSitename' => 'Test my site',
+		$this->overrideConfigValues( [
+			MainConfigNames::Server => '//example.org',
+			MainConfigNames::Favicon => 'https://global.example/favicon.ico',
+			MainConfigNames::Sitename => 'Test my site',
 		] );
 
-		$repo = $this->newRepo( [ 'favicon' => 'Hey, this option is ignored in LocalRepo!' ] );
+		$repo = $this->newRepo( [ 'favicon' => '/img/favicon.ico' ] );
 
 		$this->assertSame( [
 			'name' => 'local',
@@ -274,8 +287,8 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 			'url' => false,
 			'thumbUrl' => false,
 			'initialCapital' => true,
-			// XXX This assumes protocol-relative will get expanded to http instead of https
-			'favicon' => 'http://example.com/favicon.ico',
+			// This expands to HTTP instead of HTTPS because the test context imitates HTTP
+			'favicon' => 'http://example.org/img/favicon.ico',
 		], $repo->getInfo() );
 	}
 
@@ -304,7 +317,7 @@ class LocalRepoTest extends MediaWikiIntegrationTestCase {
 	public function testGetInfo_displayNameCustomMsg() {
 		$this->editPage( 'MediaWiki:Shared-repo-name-not-local', 'Name to display please' );
 		// Allow the message to take effect
-		MediaWikiServices::getInstance()->getMessageCache()->enable();
+		$this->getServiceContainer()->getMessageCache()->enable();
 
 		$this->assertSame( 'Name to display please',
 			$this->newRepo( [ 'name' => 'not-local' ] )->getInfo()['displayname'] );

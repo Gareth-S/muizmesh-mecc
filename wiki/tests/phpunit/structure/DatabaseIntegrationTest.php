@@ -11,9 +11,9 @@ class DatabaseIntegrationTest extends MediaWikiIntegrationTestCase {
 	 */
 	protected $db;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
-		$this->db = wfGetDB( DB_MASTER );
+		$this->db = wfGetDB( DB_PRIMARY );
 	}
 
 	public function testUnknownTableCorruptsResults() {
@@ -30,10 +30,7 @@ class DatabaseIntegrationTest extends MediaWikiIntegrationTestCase {
 		// @todo Remove exception once these tables are fixed
 		$excludeList = [
 			'user_newtalk',
-			'revision_actor_temp',
-			'change_tag',
 			'objectcache',
-			'page'
 		];
 
 		$prefixes = [];
@@ -90,7 +87,7 @@ class DatabaseIntegrationTest extends MediaWikiIntegrationTestCase {
 		$newPath = $this->getNewTempFile();
 		$maintenanceScript = new GenerateSchemaSql();
 		$maintenanceScript->loadWithArgv(
-			[ '--json=' . $abstractSchemaPath, '--sql=' . $newPath, '--type=' . $type ]
+			[ '--json=' . $abstractSchemaPath, '--sql=' . $newPath, '--type=' . $type, '--quiet' ]
 		);
 		$maintenanceScript->execute();
 		$this->assertEquals(

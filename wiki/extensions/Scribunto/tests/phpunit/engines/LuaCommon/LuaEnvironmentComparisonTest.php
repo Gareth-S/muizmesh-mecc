@@ -1,5 +1,7 @@
 <?php
 
+use MediaWiki\Extension\Scribunto\Engines\LuaSandbox\LuaSandboxEngine;
+use MediaWiki\Extension\Scribunto\Engines\LuaStandalone\LuaStandaloneEngine;
 use MediaWiki\MediaWikiServices;
 
 /**
@@ -41,29 +43,27 @@ class Scribunto_LuaEnvironmentComparisonTest extends PHPUnit\Framework\TestCase 
 		return $engine;
 	}
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		try {
 			$this->engines['LuaSandbox'] = $this->makeEngine(
-				Scribunto_LuaSandboxEngine::class, $this->sandboxOpts
+				LuaSandboxEngine::class, $this->sandboxOpts
 			);
 		} catch ( Scribunto_LuaInterpreterNotFoundError $e ) {
 			$this->markTestSkipped( "LuaSandbox interpreter not available" );
-			return;
 		}
 
 		try {
 			$this->engines['LuaStandalone'] = $this->makeEngine(
-				Scribunto_LuaStandaloneEngine::class, $this->standaloneOpts
+				LuaStandaloneEngine::class, $this->standaloneOpts
 			);
 		} catch ( Scribunto_LuaInterpreterNotFoundError $e ) {
 			$this->markTestSkipped( "LuaStandalone interpreter not available" );
-			return;
 		}
 	}
 
-	protected function tearDown() : void {
+	protected function tearDown(): void {
 		foreach ( $this->engines as $engine ) {
 			$engine->destroy();
 		}

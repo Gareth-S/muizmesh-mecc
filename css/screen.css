@@ -889,7 +889,7 @@ body.nav-opened .nav {
 
 /* [ON BIG SCREEN] */
 /* Wrapper */
-#hamnav {
+hamnav {
     width: 100%;
     background: #000;
     /* Optional */
@@ -898,25 +898,25 @@ body.nav-opened .nav {
   }
   
   /* Hide Hamburger */
-  #hamnav label, #hamburger { display: none; }
+  hamnav label, #hamburger { display: none; }
   
   /* Horizontal Menu Items */
-  #hamitems { display: flex; }
-  #hamitems a {
+  hamitems { display: flex; }
+  hamitems a {
     width: 20%; /* 100% / 5 tabs = 20% */
     padding: 10px;
     color: white;
     text-decoration: none;
     text-align: center;
   }
-  #hamitems a:hover {
+  hamitems a:hover {
     background: #401408;
   }
   
   /* [ON SMALL SCREENS] */
   @media screen and (max-width: 768px){
     /* Show Hamburger Icon */
-    #hamnav label { 
+    hamnav label { 
       display: inline-block; 
       color: white;
       background: #a02620;
@@ -926,7 +926,7 @@ body.nav-opened .nav {
     }
   
     /* Break down menu items into vertical */
-    #hamitems a {
+    hamitems a {
       box-sizing: border-box;
       display: block;
       width: 100%;
@@ -934,8 +934,8 @@ body.nav-opened .nav {
     }
   
     /* Toggle Show/Hide Menu */
-    #hamitems { display: none; }
-    #hamnav input:checked ~ #hamitems { display: block; }
+    hamitems { display: none; }
+    hamnav input:checked ~ #hamitems { display: block; }
   }
   
   /* [DOES NOT MATTER] */
@@ -1053,10 +1053,10 @@ body.nav-opened .menu-button .word {
     margin: 0;
     font-size: 2rem;
     line-height: 1.5em;
-    font-weight: 400;
-    font-family: "Merriweather", serif;
+    font-weight: 700;
+    font-family: "Arvo", italic;
     letter-spacing: 0.01rem;
-    color: rgba(255,255,255,0.8);
+    color: #eb345f;
 }
 
 .no-cover.main-header {

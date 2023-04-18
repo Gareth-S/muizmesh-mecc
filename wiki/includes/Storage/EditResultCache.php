@@ -25,6 +25,7 @@ namespace MediaWiki\Storage;
 use BagOStuff;
 use FormatJson;
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\MainConfigNames;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -42,7 +43,7 @@ use Wikimedia\Rdbms\ILoadBalancer;
 class EditResultCache {
 
 	public const CONSTRUCTOR_OPTIONS = [
-		'RCMaxAge'
+		MainConfigNames::RCMaxAge,
 	];
 
 	private const CACHE_KEY_PREFIX = 'EditResult';
@@ -82,12 +83,12 @@ class EditResultCache {
 	 *
 	 * @return bool Success
 	 */
-	public function set( int $revisionId, EditResult $editResult ) : bool {
+	public function set( int $revisionId, EditResult $editResult ): bool {
 		return $this->mainObjectStash->set(
 			$this->makeKey( $revisionId ),
 			FormatJson::encode( $editResult ),
 			// Patrol flags are not stored for longer than $wgRCMaxAge
-			$this->options->get( 'RCMaxAge' )
+			$this->options->get( MainConfigNames::RCMaxAge )
 		);
 	}
 
@@ -101,12 +102,12 @@ class EditResultCache {
 	 *
 	 * @return EditResult|null Returns null on failure
 	 */
-	public function get( int $revisionId ) : ?EditResult {
+	public function get( int $revisionId ): ?EditResult {
 		$result = $this->mainObjectStash->get( $this->makeKey( $revisionId ) );
 
 		// not found in stash, try change tags
 		if ( !$result ) {
-			$dbr = $this->loadBalancer->getConnection( DB_REPLICA );
+			$dbr = $this->loadBalancer->getConnectionRef( DB_REPLICA );
 			$result = $dbr->selectField(
 				[ 'change_tag', 'change_tag_def' ],
 				'ct_params',
@@ -138,7 +139,7 @@ class EditResultCache {
 	 *
 	 * @return string
 	 */
-	private function makeKey( int $revisionId ) : string {
+	private function makeKey( int $revisionId ): string {
 		return $this->mainObjectStash->makeKey( self::CACHE_KEY_PREFIX, $revisionId );
 	}
 }

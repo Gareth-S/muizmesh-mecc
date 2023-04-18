@@ -23,7 +23,10 @@
 
 use MediaWiki\Cache\LinkBatchFactory;
 use MediaWiki\HookContainer\HookRunner;
+use MediaWiki\MainConfigNames;
 use MediaWiki\User\ActorNormalization;
+use MediaWiki\User\UserIdentityLookup;
+use Wikimedia\IPUtils;
 use Wikimedia\Rdbms\ILoadBalancer;
 use Wikimedia\Timestamp\TimestampException;
 
@@ -43,20 +46,26 @@ class SpecialLog extends SpecialPage {
 	/** @var ActorNormalization */
 	private $actorNormalization;
 
+	/** @var UserIdentityLookup */
+	private $userIdentityLookup;
+
 	/**
 	 * @param LinkBatchFactory $linkBatchFactory
 	 * @param ILoadBalancer $loadBalancer
 	 * @param ActorNormalization $actorNormalization
+	 * @param UserIdentityLookup $userIdentityLookup
 	 */
 	public function __construct(
 		LinkBatchFactory $linkBatchFactory,
 		ILoadBalancer $loadBalancer,
-		ActorNormalization $actorNormalization
+		ActorNormalization $actorNormalization,
+		UserIdentityLookup $userIdentityLookup
 	) {
 		parent::__construct( 'Log' );
 		$this->linkBatchFactory = $linkBatchFactory;
 		$this->loadBalancer = $loadBalancer;
 		$this->actorNormalization = $actorNormalization;
+		$this->userIdentityLookup = $userIdentityLookup;
 	}
 
 	public function execute( $par ) {
@@ -114,7 +123,7 @@ class SpecialLog extends SpecialPage {
 		// If the user doesn't have the right permission to view the specific
 		// log type, throw a PermissionsError
 		// If the log type is invalid, just show all public logs
-		$logRestrictions = $this->getConfig()->get( 'LogRestrictions' );
+		$logRestrictions = $this->getConfig()->get( MainConfigNames::LogRestrictions );
 		$type = $opts->getValue( 'type' );
 		if ( !LogPage::isLogType( $type ) ) {
 			$opts->setValue( 'type', '' );
@@ -144,12 +153,23 @@ class SpecialLog extends SpecialPage {
 		# to lookup for a user by that name and eventually fix user input. See T3697.
 		if ( in_array( $opts->getValue( 'type' ), self::getLogTypesOnUser( $this->getHookRunner() ) ) ) {
 			# ok we have a type of log which expect a user title.
-			$target = Title::newFromText( $opts->getValue( 'page' ) );
+			$page = $opts->getValue( 'page' );
+			$target = Title::newFromText( $page );
 			if ( $target && $target->getNamespace() === NS_MAIN ) {
+				if ( IPUtils::isValidRange( $target->getText() ) ) {
+					$page = IPUtils::sanitizeRange( $target->getText() );
+				}
 				# User forgot to add 'User:', we are adding it for him
 				$opts->setValue( 'page',
-					Title::makeTitleSafe( NS_USER, $opts->getValue( 'page' ) )
+					Title::makeTitleSafe( NS_USER, $page )
 				);
+			} elseif ( $target && $target->getNamespace() === NS_USER
+				&& IPUtils::isValidRange( $target->getText() )
+			) {
+				$page = IPUtils::sanitizeRange( $target->getText() );
+				if ( $page !== $target->getText() ) {
+					$opts->setValue( 'page', Title::makeTitleSafe( NS_USER, $page ) );
+				}
 			}
 		}
 
@@ -227,7 +247,6 @@ class SpecialLog extends SpecialPage {
 			$this->getLinkRenderer(),
 			LogEventsList::USE_CHECKBOXES
 		);
-
 		$pager = new LogPager(
 			$loglist,
 			$opts->getValue( 'type' ),
@@ -249,8 +268,9 @@ class SpecialLog extends SpecialPage {
 		$this->addHeader( $opts->getValue( 'type' ) );
 
 		# Set relevant user
-		if ( $pager->getPerformer() ) {
-			$performerUser = User::newFromName( $pager->getPerformer(), false );
+		$performer = $pager->getPerformer();
+		if ( $performer ) {
+			$performerUser = $this->userIdentityLookup->getUserIdentityByName( $performer );
 			if ( $performerUser ) {
 				$this->getSkin()->setRelevantUser( $performerUser );
 			}
@@ -259,7 +279,7 @@ class SpecialLog extends SpecialPage {
 		# Show form options
 		$loglist->showOptions(
 			$pager->getType(),
-			$pager->getPerformer(),
+			$performer,
 			$pager->getPage(),
 			$pager->getPattern(),
 			$pager->getYear(),

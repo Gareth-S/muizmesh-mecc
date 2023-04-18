@@ -19,7 +19,9 @@
  */
 
 use MediaWiki\Linker\LinkRenderer;
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
+use Wikimedia\RequestTimeout\TimeoutException;
 
 /**
  * Sub class of HTMLForm that provides the form section of SpecialUpload
@@ -110,7 +112,7 @@ class UploadForm extends HTMLForm {
 			+ $this->getOptionsSection();
 
 		$this->getHookRunner()->onUploadFormInitDescriptor( $descriptor );
-		parent::__construct( $descriptor, $context, 'upload' );
+		parent::__construct( $descriptor, $this->getContext(), 'upload' );
 
 		# Add a link to edit MediaWiki:Licenses
 		if ( $this->getAuthority()->isAllowed( 'editinterface' ) ) {
@@ -126,7 +128,7 @@ class UploadForm extends HTMLForm {
 		}
 
 		# Set some form properties
-		$this->setSubmitText( $this->msg( 'uploadbtn' )->text() );
+		$this->setSubmitTextMsg( 'uploadbtn' );
 		$this->setSubmitName( 'wpUpload' );
 		# Used message keys: 'accesskey-upload', 'tooltip-upload'
 		$this->setSubmitTooltip( 'upload' );
@@ -162,8 +164,8 @@ class UploadForm extends HTMLForm {
 		}
 
 		$canUploadByUrl = UploadFromUrl::isEnabled()
-			&& ( UploadFromUrl::isAllowed( $this->getUser() ) === true )
-			&& $this->getConfig()->get( 'CopyUploadsFromSpecialUpload' );
+			&& ( UploadFromUrl::isAllowed( $this->getAuthority() ) === true )
+			&& $this->getConfig()->get( MainConfigNames::CopyUploadsFromSpecialUpload );
 		$radio = $canUploadByUrl;
 		$selectedSourceType = strtolower( $this->getRequest()->getText( 'wpSourceType', 'File' ) );
 
@@ -183,9 +185,7 @@ class UploadForm extends HTMLForm {
 			UploadBase::getMaxPhpUploadSize()
 		);
 
-		$help = $this->msg( 'upload-maxfilesize',
-				$this->getContext()->getLanguage()->formatSize( $this->mMaxUploadSize['file'] )
-			)->parse();
+		$help = $this->msg( 'upload-maxfilesize' )->sizeParams( $this->mMaxUploadSize['file'] )->parse();
 
 		// If the user can also upload by URL, there are 2 different file size limits.
 		// This extra message helps stress which limit corresponds to what.
@@ -217,9 +217,7 @@ class UploadForm extends HTMLForm {
 				'label-message' => 'sourceurl',
 				'upload-type' => 'url',
 				'radio' => &$radio,
-				'help' => $this->msg( 'upload-maxfilesize',
-					$this->getContext()->getLanguage()->formatSize( $this->mMaxUploadSize['url'] )
-				)->parse() .
+				'help' => $this->msg( 'upload-maxfilesize' )->sizeParams( $this->mMaxUploadSize['url'] )->parse() .
 					$this->msg( 'word-separator' )->escaped() .
 					$this->msg( 'upload_source_url' )->parse(),
 				'checked' => $selectedSourceType == 'url',
@@ -239,7 +237,7 @@ class UploadForm extends HTMLForm {
 	}
 
 	/**
-	 * Get the messages indicating which extensions are preferred and prohibitted.
+	 * Get the messages indicating which extensions are preferred and prohibited.
 	 *
 	 * @return string HTML string containing the message
 	 */
@@ -248,9 +246,9 @@ class UploadForm extends HTMLForm {
 		# MIME type here, it's incomprehensible to most people and too long.
 		$config = $this->getConfig();
 
-		if ( $config->get( 'CheckFileExtensions' ) ) {
-			$fileExtensions = array_unique( $config->get( 'FileExtensions' ) );
-			if ( $config->get( 'StrictFileExtensions' ) ) {
+		if ( $config->get( MainConfigNames::CheckFileExtensions ) ) {
+			$fileExtensions = array_unique( $config->get( MainConfigNames::FileExtensions ) );
+			if ( $config->get( MainConfigNames::StrictFileExtensions ) ) {
 				# Everything not permitted is banned
 				$extensionsList =
 					'<div id="mw-upload-permitted">' .
@@ -261,7 +259,8 @@ class UploadForm extends HTMLForm {
 					"</div>\n";
 			} else {
 				# We have to list both preferred and prohibited
-				$prohibitedExtensions = array_unique( $config->get( 'FileBlacklist' ) );
+				$prohibitedExtensions =
+					array_unique( $config->get( MainConfigNames::ProhibitedFileExtensions ) );
 				$extensionsList =
 					'<div id="mw-upload-preferred">' .
 						$this->msg( 'upload-preferred' )
@@ -296,6 +295,8 @@ class UploadForm extends HTMLForm {
 			$stash = $this->localRepo->getUploadStash( $this->getUser() );
 			try {
 				$file = $stash->getFile( $this->mSessionKey );
+			} catch ( TimeoutException $e ) {
+				throw $e;
 			} catch ( Exception $e ) {
 				$file = null;
 			}
@@ -368,7 +369,7 @@ class UploadForm extends HTMLForm {
 			$descriptor['UploadDescription']['rows'] = 8;
 		}
 
-		if ( $config->get( 'UseCopyrightUpload' ) ) {
+		if ( $config->get( MainConfigNames::UseCopyrightUpload ) ) {
 			$descriptor['UploadCopyStatus'] = [
 				'type' => 'text',
 				'section' => 'description',
@@ -449,17 +450,16 @@ class UploadForm extends HTMLForm {
 		$this->mMaxUploadSize['*'] = UploadBase::getMaxUploadSize();
 
 		$scriptVars = [
-			'wgAjaxUploadDestCheck' => $config->get( 'AjaxUploadDestCheck' ),
-			'wgAjaxLicensePreview' => $config->get( 'AjaxLicensePreview' ),
+			'wgAjaxLicensePreview' => $config->get( MainConfigNames::AjaxLicensePreview ),
 			'wgUploadAutoFill' => !$this->mForReUpload &&
 				// If we received mDestFile from the request, don't autofill
 				// the wpDestFile textbox
 				$this->mDestFile === '',
 			'wgUploadSourceIds' => $this->mSourceIds,
-			'wgCheckFileExtensions' => $config->get( 'CheckFileExtensions' ),
-			'wgStrictFileExtensions' => $config->get( 'StrictFileExtensions' ),
-			'wgFileExtensions' => array_values( array_unique( $config->get( 'FileExtensions' ) ) ),
-			'wgCapitalizeUploads' => $this->nsInfo->isCapitalized( NS_FILE ),
+			'wgCheckFileExtensions' => $config->get( MainConfigNames::CheckFileExtensions ),
+			'wgStrictFileExtensions' => $config->get( MainConfigNames::StrictFileExtensions ),
+			'wgFileExtensions' =>
+				array_values( array_unique( $config->get( MainConfigNames::FileExtensions ) ) ),
 			'wgMaxUploadSize' => $this->mMaxUploadSize,
 			'wgFileCanRotate' => SpecialUpload::rotationEnabled(),
 		];

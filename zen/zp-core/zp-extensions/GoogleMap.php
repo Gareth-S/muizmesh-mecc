@@ -28,6 +28,7 @@ $plugin_notice = array(
 );
 				
 $plugin_author = 'Stephen Billard (sbillard), Vincent Bourganel (vincent3569)';
+$plugin_deprecated = true;
 $plugin_category = gettext('Misc');
 
 
@@ -309,7 +310,7 @@ function getAlbumGeodata($album, $map) {
 	$result = false;
 	$images = $album->getImages(0, 0, null, null, false);
 	foreach ($images as $an_image) {
-		$image = newImage($album, $an_image);
+		$image = Image::newImage($album, $an_image);
 		$coord = getGeoCoord($image);
 		if ($coord) {
 			$result = true; // at least one image has geodata
@@ -435,7 +436,7 @@ function printGoogleMap($text = NULL, $id = NULL, $hide = NULL, $obj = NULL, $ca
 	}
 
 	if (!is_null($callback)) {
-		call_user_func($callback, $map);
+		callUserFunction($callback, $map);
 	}
 
 	/* map display */

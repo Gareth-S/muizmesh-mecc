@@ -1,17 +1,6 @@
 <?php
 
-use PHPUnit\Framework\MockObject\MockObject;
-
 class WikiCategoryPageTest extends MediaWikiLangTestCase {
-
-	/**
-	 * @return MockObject|PageProps
-	 */
-	private function getMockPageProps() {
-		return $this->getMockBuilder( PageProps::class )
-			->disableOriginalConstructor()
-			->getMock();
-	}
 
 	/**
 	 * @covers WikiCategoryPage::isHidden
@@ -20,11 +9,11 @@ class WikiCategoryPageTest extends MediaWikiLangTestCase {
 		$title = Title::makeTitle( NS_CATEGORY, 'CategoryPage' );
 		$categoryPage = WikiCategoryPage::factory( $title );
 
-		$pageProps = $this->getMockPageProps();
+		$pageProps = $this->createMock( PageProps::class );
 		$pageProps->expects( $this->once() )
 			->method( 'getProperties' )
 			->with( $title, 'hiddencat' )
-			->will( $this->returnValue( [] ) );
+			->willReturn( [] );
 
 		$this->setService( 'PageProps', $pageProps );
 
@@ -46,11 +35,11 @@ class WikiCategoryPageTest extends MediaWikiLangTestCase {
 		$categoryTitle = Title::makeTitle( NS_CATEGORY, 'CategoryPage' );
 		$categoryPage = WikiCategoryPage::factory( $categoryTitle );
 
-		$pageProps = $this->getMockPageProps();
+		$pageProps = $this->createMock( PageProps::class );
 		$pageProps->expects( $this->once() )
 			->method( 'getProperties' )
 			->with( $categoryTitle, 'hiddencat' )
-			->will( $this->returnValue( $isHidden ? [ $categoryTitle->getArticleID() => '' ] : [] ) );
+			->willReturn( $isHidden ? [ $categoryTitle->getArticleID() => '' ] : [] );
 
 		$this->setService( 'PageProps', $pageProps );
 
@@ -64,11 +53,11 @@ class WikiCategoryPageTest extends MediaWikiLangTestCase {
 		$title = Title::makeTitle( NS_CATEGORY, 'CategoryPage' );
 		$categoryPage = WikiCategoryPage::factory( $title );
 
-		$pageProps = $this->getMockPageProps();
+		$pageProps = $this->createMock( PageProps::class );
 		$pageProps->expects( $this->once() )
 			->method( 'getProperties' )
 			->with( $title, 'expectunusedcategory' )
-			->will( $this->returnValue( [] ) );
+			->willReturn( [] );
 
 		$this->setService( 'PageProps', $pageProps );
 
@@ -84,11 +73,11 @@ class WikiCategoryPageTest extends MediaWikiLangTestCase {
 		$categoryPage = WikiCategoryPage::factory( $categoryTitle );
 		$returnValue = $isExpectedUnusedCategory ? [ $categoryTitle->getArticleID() => '' ] : [];
 
-		$pageProps = $this->getMockPageProps();
+		$pageProps = $this->createMock( PageProps::class );
 		$pageProps->expects( $this->once() )
 			->method( 'getProperties' )
 			->with( $categoryTitle, 'expectunusedcategory' )
-			->will( $this->returnValue( $returnValue ) );
+			->willReturn( $returnValue );
 
 		$this->setService( 'PageProps', $pageProps );
 

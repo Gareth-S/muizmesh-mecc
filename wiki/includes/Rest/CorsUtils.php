@@ -3,6 +3,7 @@
 namespace MediaWiki\Rest;
 
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\MainConfigNames;
 use MediaWiki\Rest\BasicAccess\BasicAuthorizerInterface;
 use MediaWiki\Rest\HeaderParser\Origin;
 use MediaWiki\User\UserIdentity;
@@ -13,11 +14,12 @@ use MediaWiki\User\UserIdentity;
 class CorsUtils implements BasicAuthorizerInterface {
 	/** @var array */
 	public const CONSTRUCTOR_OPTIONS = [
-		'AllowCrossOrigin',
-		'RestAllowCrossOriginCookieAuth',
-		'CanonicalServer',
-		'CrossSiteAJAXdomains',
-		'CrossSiteAJAXdomainExceptions',
+		MainConfigNames::AllowedCorsHeaders,
+		MainConfigNames::AllowCrossOrigin,
+		MainConfigNames::RestAllowCrossOriginCookieAuth,
+		MainConfigNames::CanonicalServer,
+		MainConfigNames::CrossSiteAJAXdomains,
+		MainConfigNames::CrossSiteAJAXdomainExceptions,
 	];
 
 	/** @var ServiceOptions */
@@ -75,9 +77,10 @@ class CorsUtils implements BasicAuthorizerInterface {
 	 * @param Origin $origin
 	 * @return bool
 	 */
-	private function allowOrigin( Origin $origin ) : bool {
-		$allowed = array_merge( [ $this->getCanonicalDomain() ], $this->options->get( 'CrossSiteAJAXdomains' ) );
-		$excluded = $this->options->get( 'CrossSiteAJAXdomainExceptions' );
+	private function allowOrigin( Origin $origin ): bool {
+		$allowed = array_merge( [ $this->getCanonicalDomain() ],
+			$this->options->get( MainConfigNames::CrossSiteAJAXdomains ) );
+		$excluded = $this->options->get( MainConfigNames::CrossSiteAJAXdomainExceptions );
 
 		return $origin->match( $allowed, $excluded );
 	}
@@ -85,10 +88,10 @@ class CorsUtils implements BasicAuthorizerInterface {
 	/**
 	 * @return string
 	 */
-	private function getCanonicalDomain() : string {
+	private function getCanonicalDomain(): string {
 		[
 			'host' => $host,
-		] = wfParseUrl( $this->options->get( 'CanonicalServer' ) );
+		] = wfParseUrl( $this->options->get( MainConfigNames::CanonicalServer ) );
 
 		return $host;
 	}
@@ -103,14 +106,14 @@ class CorsUtils implements BasicAuthorizerInterface {
 	 * @param ResponseInterface $response
 	 * @return ResponseInterface
 	 */
-	public function modifyResponse( RequestInterface $request, ResponseInterface $response ) : ResponseInterface {
-		if ( !$this->options->get( 'AllowCrossOrigin' ) ) {
+	public function modifyResponse( RequestInterface $request, ResponseInterface $response ): ResponseInterface {
+		if ( !$this->options->get( MainConfigNames::AllowCrossOrigin ) ) {
 			return $response;
 		}
 
 		$allowedOrigin = '*';
 
-		if ( $this->options->get( 'RestAllowCrossOriginCookieAuth' ) ) {
+		if ( $this->options->get( MainConfigNames::RestAllowCrossOriginCookieAuth ) ) {
 			// @TODO Since we only Vary the response if (1) the method is OPTIONS or (2) the user is
 			//       registered, it is safe to only add the Vary: Origin when those two conditions
 			//       are met since a response to a logged-in user's request is not cachable.
@@ -158,19 +161,22 @@ class CorsUtils implements BasicAuthorizerInterface {
 	 * @param array $allowedMethods
 	 * @return ResponseInterface
 	 */
-	public function createPreflightResponse( array $allowedMethods ) : ResponseInterface {
+	public function createPreflightResponse( array $allowedMethods ): ResponseInterface {
 		$response = $this->responseFactory->createNoContent();
+		$response->setHeader( 'Access-Control-Allow-Methods', $allowedMethods );
 
-		// Authorization header must be explicitly listed which prevent the use of '*'
-		$response->setHeader( 'Access-Control-Allow-Headers', [
+		$allowedHeaders = $this->options->get( MainConfigNames::AllowedCorsHeaders );
+		$allowedHeaders = array_merge( $allowedHeaders, array_diff( [
+			// Authorization header must be explicitly listed which prevent the use of '*'
 			'Authorization',
+			// REST must allow Content-Type to be operational
 			'Content-Type',
+			// REST relies on conditional requests for some endpoints
 			'If-Mach',
 			'If-None-Match',
 			'If-Modified-Since',
-		] );
-
-		$response->setHeader( 'Access-Control-Allow-Methods', $allowedMethods );
+		], $allowedHeaders ) );
+		$response->setHeader( 'Access-Control-Allow-Headers', $allowedHeaders );
 
 		return $response;
 	}

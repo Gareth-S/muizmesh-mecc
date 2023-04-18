@@ -15,29 +15,10 @@ class ArticleTest extends \MediaWikiIntegrationTestCase {
 	private $article;
 
 	/** creates a title object and its article object */
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 		$this->title = Title::makeTitle( NS_MAIN, 'SomePage' );
 		$this->article = new Article( $this->title );
-	}
-
-	/**
-	 * @covers Article::__get
-	 */
-	public function testImplementsGetMagic() {
-		$this->filterDeprecated( '/Accessing Article::\$mLatest/' );
-		$this->assertFalse( $this->article->mLatest, "Article __get magic" );
-	}
-
-	/**
-	 * @depends testImplementsGetMagic
-	 * @covers Article::__set
-	 */
-	public function testImplementsSetMagic() {
-		$this->filterDeprecated( '/Accessing Article::\$mLatest/' );
-		$this->filterDeprecated( '/Setting Article::\$mLatest/' );
-		$this->article->mLatest = 2;
-		$this->assertEquals( 2, $this->article->mLatest, "Article __set magic" );
 	}
 
 	/**
@@ -87,5 +68,59 @@ class ArticleTest extends \MediaWikiIntegrationTestCase {
 			Message::newFromKey( 'uploadedimage' )->parse(),
 			$output->getHTML()
 		);
+	}
+
+	/**
+	 * Test if patrol footer is possible to show
+	 * @covers Article::showPatrolFooter
+	 * @dataProvider provideShowPatrolFooter
+	 */
+	public function testShowPatrolFooter( $group, $title, $editPageText, $isEditedBySameUser, $expectedResult ) {
+		$context = new RequestContext();
+		$article = new Article( $title );
+		$user1 = $this->getTestUser( $group )->getUser();
+		$user2 = $this->getTestUser()->getUser();
+		$context->setUser( $user1 );
+		$article->setContext( $context );
+		if ( $editPageText !== null ) {
+			$editedUser = $isEditedBySameUser ? $user1 : $user2;
+			$editIsGood = $this->editPage( $article->getPage(), $editPageText, '', NS_MAIN, $editedUser )->isGood();
+			$this->assertTrue( $editIsGood, 'edited a page' );
+		}
+		$this->assertSame( $expectedResult, $article->showPatrolFooter() );
+	}
+
+	public function provideShowPatrolFooter() {
+		yield 'UserAllowedRevExist' => [
+			'sysop',
+			Title::makeTitle( NS_MAIN, 'Page1' ),
+			'EditPage1',
+			false,
+			true
+		];
+
+		yield 'UserNotAllowedRevExist' => [
+			null,
+			Title::makeTitle( NS_MAIN, 'Page2' ),
+			'EditPage2',
+			false,
+			false
+		];
+
+		yield 'UserAllowedNoRev' => [
+			'sysop',
+			Title::makeTitle( NS_MAIN, 'Page3' ),
+			null,
+			false,
+			false
+		];
+
+		yield 'UserAllowedRevExistBySameUser' => [
+			'sysop',
+			Title::makeTitle( NS_MAIN, 'Page4' ),
+			'EditPage4',
+			true,
+			false
+		];
 	}
 }

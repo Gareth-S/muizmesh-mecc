@@ -11,7 +11,40 @@
  */
 
 /**
- * @typedef {SuggestionClickEvent} SubmitEvent
+ * @typedef {SuggestionClickEvent} SearchSubmitEvent
  */
 
-/* exported SuggestionClickEvent, SubmitEvent, FetchEndEvent */
+/**
+ * @typedef {Object} RestResult
+ * @property {number} id
+ * @property {string} key
+ * @property {string} title
+ * @property {string} [description]
+ * @property {RestThumbnail | null} [thumbnail]
+ *
+ */
+
+/**
+ * @typedef {Object} RestThumbnail
+ * @property {string} url
+ * @property {number | null} [width]
+ * @property {number | null} [height]
+ */
+
+/**
+ * @typedef {Object} SearchResult
+ * @property {number} id
+ * @property {string} key
+ * @property {string} title
+ * @property {string} [description]
+ * @property {SearchResultThumbnail} [thumbnail]
+ */
+
+/**
+ * @typedef {Object} SearchResultThumbnail
+ * @property {string} url
+ * @property {number} [width]
+ * @property {number} [height]
+ */
+
+/* exported SuggestionClickEvent, SearchSubmitEvent, FetchEndEvent, RestResult, SearchResult */

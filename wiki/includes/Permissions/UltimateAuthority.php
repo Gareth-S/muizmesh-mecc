@@ -21,6 +21,7 @@
 namespace MediaWiki\Permissions;
 
 use InvalidArgumentException;
+use MediaWiki\Block\Block;
 use MediaWiki\Page\PageIdentity;
 use MediaWiki\User\UserIdentity;
 
@@ -36,12 +37,17 @@ class UltimateAuthority implements Authority {
 	/** @var UserIdentity */
 	private $actor;
 
+	/** @var bool */
+	private $isTemp;
+
 	/**
 	 * @stable to call
 	 * @param UserIdentity $actor
+	 * @param bool $isTemp
 	 */
-	public function __construct( UserIdentity $actor ) {
+	public function __construct( UserIdentity $actor, $isTemp = false ) {
 		$this->actor = $actor;
+		$this->isTemp = $isTemp;
 	}
 
 	/**
@@ -51,6 +57,16 @@ class UltimateAuthority implements Authority {
 	 */
 	public function getUser(): UserIdentity {
 		return $this->actor;
+	}
+
+	/**
+	 * @param int $freshness
+	 *
+	 * @return ?Block always null
+	 * @since 1.37
+	 */
+	public function getBlock( int $freshness = self::READ_NORMAL ): ?Block {
+		return null;
 	}
 
 	/**
@@ -156,4 +172,15 @@ class UltimateAuthority implements Authority {
 		return true;
 	}
 
+	public function isRegistered(): bool {
+		return $this->actor->isRegistered();
+	}
+
+	public function isTemp(): bool {
+		return $this->isTemp;
+	}
+
+	public function isNamed(): bool {
+		return $this->isRegistered() && !$this->isTemp();
+	}
 }

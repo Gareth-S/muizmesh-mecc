@@ -22,6 +22,7 @@
  */
 
 use MediaWiki\Cache\LinkBatchFactory;
+use MediaWiki\MainConfigNames;
 use MediaWiki\User\UserGroupManager;
 use Wikimedia\Rdbms\ILoadBalancer;
 
@@ -83,11 +84,11 @@ class SpecialActiveUsers extends SpecialPage {
 
 		$pager = new ActiveUsersPager(
 			$this->getContext(),
-			$opts,
-			$this->linkBatchFactory,
 			$this->getHookContainer(),
+			$this->linkBatchFactory,
 			$this->loadBalancer,
-			$this->userGroupManager
+			$this->userGroupManager,
+			$opts
 		);
 		$usersBody = $pager->getBody();
 
@@ -112,8 +113,9 @@ class SpecialActiveUsers extends SpecialPage {
 		$groups = $this->userGroupManager->listAllGroups();
 
 		$options = [];
+		$lang = $this->getLanguage();
 		foreach ( $groups as $group ) {
-			$msg = htmlspecialchars( UserGroupMembership::getGroupName( $group ) );
+			$msg = htmlspecialchars( $lang->getGroupName( $group ) );
 			$options[$msg] = $group;
 		}
 		ksort( $options );
@@ -160,7 +162,7 @@ class SpecialActiveUsers extends SpecialPage {
 			->setWrapperLegendMsg( 'activeusers' )
 			->setSubmitTextMsg( 'activeusers-submit' )
 			// prevent setting subpage and 'username' parameter at the same time
-			->setAction( $this->getPageTitle()->getLocalURL() )
+			->setTitle( $this->getPageTitle() )
 			->setMethod( 'get' )
 			->prepareForm()
 			->displayForm( false );
@@ -171,7 +173,7 @@ class SpecialActiveUsers extends SpecialPage {
 	 * @return string
 	 */
 	protected function getIntroText() {
-		$days = $this->getConfig()->get( 'ActiveUserDays' );
+		$days = $this->getConfig()->get( MainConfigNames::ActiveUserDays );
 
 		$intro = $this->msg( 'activeusers-intro' )->numParams( $days )->parse();
 
@@ -185,10 +187,10 @@ class SpecialActiveUsers extends SpecialPage {
 				__METHOD__
 			);
 			if ( $cTime ) {
-				$secondsOld = wfTimestamp( TS_UNIX, $rcMax ) - wfTimestamp( TS_UNIX, $cTime );
+				$secondsOld = (int)wfTimestamp( TS_UNIX, $rcMax ) - (int)wfTimestamp( TS_UNIX, $cTime );
 			} else {
 				$rcMin = $dbr->selectField( 'recentchanges', 'MIN(rc_timestamp)', '', __METHOD__ );
-				$secondsOld = time() - wfTimestamp( TS_UNIX, $rcMin );
+				$secondsOld = time() - (int)wfTimestamp( TS_UNIX, $rcMin );
 			}
 			if ( $secondsOld > 0 ) {
 				$intro .= $this->msg( 'cachedspecial-viewing-cached-ttl' )

@@ -3,18 +3,19 @@
 namespace MediaWiki\Rest\Handler;
 
 use Config;
+use IBufferingStatsdDataFactory;
 use LogicException;
-use MediaWiki\Page\WikiPageFactory;
-use MediaWiki\Parser\ParserCacheFactory;
+use MediaWiki\Edit\ParsoidOutputStash;
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Page\PageLookup;
+use MediaWiki\Parser\Parsoid\ParsoidOutputAccess;
 use MediaWiki\Rest\LocalizedHttpException;
 use MediaWiki\Rest\Response;
 use MediaWiki\Rest\SimpleHandler;
 use MediaWiki\Rest\StringStream;
 use MediaWiki\Revision\RevisionLookup;
-use TitleFactory;
 use TitleFormatter;
 use Wikimedia\Assert\Assert;
-use Wikimedia\UUID\GlobalIdGenerator;
 
 /**
  * A handler that returns Parsoid HTML for the following routes:
@@ -36,33 +37,36 @@ class RevisionHTMLHandler extends SimpleHandler {
 		Config $config,
 		RevisionLookup $revisionLookup,
 		TitleFormatter $titleFormatter,
-		TitleFactory $titleFactory,
-		ParserCacheFactory $parserCacheFactory,
-		WikiPageFactory $wikiPageFactory,
-		GlobalIdGenerator $globalIdGenerator
+		PageLookup $pageLookup,
+		ParsoidOutputStash $parsoidOutputStash,
+		IBufferingStatsdDataFactory $statsDataFactory,
+		ParsoidOutputAccess $parsoidOutputAccess
 	) {
 		$this->contentHelper = new RevisionContentHelper(
 			$config,
 			$revisionLookup,
 			$titleFormatter,
-			$titleFactory
+			$pageLookup
 		);
 		$this->htmlHelper = new ParsoidHTMLHelper(
-			$parserCacheFactory->getParserCache( 'parsoid' ),
-			$parserCacheFactory->getRevisionOutputCache( 'parsoid' ),
-			$wikiPageFactory,
-			$globalIdGenerator
+			$parsoidOutputStash,
+			$statsDataFactory,
+			$parsoidOutputAccess
 		);
 	}
 
 	protected function postValidationSetup() {
-		$this->contentHelper->init( $this->getAuthority(), $this->getValidatedParams() );
+		// TODO: Once Authority supports rate limit (T310476), just inject the Authority.
+		$user = MediaWikiServices::getInstance()->getUserFactory()
+			->newFromUserIdentity( $this->getAuthority()->getUser() );
 
-		$title = $this->contentHelper->getTitle();
+		$this->contentHelper->init( $user, $this->getValidatedParams() );
+
+		$page = $this->contentHelper->getPage();
 		$revision = $this->contentHelper->getTargetRevision();
 
-		if ( $title && $revision ) {
-			$this->htmlHelper->init( $title, $revision );
+		if ( $page && $revision ) {
+			$this->htmlHelper->init( $page, $this->getValidatedParams(), $user, $revision );
 		}
 	}
 
@@ -73,12 +77,12 @@ class RevisionHTMLHandler extends SimpleHandler {
 	public function run(): Response {
 		$this->contentHelper->checkAccess();
 
-		$titleObj = $this->contentHelper->getTitle();
+		$page = $this->contentHelper->getPage();
 		$revisionRecord = $this->contentHelper->getTargetRevision();
 
-		// The call to $this->contentHelper->getTitle() should not return null if
+		// The call to $this->contentHelper->getPage() should not return null if
 		// $this->contentHelper->checkAccess() did not throw.
-		Assert::invariant( $titleObj !== null, 'Title should be known' );
+		Assert::invariant( $page !== null, 'Page should be known' );
 
 		// The call to $this->contentHelper->getTargetRevision() should not return null if
 		// $this->contentHelper->checkAccess() did not throw.
@@ -119,7 +123,8 @@ class RevisionHTMLHandler extends SimpleHandler {
 			return null;
 		}
 
-		return $this->htmlHelper->getETag();
+		// Vary eTag based on output mode
+		return $this->htmlHelper->getETag( $this->getOutputMode() );
 	}
 
 	/**
@@ -142,7 +147,10 @@ class RevisionHTMLHandler extends SimpleHandler {
 	}
 
 	public function getParamSettings(): array {
-		return $this->contentHelper->getParamSettings();
+		return array_merge(
+			$this->contentHelper->getParamSettings(),
+			$this->htmlHelper->getParamSettings()
+		);
 	}
 
 	/**

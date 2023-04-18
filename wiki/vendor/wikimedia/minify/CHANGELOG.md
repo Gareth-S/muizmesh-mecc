@@ -1,10 +1,41 @@
 # Changelog
 
+## 2.3.0 (2022-04-19)
+
+Added:
+
+* JavaScriptMinifier: Add support for source maps. (Tim Starling) [T47514](https://phabricator.wikimedia.org/T47514)
+   Use via the `createMinifier()` and `createSourceMapState()` methods,
+   see `/tests/data/sourcemap/combine.php` for an example.
+* bin: Add `jsmap-web` and `jsmap-raw` commands. (Tim Starling)
+
+Fixed:
+
+* JavaScriptMinifier: Fix handling of property on dotless number literal. (Timo Tijhof) [T303827](https://phabricator.wikimedia.org/T303827)
+
+## 2.2.6 (2021-11-18)
+
+Fixed:
+
+* JavaScriptMinifier: Correctly recognize `\` in template strings. (Roan Kattouw) [T296058](https://phabricator.wikimedia.org/T296058)
+
+## 2.2.5 (2021-10-20)
+
+Fixed:
+
+* bin: Fix `minify` CLI autoload when run from a vendor directory. (Timo Tijhof)
+
+## 2.2.4 (2021-07-28)
+
+Fixed:
+
+* JavaScriptMinifer: Recognize `...` as a single token. (Roan Kattouw) [T287526](https://phabricator.wikimedia.org/T287526)
+
 ## 2.2.3 (2021-06-07)
 
 Fixed:
 
-*  JavaScriptMinifer: Fix handling of `.delete` as object property. (Roan Kattouw) [T283244](https://phabricator.wikimedia.org/T283244)
+* JavaScriptMinifer: Fix handling of `.delete` as object property. (Roan Kattouw) [T283244](https://phabricator.wikimedia.org/T283244)
 
 ## 2.2.2 (2021-05-07)
 

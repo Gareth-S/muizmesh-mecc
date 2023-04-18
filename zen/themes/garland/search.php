@@ -82,7 +82,7 @@ if (!defined('WEBPATH'))
 								<!-- begin content -->
 								<div class="main section" id="main">
 									<h2 id="gallerytitle">
-										<?php printHomeLink('', ' » '); printGalleryIndexURL(' » '); printSearchBreadcrumb(' » '); ?>
+										<?php printHomeLink('', ' » '); printGalleryIndexURL(' » '); printSearchBreadcrumb(' » '); printCurrentPageAppendix(); ?>
 									</h2>
 
 									<?php
@@ -96,7 +96,7 @@ if (!defined('WEBPATH'))
 										<?php
 									} else {
 										echo "<p>" . gettext('Sorry, no matches for your search.') . "</p>";
-										$_zp_current_search->setSearchParams('words=');
+										$_zp_current_search->setSearchParams('search=');
 									}
 									?>
 									<?php
@@ -221,8 +221,8 @@ if (!defined('WEBPATH'))
 									<p style="clear: both; "></p>
 									<?php $handler->theme_content(NULL); ?>
 									<?php
-									if ((getNumAlbums() != 0) || !$_oneImagePage) {
-										printPageListWithNav(gettext("« prev"), gettext("next »"), $_oneImagePage);
+									if ((getNumAlbums() != 0) || !$_zp_one_image_page) {
+										printPageListWithNav(gettext("« prev"), gettext("next »"), $_zp_one_image_page);
 									}
 									footer();
 									?>

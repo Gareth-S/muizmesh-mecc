@@ -102,7 +102,7 @@ class SpecialPrefixindex extends SpecialAllPages {
 		if ( $this->including() || $showme != '' || $ns !== null ) {
 			$this->showPrefixChunk( $namespace, $showme, $from );
 		} else {
-			$out->addHTML( $this->namespacePrefixForm( $namespace, null ) );
+			$out->addHTML( $this->namespacePrefixForm( $namespace, '' ) );
 		}
 	}
 
@@ -141,10 +141,9 @@ class SpecialPrefixindex extends SpecialAllPages {
 				'label-message' => 'prefixindex-strip',
 			],
 		];
-		$context = new DerivativeContext( $this->getContext() );
-		$context->setTitle( $this->getPageTitle() ); // Remove subpage
-		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $context )
+		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $this->getContext() )
 			->setMethod( 'get' )
+			->setTitle( $this->getPageTitle() ) // Remove subpage
 			->setWrapperLegendMsg( 'prefixindex' )
 			->setSubmitTextMsg( 'prefixindex-submit' );
 
@@ -193,16 +192,13 @@ class SpecialPrefixindex extends SpecialAllPages {
 			}
 
 			$res = $dbr->select( 'page',
-				array_merge(
-					[ 'page_namespace', 'page_title' ],
-					LinkCache::getSelectFields()
-				),
+				LinkCache::getSelectFields(),
 				$conds,
 				__METHOD__,
 				[
 					'ORDER BY' => 'page_title',
 					'LIMIT' => $this->maxPerPage + 1,
-					'USE INDEX' => 'name_title',
+					'USE INDEX' => 'page_name_title',
 				]
 			);
 

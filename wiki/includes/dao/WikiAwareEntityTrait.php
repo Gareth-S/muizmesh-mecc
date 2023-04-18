@@ -39,6 +39,7 @@ trait WikiAwareEntityTrait {
 	 * @see RevisionRecord::getWikiId()
 	 * @see UserIdentity::getWikiId()
 	 * @see PageIdentity::getWikiId()
+	 * @see Block::getWikiId()
 	 *
 	 * @return string|false The wiki's logical name or WikiAwareEntity::LOCAL for the local wiki
 	 */
@@ -86,8 +87,7 @@ trait WikiAwareEntityTrait {
 	 * @param string|false $wikiId
 	 */
 	protected function assertWikiIdParam( $wikiId ) {
-		Assert::parameterType( 'string|boolean', $wikiId, '$wikiId' );
-		Assert::parameter( $wikiId !== true, '$wikiId', 'must be false or a string' );
+		Assert::parameterType( [ 'string', 'false' ], $wikiId, '$wikiId' );
 	}
 
 	/**
@@ -96,7 +96,7 @@ trait WikiAwareEntityTrait {
 	 * @param string|false $wikiId
 	 * @return string
 	 */
-	private function wikiIdToString( $wikiId ) : string {
+	private function wikiIdToString( $wikiId ): string {
 		return $wikiId === WikiAwareEntity::LOCAL ? 'the local wiki' : "'{$wikiId}'";
 	}
 }

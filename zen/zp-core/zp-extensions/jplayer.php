@@ -73,6 +73,7 @@ $plugin_notice = gettext("<strong>IMPORTANT</strong>: Only one multimedia extens
 $plugin_author = "Malte Müller (acrylian)";
 $plugin_disable = ((getOption('album_folder_class') === 'external') ? gettext('This player does not support <em>External Albums</em>.') : extensionEnabled('class-video')) ? false : gettext('The class-video plugin must be enabled for video support.');
 $plugin_category = gettext('Media');
+$plugin_deprecated = true;
 $option_interface = 'jplayer_options';
 
 if (!empty($_zp_multimedia_extension->name) || $plugin_disable) {
@@ -248,7 +249,7 @@ class jPlayer {
 
 	static function getMacrojplayer($albumname, $imagename, $count = 1) {
 		global $_zp_multimedia_extension;
-		$movie = newImage(NULL, array('folder' => $albumname, 'filename' => $imagename), true);
+		$movie = Image::newImage(NULL, array('folder' => $albumname, 'filename' => $imagename), true);
 		if ($movie->exists) {
 			return $_zp_multimedia_extension->getPlayerConfig($movie, NULL, (int) $count);
 		} else {
@@ -269,7 +270,7 @@ class jPlayer {
 
 	static function headJS() {
 		$skin = @array_shift(getPluginFiles('*.css', 'jplayer/skin/' . getOption('jplayer_skin')));
-		if (file_exists($skin)) {
+		if (is_string($skin) && file_exists($skin)) {
 			$skin = str_replace(SERVERPATH, WEBPATH, $skin); //replace SERVERPATH as that does not work as a CSS link
 		} else {
 			$skin = WEBPATH . '/' . ZENFOLDER . '/' . PLUGIN_FOLDER . '/jplayer/skin/zenphotolight/jplayer.zenphotolight.css';
@@ -641,7 +642,7 @@ class jPlayer {
 				$albumobj = $_zp_current_album;
 			}
 		} else {
-			$albumobj = newAlbum($albumfolder);
+			$albumobj = AlbumBase::newAlbum($albumfolder);
 		}
 		$entries = $albumobj->getImages(0);
 		if (($numimages = count($entries)) != 0) {
@@ -687,10 +688,10 @@ class jPlayer {
 						$numbering = '<span>' . $number . '</span>';
 					}
 					if (is_array($entry)) {
-						$albumobj = newAlbum($entry['folder']);
-						$video = newImage($albumobj, $entry['filename']);
+						$albumobj = AlbumBase::newAlbum($entry['folder']);
+						$video = Image::newImage($albumobj, $entry['filename']);
 					} else {
-						$video = newImage($albumobj, $entry);
+						$video = Image::newImage($albumobj, $entry);
 					}
 					$videoThumb = '';
 					$this->setModeAndSuppliedFormat($ext);

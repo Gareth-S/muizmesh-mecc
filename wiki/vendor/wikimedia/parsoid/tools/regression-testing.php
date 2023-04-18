@@ -2,6 +2,10 @@
 
 require_once __DIR__ . '/../tools/Maintenance.php';
 
+use Wikimedia\Parsoid\Utils\DOMCompat;
+use Wikimedia\Parsoid\Utils\DOMUtils;
+use Wikimedia\ScopedCallback;
+
 // phpcs:ignore MediaWiki.Files.ClassMatchesFilename.NotMatch
 class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 	use \Wikimedia\Parsoid\Tools\ExtendedOptsProcessor;
@@ -20,11 +24,13 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 		);
 		$this->addArg(
 			'knownGood',
-			"git commit hash to use as the oracle ('known good')"
+			"git commit hash to use as the oracle ('known good')",
+			false
 		);
 		$this->addArg(
 			'maybeBad',
-			"git commit hash to test ('maybe bad')"
+			"git commit hash to test ('maybe bad')",
+			false
 		);
 		$this->addOption(
 			"uid",
@@ -33,7 +39,8 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 		);
 		$this->addOption(
 			"contentVersion",
-			"The outputContentVersion to use, if different from the default"
+			"The outputContentVersion to use, if different from the default",
+			false, true
 		);
 		$this->addOption(
 			"titles",
@@ -70,7 +77,7 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 		if ( PHP_VERSION_ID < 70400 ) {
 			// Below PHP 7.4, proc_open only takes a string, not an array :(
 			// Do a hacky job of escaping shell arguments
-			$cmd = implode( ' ', array_map( function ( $a ) {
+			$cmd = implode( ' ', array_map( static function ( $a ) {
 				return '"' . str_replace(
 					[ '"', '$' ],
 					[ '\"', '\$' ],
@@ -102,7 +109,7 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 	 * @param string|null $hostname The host on which to execute the command.
 	 * @throws Error if the command does not successfully execute
 	 */
-	private function ssh( array $cmd, string $hostname = null ):void {
+	private function ssh( array $cmd, string $hostname = null ): void {
 		array_unshift( $cmd, 'ssh', $this->hostname( $hostname ) );
 		$this->sh( $cmd );
 	}
@@ -115,8 +122,8 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 	 * @param string|array<string> ...$commands
 	 * @return array<string>
 	 */
-	private static function cmd( ...$commands ):array {
-		return array_merge( ...array_map( function ( $item ) {
+	private static function cmd( ...$commands ): array {
+		return array_merge( ...array_map( static function ( $item ) {
 			return is_string( $item ) ? explode( ' ', $item ) : $item;
 		}, $commands ) );
 	}
@@ -181,12 +188,17 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 			[ '-o', $resultPath ]
 		);
 
-		$this->dashes( "Checking out $commit" );
+		$this->dashes( "Checking out $commit on scandium" );
 		$this->ssh( self::cmd(
 			$cdDir, '&&',
 			'git checkout', [ $commit ], '&&',
 			$restartPHP
 		), 'scandium.eqiad.wmnet' );
+		# Check out on testreduce1001 as well to ensure HTML version changes
+		# don't trip up our test script and we don't have to mess with passing in
+		# the --contentVersion option in most scenarios
+		$this->dashes( "Checking out $commit on testreduce1001" );
+		$this->ssh( self::cmd( $cdDir, '&&', 'git checkout', [ $commit ] ), 'testreduce1001.eqiad.wmnet' );
 
 		$this->dashes( "Running tests" );
 		$this->ssh( self::cmd(
@@ -246,20 +258,43 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 	}
 
 	/**
+	 * Helper function to dump results
+	 * @param array $res
+	 */
+	private function printResults( array $res ): void {
+		foreach ( $res as $test => $testRes ) {
+			echo( "\t$test\t=> " );
+			foreach ( $testRes as $type => $count ) {
+				echo( "$type: $count; " );
+			}
+			echo( "\n" );
+		}
+	}
+
+	/**
 	 * Compare the results for the given titles.
 	 * @param string[] $titles The titles to compare
 	 * @param string $knownGood the oracle commit
 	 * @param string $maybeBad the test commit
 	 */
-	public function compareResults( $titles, $knownGood, $maybeBad ):void {
+	public function compareResults( $titles, $knownGood, $maybeBad ): void {
 		$this->dashes( "Comparing results" );
 		$oracleResults = $this->readResults( $knownGood );
 		$commitResults = $this->readResults( $maybeBad );
+		$numErrorsOracle = 0;
+		$numErrorsCommit = 0;
+		$numTitles = count( $titles );
 
 		$summary = [ 'degraded' => [], 'improved' => [] ];
 		foreach ( $titles as $title ) {
 			$oracleRes = $oracleResults[$title] ?? null;
 			$commitRes = $commitResults[$title] ?? null;
+			if ( $oracleRes['html2wt']['error'] ?? 0 ) {
+				$numErrorsOracle++;
+			}
+			if ( $commitRes['html2wt']['error'] ?? 0 ) {
+				$numErrorsCommit++;
+			}
 			if ( self::deepEquals( $oracleRes, $commitRes ) ) {
 				if ( !$this->hasOption( 'quiet' ) ) {
 					echo( "$title\n" );
@@ -267,12 +302,13 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 				}
 			} else {
 				// emit these differences even in 'quiet' mode
+				$this->dashes( null, true );
 				echo( "$title\n" );
 				echo( "$knownGood (known good) results:\n" );
-				var_dump( $oracleRes );
+				$this->printResults( $oracleRes );
 				echo( "$maybeBad (maybe bad) results:\n" );
-				var_dump( $commitRes );
-				$degraded = function ( $newRes, $oldRes ) {
+				$this->printResults( $commitRes );
+				$degraded = static function ( $newRes, $oldRes ) {
 					// NOTE: We are conservatively assuming that even if semantic
 					// errors go down but syntactic errors go up, it is a degradation.
 					return ( $newRes['error'] ?? 0 ) > ( $oldRes['error'] ?? 0 ) ||
@@ -291,33 +327,118 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 		if ( count( $summary['improved'] ) > 0 ) {
 			echo( "Pages that seem to have improved (feel free to verify in other ways):\n" );
 			echo( implode( "\n", $summary['improved'] ) );
+			echo( "\n" );
 			$this->dashes( null, true );
 		}
 		if ( count( $summary['degraded'] ) > 0 ) {
 			echo( "Pages needing investigation:\n" );
 			echo( implode( "\n", $summary['degraded'] ) );
+			echo( "\n" );
 		} else {
 			echo( "*** No pages need investigation ***\n" );
 		}
+
+		# Sanity check
+		if ( $numErrorsOracle === $numTitles ) {
+			error_log( "\n***** ALL runs for $knownGood errored! *****" );
+		}
+		if ( $numErrorsCommit === $numTitles ) {
+			error_log( "\n***** ALL runs for $maybeBad errored! *****" );
+		}
+	}
+
+	/**
+	 * @param string $url
+	 * @return string
+	 */
+	private function makeCurlRequest( string $url ): string {
+		$curlopt = [
+			CURLOPT_USERAGENT => 'Parsoid-RT-Test',
+			CURLOPT_CONNECTTIMEOUT => 60,
+			CURLOPT_TIMEOUT => 60,
+			CURLOPT_FOLLOWLOCATION => false,
+			CURLOPT_ENCODING => '', // Enable compression
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_POST => false
+		];
+		$ch = curl_init( $url );
+		if ( !$ch ) {
+			throw new \RuntimeException( "Failed to open curl handle to $url" );
+		}
+		$reset = new ScopedCallback( 'curl_close', [ $ch ] );
+
+		if ( !curl_setopt_array( $ch, $curlopt ) ) {
+			throw new \RuntimeException( "Error setting curl options: " . curl_error( $ch ) );
+		}
+
+		$res = curl_exec( $ch );
+
+		if ( curl_errno( $ch ) !== 0 ) {
+			throw new \RuntimeException( "HTTP request failed: " . curl_error( $ch ) );
+		}
+
+		$code = curl_getinfo( $ch, CURLINFO_RESPONSE_CODE );
+		if ( $code !== 200 ) {
+			throw new \RuntimeException( "HTTP request failed: HTTP code $code" );
+		}
+
+		ScopedCallback::consume( $reset );
+
+		if ( !$res ) {
+			throw new \RuntimeException( "HTTP request failed: Empty response" );
+		}
+
+		return $res;
+	}
+
+	/**
+	 * @param string $baseUrl
+	 * @param array &$titles
+	 */
+	private function updateSemanticErrorTitles( string $baseUrl, array &$titles ): void {
+		$url = $baseUrl;
+		$page = 0;
+		do {
+			$done = true;
+			$dom = DOMUtils::parseHTML( $this->makeCurlRequest( $url ) );
+			$titleRows = DOMCompat::querySelectorAll( $dom, 'tr[status=fail]' );
+			foreach ( $titleRows as $tr ) {
+				$titles[] = DOMCompat::querySelector( $tr, 'td[class=title] a' )->firstChild->nodeValue;
+			}
+			// Fetch more if necessary
+			if ( !DOMCompat::querySelectorAll( $dom, 'tr[status=skip]' ) ) {
+				$done = false;
+				$page++;
+				$url = $baseUrl . "/$page";
+				if ( $page > 2 ) {
+					throw new \RuntimeException( "Too many regressions? Fetched $page pages of $baseUrl. Aborting." );
+				}
+			}
+		} while ( !$done );
 	}
 
 	/** @inheritDoc */
 	public function execute() {
 		$this->maybeHelp();
-		$knownGood = $this->getArg( 0 );
-		$maybeBad = $this->getArg( 1 );
 		$titles = [];
 
 		if ( $this->hasOption( 'url' ) ) {
-			$this->error( "Not yet implemented" );
+			$baseUrl = $this->getOption( 'url' );
+			if ( !preg_match( "#.*/between/(.*)/(.*)#", $baseUrl, $matches ) ) {
+				$this->error( "Please check the source url. Don't recognize format of $baseUrl." );
+				return -1;
+			}
+			$knownGood = $matches[1];
+			$maybeBad = $matches[2];
+			$rtSelserUrl = preg_replace( "#regressions/between/.*/(.*)$#", "rtselsererrors/$1", $baseUrl );
+			$titles = [];
+
+			$this->updateSemanticErrorTitles( $baseUrl, $titles );
+			$this->updateSemanticErrorTitles( $rtSelserUrl, $titles );
+			$localTitlesPath = "/tmp/titles";
+			file_put_contents( $localTitlesPath, implode( "\n", $titles ) );
 		} elseif ( $this->hasOption( 'titles' ) ) {
-			$this->ssh( self::cmd( 'sudo rm -f', [ $this->titlesPath ] ) );
-			$this->sh( self::cmd(
-				'scp',
-				$this->hasOption( 'quiet' ) ? '-q' : [],
-				[ $this->getOption( 'titles' ) ],
-				[ $this->hostname() . ":" . $this->titlesPath ]
-			), true );
+			$localTitlesPath = $this->getOption( 'titles' );
 			$lines = preg_split(
 				'/\r\n?|\n/',
 				file_get_contents( $this->getOption( 'titles' ) )
@@ -328,9 +449,24 @@ class RegressionTesting extends \Wikimedia\Parsoid\Tools\Maintenance {
 					$titles[] = $line;
 				}
 			}
+
+			$knownGood = $this->getArg( 0 );
+			$maybeBad = $this->getArg( 1 );
+			if ( !$knownGood || !$maybeBad ) {
+				$this->error( "Missing known-good and maybe-bad git hashes" );
+				return -1;
+			}
 		} else {
 			$this->error( "Either --titles or --url is required." );
 		}
+
+		$this->ssh( self::cmd( 'sudo rm -f', [ $this->titlesPath ] ) );
+		$this->sh( self::cmd(
+			'scp',
+			$this->hasOption( 'quiet' ) ? '-q' : [],
+			[ $localTitlesPath ],
+			[ $this->hostname() . ":" . $this->titlesPath ]
+		), true );
 
 		$this->runTest( $knownGood );
 		$this->runTest( $maybeBad );

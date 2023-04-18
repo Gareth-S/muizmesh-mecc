@@ -1,5 +1,6 @@
 <?php
 
+use MediaWiki\MainConfigNames;
 use Wikimedia\TestingAccessWrapper;
 
 /**
@@ -7,11 +8,14 @@ use Wikimedia\TestingAccessWrapper;
  */
 class FormatMetadataTest extends MediaWikiMediaTestCase {
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->checkPHPExtension( 'exif' );
-		$this->setMwGlobals( 'wgShowEXIF', true );
+		$this->overrideConfigValues( [
+			MainConfigNames::LanguageCode => 'en',
+			MainConfigNames::ShowEXIF => true,
+		] );
 	}
 
 	/**

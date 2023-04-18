@@ -23,7 +23,7 @@ class ZenpageItems extends ZenpageRoot {
 	function getAuthor($fullname = false) {
 		$author = $this->get("author");
 		if ($fullname) {
-			return Zenphoto_Administrator::getNameByUser($author);
+			return Administrator::getNameByUser($author);
 		}
 		return $author;
 	}
@@ -61,27 +61,6 @@ class ZenpageItems extends ZenpageRoot {
 		$this->set("content", $c);
 	}
 	
-	/**
-	 * Returns the last change author
-	 * 
-	 * @deprecated Zenphoto 1.6 - Use getLastChangeUser() instead
-	 *
-	 * @return string
-	 */
-	function getLastchangeAuthor() {
-		return $this->getLastChangeUser();
-	}
-
-	/**
-	 *
-	 * stores the last change author
-	 * 
-	 * @deprecated Zenphoto 1.6 - Use setLastChangeUser() instead
-	 */
-	function setLastchangeAuthor($a) {
-		$this->setLastchangeUser($a);
-	}
-
 	/**
 	 * Returns the locked status , "1" if locked (only used on the admin)
 	 *

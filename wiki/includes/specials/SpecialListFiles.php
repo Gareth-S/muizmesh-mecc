@@ -23,6 +23,7 @@
 
 use MediaWiki\User\UserNamePrefixSearch;
 use MediaWiki\User\UserNameUtils;
+use MediaWiki\User\UserRigorOptions;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 class SpecialListFiles extends IncludableSpecialPage {
@@ -35,9 +36,6 @@ class SpecialListFiles extends IncludableSpecialPage {
 
 	/** @var CommentStore */
 	private $commentStore;
-
-	/** @var ActorMigration */
-	private $actorMigration;
 
 	/** @var UserNameUtils */
 	private $userNameUtils;
@@ -52,7 +50,6 @@ class SpecialListFiles extends IncludableSpecialPage {
 	 * @param RepoGroup $repoGroup
 	 * @param ILoadBalancer $loadBalancer
 	 * @param CommentStore $commentStore
-	 * @param ActorMigration $actorMigration
 	 * @param UserNameUtils $userNameUtils
 	 * @param UserNamePrefixSearch $userNamePrefixSearch
 	 * @param UserCache $userCache
@@ -61,7 +58,6 @@ class SpecialListFiles extends IncludableSpecialPage {
 		RepoGroup $repoGroup,
 		ILoadBalancer $loadBalancer,
 		CommentStore $commentStore,
-		ActorMigration $actorMigration,
 		UserNameUtils $userNameUtils,
 		UserNamePrefixSearch $userNamePrefixSearch,
 		UserCache $userCache
@@ -70,7 +66,6 @@ class SpecialListFiles extends IncludableSpecialPage {
 		$this->repoGroup = $repoGroup;
 		$this->loadBalancer = $loadBalancer;
 		$this->commentStore = $commentStore;
-		$this->actorMigration = $actorMigration;
 		$this->userNameUtils = $userNameUtils;
 		$this->userNamePrefixSearch = $userNamePrefixSearch;
 		$this->userCache = $userCache;
@@ -86,12 +81,12 @@ class SpecialListFiles extends IncludableSpecialPage {
 			$search = '';
 			$showAll = false;
 		} else {
-			$userName = $this->getRequest()->getText( 'user', $par );
+			$userName = $this->getRequest()->getText( 'user', $par ?? '' );
 			$search = $this->getRequest()->getText( 'ilsearch', '' );
 			$showAll = $this->getRequest()->getBool( 'ilshowall', false );
 		}
 		// Sanitize usernames to avoid symbols in the title of page.
-		$sanitizedUserName = $this->userNameUtils->getCanonical( $userName, UserNameUtils::RIGOR_NONE );
+		$sanitizedUserName = $this->userNameUtils->getCanonical( $userName, UserRigorOptions::RIGOR_NONE );
 		if ( $sanitizedUserName ) {
 			$userName = $sanitizedUserName;
 		}
@@ -104,16 +99,16 @@ class SpecialListFiles extends IncludableSpecialPage {
 
 		$pager = new ImageListPager(
 			$this->getContext(),
+			$this->commentStore,
+			$this->getLinkRenderer(),
+			$this->loadBalancer,
+			$this->repoGroup,
+			$this->userCache,
+			$this->userNameUtils,
 			$userName,
 			$search,
 			$this->including(),
-			$showAll,
-			$this->getLinkRenderer(),
-			$this->repoGroup,
-			$this->loadBalancer,
-			$this->commentStore,
-			$this->actorMigration,
-			$this->userCache
+			$showAll
 		);
 
 		$out = $this->getOutput();

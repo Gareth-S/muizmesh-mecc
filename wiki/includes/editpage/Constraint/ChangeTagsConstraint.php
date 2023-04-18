@@ -39,7 +39,7 @@ class ChangeTagsConstraint implements IEditConstraint {
 	/** @var array */
 	private $tags;
 
-	/** @var StatusValue|string|null */
+	/** @var StatusValue|string */
 	private $result;
 
 	/**
@@ -54,7 +54,7 @@ class ChangeTagsConstraint implements IEditConstraint {
 		$this->tags = $tags;
 	}
 
-	public function checkConstraint() : string {
+	public function checkConstraint(): string {
 		if ( !$this->tags ) {
 			$this->result = self::CONSTRAINT_PASSED;
 			return self::CONSTRAINT_PASSED;
@@ -64,7 +64,8 @@ class ChangeTagsConstraint implements IEditConstraint {
 		// service as part of T245964
 		$changeTagStatus = ChangeTags::canAddTagsAccompanyingChange(
 			$this->tags,
-			$this->performer
+			$this->performer,
+			false
 		);
 
 		if ( $changeTagStatus->isOK() ) {
@@ -76,7 +77,7 @@ class ChangeTagsConstraint implements IEditConstraint {
 		return self::CONSTRAINT_FAILED;
 	}
 
-	public function getLegacyStatus() : StatusValue {
+	public function getLegacyStatus(): StatusValue {
 		if ( $this->result === self::CONSTRAINT_PASSED ) {
 			$statusValue = StatusValue::newGood();
 		} else {

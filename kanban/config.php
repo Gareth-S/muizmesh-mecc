@@ -10,7 +10,7 @@
 define('DATA_DIR', __DIR__.DIRECTORY_SEPARATOR.'data');
 
 // Enable/Disable debug
-define('DEBUG', true);
+define('DEBUG', false);
 
 // Available log drivers: syslog, stderr, stdout, system or file
 define('LOG_DRIVER', 'system');
@@ -27,7 +27,7 @@ define('PLUGIN_API_URL', 'https://kanboard.org/plugins.json');
 // Enable/Disable plugin installer (Disabled by default for security reasons)
 // There is no code review or any approval process to submit a plugin.
 // This is up to the Kanboard instance owner to validate if a plugin is legit.
-define('PLUGIN_INSTALLER', false);
+define('PLUGIN_INSTALLER', true);
 
 // Available cache drivers are "file" and "memory"
 define('CACHE_DRIVER', 'memory');
@@ -42,7 +42,7 @@ define('FILES_DIR', DATA_DIR.DIRECTORY_SEPARATOR.'files');
 define('MAIL_CONFIGURATION', true);
 
 // E-mail address used for the "From" header (notifications)
-define('MAIL_FROM', 'mecc@muizenmesh.co.za');
+define('MAIL_FROM', 'admin@muizenmesh.co.za');
 
 // E-mail address used for the "Bcc" header to send a copy of all notifications
 define('MAIL_BCC', '');
@@ -70,16 +70,16 @@ define('DB_RUN_MIGRATIONS', true);
 define('DB_DRIVER', 'mysql');
 
 // Database username
-define('DB_USERNAME', 'sexthera_kanboard');
+define('DB_USERNAME', 'sexthera_kanb868');
 
 // Database password
-define('DB_PASSWORD', 'Qx3{gyeP+3l');
+define('DB_PASSWORD', '389pS[l!8s');
 
 // Database hostname
 define('DB_HOSTNAME', 'localhost');
 
 // Database database name
-define('DB_NAME', 'sexthera_kanboard');
+define('DB_NAME', 'sexthera_kanb868');
 
 // Database custom port (null = default port)
 define('DB_PORT', null);
@@ -211,8 +211,11 @@ define('REVERSE_PROXY_USER_HEADER', 'REMOTE_USER');
 // Username of the admin, by default blank
 define('REVERSE_PROXY_DEFAULT_ADMIN', '');
 
-// Header name to use for the username
+// Header name to use for the user email
 define('REVERSE_PROXY_EMAIL_HEADER', 'REMOTE_EMAIL');
+
+// Header name to use for the user full name
+define('REVERSE_PROXY_FULLNAME_HEADER', 'REMOTE_NAME');
 
 // Default domain to use for setting the email address
 define('REVERSE_PROXY_DEFAULT_DOMAIN', '');

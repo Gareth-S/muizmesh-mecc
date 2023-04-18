@@ -18,20 +18,22 @@
  * Coordinates are relative to the source image, not the thumbnail.
  */
 
-namespace MediaWiki\Extensions\ImageMap;
+namespace MediaWiki\Extension\ImageMap;
 
 use ConfigFactory;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use MediaWiki\Hook\ParserFirstCallInitHook;
 use MediaWiki\MediaWikiServices;
 use OutputPage;
 use Parser;
 use Sanitizer;
 use Title;
+use Wikimedia\AtEase\AtEase;
 use Xml;
 
-class ImageMap {
+class ImageMap implements ParserFirstCallInitHook {
 
 	private const TOP_RIGHT = 0;
 	private const BOTTOM_RIGHT = 1;
@@ -42,8 +44,8 @@ class ImageMap {
 	/**
 	 * @param Parser $parser
 	 */
-	public static function onParserFirstCallInit( Parser $parser ) {
-		$parser->setHook( 'imagemap', [ self::class, 'render' ] );
+	public function onParserFirstCallInit( $parser ) {
+		$parser->setHook( 'imagemap', [ $this, 'render' ] );
 	}
 
 	/**
@@ -52,9 +54,10 @@ class ImageMap {
 	 * @param Parser $parser
 	 * @return string HTML (Image map, or error message)
 	 */
-	public static function render( $input, $params, Parser $parser ) {
+	public function render( $input, $params, Parser $parser ) {
 		global $wgUrlProtocols, $wgNoFollowLinks;
 		$config = ConfigFactory::getDefaultInstance()->makeConfig( 'main' );
+		$enableLegacyMediaDOM = $config->get( 'ParserEnableLegacyMediaDOM' );
 
 		$lines = explode( "\n", $input );
 
@@ -67,12 +70,13 @@ class ImageMap {
 		$imageTitle = null;
 		$mapHTML = '';
 		$links = [];
+		$explicitNone = false;
 
 		// Define canonical desc types to allow i18n of 'imagemap_desc_types'
 		$descTypesCanonical = 'top-right, bottom-right, bottom-left, top-left, none';
 		$descType = self::BOTTOM_RIGHT;
 		$defaultLinkAttribs = false;
-		$realmap = true;
+		$realMap = true;
 		$extLinks = [];
 		$services = MediaWikiServices::getInstance();
 		$repoGroup = $services->getRepoGroup();
@@ -96,29 +100,37 @@ class ImageMap {
 				$options = $bits[1] ?? '';
 				$imageTitle = Title::newFromText( $image );
 				if ( !$imageTitle || !$imageTitle->inNamespace( NS_FILE ) ) {
-					return self::error( 'imagemap_no_image' );
+					return $this->error( 'imagemap_no_image' );
 				}
 				if ( $badFileLookup->isBadFile( $imageTitle->getDBkey(), $parser->getTitle() ) ) {
-					return self::error( 'imagemap_bad_image' );
+					return $this->error( 'imagemap_bad_image' );
 				}
 				// Parse the options so we can use links and the like in the caption
 				$parsedOptions = $options === '' ? '' : $parser->recursiveTagParse( $options );
+
+				if ( !$enableLegacyMediaDOM ) {
+					$explicitNone = preg_match( '/(^|\|)none(\||$)/D', $parsedOptions );
+					if ( !$explicitNone ) {
+						$parsedOptions .= '|none';
+					}
+				}
+
 				$imageHTML = $parser->makeImage( $imageTitle, $parsedOptions );
 				$parser->replaceLinkHolders( $imageHTML );
 				$imageHTML = $parser->getStripState()->unstripBoth( $imageHTML );
 				$imageHTML = Sanitizer::normalizeCharReferences( $imageHTML );
 
 				$domDoc = new DOMDocument();
-				\Wikimedia\suppressWarnings();
+				AtEase::suppressWarnings();
 				$ok = $domDoc->loadXML( $imageHTML );
-				\Wikimedia\restoreWarnings();
+				AtEase::restoreWarnings();
 				if ( !$ok ) {
-					return self::error( 'imagemap_invalid_image' );
+					return $this->error( 'imagemap_invalid_image' );
 				}
 				$xpath = new DOMXPath( $domDoc );
 				$imgs = $xpath->query( '//img' );
 				if ( !$imgs->length ) {
-					return self::error( 'imagemap_invalid_image' );
+					return $this->error( 'imagemap_invalid_image' );
 				}
 				$imageNode = $imgs->item( 0 );
 				$thumbWidth = $imageNode->getAttribute( 'width' );
@@ -126,7 +138,7 @@ class ImageMap {
 
 				$imageObj = $repoGroup->findFile( $imageTitle );
 				if ( !$imageObj || !$imageObj->exists() ) {
-					return self::error( 'imagemap_invalid_image' );
+					return $this->error( 'imagemap_invalid_image' );
 				}
 				// Add the linear dimensions to avoid inaccuracy in the scale
 				// factor when one is much larger than the other
@@ -134,7 +146,7 @@ class ImageMap {
 				$denominator = $imageObj->getWidth() + $imageObj->getHeight();
 				$numerator = $thumbWidth + $thumbHeight;
 				if ( $denominator <= 0 || $numerator <= 0 ) {
-					return self::error( 'imagemap_invalid_image' );
+					return $this->error( 'imagemap_invalid_image' );
 				}
 				$scale = $numerator / $denominator;
 				continue;
@@ -149,7 +161,7 @@ class ImageMap {
 					$typesText = $descTypesCanonical . ', ' . $typesText;
 				}
 				$types = array_map( 'trim', explode( ',', $typesText ) );
-				$type = trim( strtok( '' ) );
+				$type = trim( strtok( '' ) ?: '' );
 				$descType = array_search( $type, $types );
 				if ( $descType > 4 ) {
 					// A localized descType is used. Subtract 5 to reach the canonical desc type.
@@ -157,7 +169,7 @@ class ImageMap {
 				}
 				// <0? In theory never, but paranoia...
 				if ( $descType === false || $descType < 0 ) {
-					return self::error( 'imagemap_invalid_desc', $typesText );
+					return $this->error( 'imagemap_invalid_desc', $typesText );
 				}
 				continue;
 			}
@@ -173,7 +185,7 @@ class ImageMap {
 			} elseif ( preg_match( '/^ \[\[  ([^\]]*+) \]\] \w* $ /x', $link, $m ) ) {
 				$title = Title::newFromText( $m[1] );
 				if ( $title === null ) {
-					return self::error( 'imagemap_invalid_title', $lineNum );
+					return $this->error( 'imagemap_invalid_title', $lineNum );
 				}
 				$alt = $title->getFullText();
 			} elseif ( in_array( substr( $link, 1, strpos( $link, '//' ) + 1 ), $wgUrlProtocols )
@@ -188,10 +200,10 @@ class ImageMap {
 					$externLink = true;
 				}
 			} else {
-				return self::error( 'imagemap_no_link', $lineNum );
+				return $this->error( 'imagemap_no_link', $lineNum );
 			}
 			if ( !$title ) {
-				return self::error( 'imagemap_invalid_title', $lineNum );
+				return $this->error( 'imagemap_invalid_title', $lineNum );
 			}
 
 			$shapeSpec = substr( $line, 0, -strlen( $link ) );
@@ -203,28 +215,28 @@ class ImageMap {
 					$coords = [];
 					break;
 				case 'rect':
-					$coords = self::tokenizeCoords( $lineNum, 4 );
+					$coords = $this->tokenizeCoords( $lineNum, 4 );
 					if ( !is_array( $coords ) ) {
 						return $coords;
 					}
 					break;
 				case 'circle':
-					$coords = self::tokenizeCoords( $lineNum, 3 );
+					$coords = $this->tokenizeCoords( $lineNum, 3 );
 					if ( !is_array( $coords ) ) {
 						return $coords;
 					}
 					break;
 				case 'poly':
-					$coords = self::tokenizeCoords( $lineNum, 1, true );
+					$coords = $this->tokenizeCoords( $lineNum, 1, true );
 					if ( !is_array( $coords ) ) {
 						return $coords;
 					}
 					if ( count( $coords ) % 2 !== 0 ) {
-						return self::error( 'imagemap_poly_odd', $lineNum );
+						return $this->error( 'imagemap_poly_odd', $lineNum );
 					}
 					break;
 				default:
-					return self::error( 'imagemap_unrecognised_shape', $lineNum );
+					return $this->error( 'imagemap_unrecognised_shape', $lineNum );
 			}
 
 			// Scale the coords using the size of the source image
@@ -273,15 +285,15 @@ class ImageMap {
 		}
 
 		if ( $first || !$imageNode || !$domDoc ) {
-			return self::error( 'imagemap_no_image' );
+			return $this->error( 'imagemap_no_image' );
 		}
 
 		if ( $mapHTML === '' ) {
 			// no areas defined, default only. It's not a real imagemap, so we do not need some tags
-			$realmap = false;
+			$realMap = false;
 		}
 
-		if ( $realmap ) {
+		if ( $realMap ) {
 			// Construct the map
 			// Add a hash of the map HTML to avoid breaking cached HTML fragments that are
 			// later joined together on the one page (T18471).
@@ -294,37 +306,98 @@ class ImageMap {
 			$imageNode->setAttribute( 'usemap', "#$mapName" );
 		}
 
-		// Add a surrounding div, remove the default link to the description page
-		$anchor = $imageNode->parentNode;
-		$parent = $anchor->parentNode;
-		$div = $parent->insertBefore( new DOMElement( 'div' ), $anchor );
-		$div->setAttribute( 'class', 'noresize' );
-		if ( $defaultLinkAttribs ) {
-			$defaultAnchor = $div->appendChild( new DOMElement( 'a' ) );
-			foreach ( $defaultLinkAttribs as $name => $value ) {
-				$defaultAnchor->setAttribute( $name, $value );
-			}
-			$imageParent = $defaultAnchor;
-		} else {
-			$imageParent = $div;
-		}
-
-		// Add the map HTML to the div
-		// We used to add it before the div, but that made tidy unhappy
 		if ( $mapHTML !== '' ) {
 			$mapDoc = new DOMDocument();
 			$mapDoc->loadXML( $mapHTML );
 			$mapNode = $domDoc->importNode( $mapDoc->documentElement, true );
-			$div->appendChild( $mapNode );
 		}
 
-		$imageParent->appendChild( $imageNode->cloneNode( true ) );
-		$parent->removeChild( $anchor );
+		$div = null;
+
+		if ( $enableLegacyMediaDOM ) {
+			// Add a surrounding div, remove the default link to the description page
+			$anchor = $imageNode->parentNode;
+			$parent = $anchor->parentNode;
+
+			// Handle cases where there are no anchors, like `|link=`
+			if ( $anchor instanceof DOMDocument ) {
+				$parent = $anchor;
+				$anchor = $imageNode;
+			}
+
+			$div = $parent->insertBefore( new DOMElement( 'div' ), $anchor );
+			$div->setAttribute( 'class', 'noresize' );
+			if ( $defaultLinkAttribs ) {
+				$defaultAnchor = $div->appendChild( new DOMElement( 'a' ) );
+				foreach ( $defaultLinkAttribs as $name => $value ) {
+					$defaultAnchor->setAttribute( $name, $value );
+				}
+				$imageParent = $defaultAnchor;
+			} else {
+				$imageParent = $div;
+			}
+
+			// Add the map HTML to the div
+			// We used to add it before the div, but that made tidy unhappy
+			if ( isset( $mapNode ) ) {
+				$div->appendChild( $mapNode );
+			}
+
+			$imageParent->appendChild( $imageNode->cloneNode( true ) );
+			$parent->removeChild( $anchor );
+		} else {
+			$anchor = $imageNode->parentNode;
+			$wrapper = $anchor->parentNode;
+
+			$classes = $wrapper->getAttribute( 'class' );
+
+			// For T22030
+			$classes .= ( $classes ? ' ' : '' ) . 'noresize';
+
+			// Remove that class if it was only added while forcing a block
+			if ( !$explicitNone ) {
+				$classes = trim( preg_replace( '/ ?mw-halign-none/', '', $classes ) );
+			}
+
+			$wrapper->setAttribute( 'class', $classes );
+
+			if ( $defaultLinkAttribs ) {
+				$imageParent = $wrapper->ownerDocument->createElement( 'a' );
+				foreach ( $defaultLinkAttribs as $name => $value ) {
+					$imageParent->setAttribute( $name, $value );
+				}
+			} else {
+				$imageParent = new DOMElement( 'span' );
+			}
+			$wrapper->insertBefore( $imageParent, $anchor );
+
+			$typeOf = $wrapper->getAttribute( 'typeof' ) ?? '';
+			preg_match( '#^mw:(?:Image|Video|Audio)(/|$)#', $typeOf, $match );
+			$format = $match[1] ?? '';
+			$hasVisibleMedia = in_array( $format, [ 'Thumb', 'Frame' ], true );
+
+			if ( !$hasVisibleMedia ) {
+				$xpath = new DOMXPath( $wrapper->ownerDocument );
+				$captions = $xpath->query( '//figcaption', $wrapper );
+				$caption = $captions->item( 0 );
+				$captionText = trim( $caption->textContent );
+				if ( $captionText ) {
+					$imageParent->setAttribute( 'title', $captionText );
+				}
+			}
+
+			if ( isset( $mapNode ) ) {
+				$wrapper->insertBefore( $mapNode, $anchor );
+			}
+
+			$imageParent->appendChild( $imageNode->cloneNode( true ) );
+			$wrapper->removeChild( $anchor );
+		}
 
 		// Determine whether a "magnify" link is present
 		$xpath = new DOMXPath( $domDoc );
 		$magnify = $xpath->query( '//div[@class="magnify"]' );
-		if ( !$magnify->length && $descType !== self::NONE ) {
+		if ( $enableLegacyMediaDOM && !$magnify->length && $descType !== self::NONE ) {
 			// Add image description link
 			if ( $descType === self::TOP_LEFT || $descType === self::BOTTOM_LEFT ) {
 				$marginLeft = 0;
@@ -334,7 +407,7 @@ class ImageMap {
 			if ( $descType === self::TOP_LEFT || $descType === self::TOP_RIGHT ) {
 				$marginTop = -$thumbHeight;
 				// 1px hack for IE, to stop it poking out the top
-				$marginTop += 1;
+				$marginTop++;
 			} else {
 				$marginTop = -20;
 			}
@@ -386,8 +459,7 @@ class ImageMap {
 			$parser->getOutput()->addExternalLink( $title );
 		}
 		// Armour output against broken parser
-		$output = str_replace( "\n", '', $output );
-		return $output;
+		return str_replace( "\n", '', $output );
 	}
 
 	/**
@@ -396,19 +468,19 @@ class ImageMap {
 	 * @param bool $allowNegative
 	 * @return array|string String with error (HTML), or array of coordinates
 	 */
-	private static function tokenizeCoords( $lineNum, $minCount = 0, $allowNegative = false ) {
+	private function tokenizeCoords( $lineNum, $minCount = 0, $allowNegative = false ) {
 		$coords = [];
 		$coord = strtok( " \t" );
 		while ( $coord !== false ) {
 			if ( !is_numeric( $coord ) || $coord > 1e9 || ( !$allowNegative && $coord < 0 ) ) {
-				return self::error( 'imagemap_invalid_coord', $lineNum );
+				return $this->error( 'imagemap_invalid_coord', $lineNum );
 			}
 			$coords[] = $coord;
 			$coord = strtok( " \t" );
 		}
 		if ( count( $coords ) < $minCount ) {
 			// TODO: Should this also check there aren't too many coords?
-			return self::error( 'imagemap_missing_coord', $lineNum );
+			return $this->error( 'imagemap_missing_coord', $lineNum );
 		}
 		return $coords;
 	}
@@ -418,7 +490,7 @@ class ImageMap {
 	 * @param string|int|bool $line
 	 * @return string HTML
 	 */
-	private static function error( $name, $line = false ) {
+	private function error( $name, $line = false ) {
 		return '<p class="error">' . wfMessage( $name, $line )->parse() . '</p>';
 	}
 }

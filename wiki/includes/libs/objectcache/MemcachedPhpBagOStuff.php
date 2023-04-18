@@ -46,7 +46,8 @@ class MemcachedPhpBagOStuff extends MemcachedBagOStuff {
 		// Default class-specific parameters
 		$params += [
 			'compress_threshold' => 1500,
-			'connect_timeout' => 0.5
+			'connect_timeout' => 0.5,
+			'timeout' => 500000,
 		];
 
 		$this->client = new MemcachedClient( $params );
@@ -61,53 +62,128 @@ class MemcachedPhpBagOStuff extends MemcachedBagOStuff {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 
 		// T257003: only require "gets" (instead of "get") when a CAS token is needed
-		return $getToken
+		$res = $getToken
+			// @phan-suppress-next-line PhanTypeMismatchArgument False positive
 			? $this->client->get( $routeKey, $casToken )
 			: $this->client->get( $routeKey );
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
 	}
 
 	protected function doSet( $key, $value, $exptime = 0, $flags = 0 ) {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 
-		return $this->client->set( $routeKey, $value, $this->fixExpiry( $exptime ) );
+		$res = $this->client->set( $routeKey, $value, $this->fixExpiry( $exptime ) );
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
 	}
 
 	protected function doDelete( $key, $flags = 0 ) {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 
-		return $this->client->delete( $routeKey );
+		$res = $this->client->delete( $routeKey );
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
 	}
 
 	protected function doAdd( $key, $value, $exptime = 0, $flags = 0 ) {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 
-		return $this->client->add( $routeKey, $value, $this->fixExpiry( $exptime ) );
+		$res = $this->client->add( $routeKey, $value, $this->fixExpiry( $exptime ) );
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
 	}
 
 	protected function doCas( $casToken, $key, $value, $exptime = 0, $flags = 0 ) {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 
-		return $this->client->cas( $casToken, $routeKey, $value, $this->fixExpiry( $exptime ) );
+		$res = $this->client->cas( $casToken, $routeKey, $value, $this->fixExpiry( $exptime ) );
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
 	}
 
 	public function incr( $key, $value = 1, $flags = 0 ) {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 		$n = $this->client->incr( $routeKey, $value );
 
-		return ( $n !== false && $n !== null ) ? $n : false;
+		$res = ( $n !== false && $n !== null ) ? $n : false;
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
 	}
 
 	public function decr( $key, $value = 1, $flags = 0 ) {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 		$n = $this->client->decr( $routeKey, $value );
 
-		return ( $n !== false && $n !== null ) ? $n : false;
+		$res = ( $n !== false && $n !== null ) ? $n : false;
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
+	}
+
+	protected function doIncrWithInitAsync( $key, $exptime, $step, $init ) {
+		$routeKey = $this->validateKeyAndPrependRoute( $key );
+		$watchPoint = $this->watchErrors();
+		$this->client->add( $routeKey, $init - $step, $this->fixExpiry( $exptime ) );
+		$this->client->incr( $routeKey, $step );
+		return !$this->getLastError( $watchPoint );
+	}
+
+	protected function doIncrWithInitSync( $key, $exptime, $step, $init ) {
+		$routeKey = $this->validateKeyAndPrependRoute( $key );
+
+		$watchPoint = $this->watchErrors();
+		$newValue = $this->client->incr( $routeKey, $step ) ?? false;
+		if ( $newValue === false && !$this->getLastError( $watchPoint ) ) {
+			// No key set; initialize
+			$success = $this->client->add( $routeKey, $init, $this->fixExpiry( $exptime ) );
+			$newValue = $success ? $init : false;
+			if ( $newValue === false && !$this->getLastError( $watchPoint ) ) {
+				// Raced out initializing; increment
+				$newValue = $this->client->incr( $routeKey, $step ) ?? false;
+			}
+		}
+
+		return $newValue;
 	}
 
 	protected function doChangeTTL( $key, $exptime, $flags ) {
 		$routeKey = $this->validateKeyAndPrependRoute( $key );
 
-		return $this->client->touch( $routeKey, $this->fixExpiry( $exptime ) );
+		$res = $this->client->touch( $routeKey, $this->fixExpiry( $exptime ) );
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
+		}
+
+		return $res;
 	}
 
 	protected function doGetMulti( array $keys, $flags = 0 ) {
@@ -121,6 +197,10 @@ class MemcachedPhpBagOStuff extends MemcachedBagOStuff {
 		$res = [];
 		foreach ( $resByRouteKey as $routeKey => $value ) {
 			$res[$this->stripRouteFromKey( $routeKey )] = $value;
+		}
+
+		if ( $this->client->_last_cmd_status !== self::ERR_NONE ) {
+			$this->setLastError( $this->client->_last_cmd_status );
 		}
 
 		return $res;

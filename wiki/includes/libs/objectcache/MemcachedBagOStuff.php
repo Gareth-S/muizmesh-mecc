@@ -43,8 +43,10 @@ abstract class MemcachedBagOStuff extends MediumSpecificBagOStuff {
 		$params['segmentationSize'] = $params['segmentationSize'] ?? 917504; // < 1MiB
 		parent::__construct( $params );
 
-		$this->attrMap[self::ATTR_SYNCWRITES] = self::QOS_SYNCWRITES_BE; // unreliable
 		$this->routingPrefix = $params['routingPrefix'] ?? '';
+
+		// ...and does not use special disk-cache plugins
+		$this->attrMap[self::ATTR_DURABILITY] = self::QOS_DURABILITY_SERVICE;
 	}
 
 	/**
@@ -161,4 +163,30 @@ abstract class MemcachedBagOStuff extends MediumSpecificBagOStuff {
 
 		return (int)$expiresAt;
 	}
+
+	protected function doIncrWithInit( $key, $exptime, $step, $init, $flags ) {
+		if ( $flags & self::WRITE_BACKGROUND ) {
+			return $this->doIncrWithInitAsync( $key, $exptime, $step, $init );
+		} else {
+			return $this->doIncrWithInitSync( $key, $exptime, $step, $init );
+		}
+	}
+
+	/**
+	 * @param string $key
+	 * @param int $exptime
+	 * @param int $step
+	 * @param int $init
+	 * @return bool True on success, false on failure
+	 */
+	abstract protected function doIncrWithInitAsync( $key, $exptime, $step, $init );
+
+	/**
+	 * @param string $key
+	 * @param int $exptime
+	 * @param int $step
+	 * @param int $init
+	 * @return int|bool New value or false on failure
+	 */
+	abstract protected function doIncrWithInitSync( $key, $exptime, $step, $init );
 }

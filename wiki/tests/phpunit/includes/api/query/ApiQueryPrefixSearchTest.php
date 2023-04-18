@@ -1,5 +1,7 @@
 <?php
 
+use MediaWiki\MainConfigNames;
+
 /**
  * @group API
  * @group medium
@@ -10,11 +12,9 @@
 class ApiQueryPrefixSearchTest extends ApiTestCase {
 	private const TEST_QUERY = 'unittest';
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
-		$this->setMwGlobals( [
-			'wgSearchType' => MockCompletionSearchEngine::class,
-		] );
+		$this->overrideConfigValue( MainConfigNames::SearchType, MockCompletionSearchEngine::class );
 		MockCompletionSearchEngine::clearMockResults();
 		$results = [];
 		foreach ( range( 0, 10 ) as $i ) {

@@ -3,16 +3,18 @@ declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\Ext\Nowiki;
 
-use DOMDocumentFragment;
-use DOMElement;
-use DOMText;
 use Wikimedia\Assert\Assert;
+use Wikimedia\Parsoid\DOM\Comment;
+use Wikimedia\Parsoid\DOM\DocumentFragment;
+use Wikimedia\Parsoid\DOM\Element;
+use Wikimedia\Parsoid\DOM\Text;
 use Wikimedia\Parsoid\Ext\DOMDataUtils;
 use Wikimedia\Parsoid\Ext\DOMUtils;
 use Wikimedia\Parsoid\Ext\ExtensionModule;
 use Wikimedia\Parsoid\Ext\ExtensionTagHandler;
 use Wikimedia\Parsoid\Ext\ParsoidExtensionAPI;
 use Wikimedia\Parsoid\Ext\Utils;
+use Wikimedia\Parsoid\NodeData\DataParsoid;
 use Wikimedia\Parsoid\Utils\DOMCompat;
 
 /**
@@ -36,7 +38,7 @@ class Nowiki extends ExtensionTagHandler implements ExtensionModule {
 	/** @inheritDoc */
 	public function sourceToDom(
 		ParsoidExtensionAPI $extApi, string $txt, array $extArgs
-	): DOMDocumentFragment {
+	): DocumentFragment {
 		$domFragment = $extApi->htmlToDom( '' );
 		$doc = $domFragment->ownerDocument;
 		$span = $doc->createElement( 'span' );
@@ -50,10 +52,10 @@ class Nowiki extends ExtensionTagHandler implements ExtensionModule {
 					// in the tokenizer.
 					$entity = $doc->createElement( 'span' );
 					DOMUtils::addTypeOf( $entity, 'mw:Entity' );
-					DOMDataUtils::setDataParsoid( $entity, (object)[
-						'src' => $t,
-						'srcContent' => $cc,
-					] );
+					$dp = new DataParsoid;
+					$dp->src = $t;
+					$dp->srcContent = $cc;
+					DOMDataUtils::setDataParsoid( $entity, $dp );
 					$entity->appendChild( $doc->createTextNode( $cc ) );
 					$span->appendChild( $entity );
 					continue;
@@ -70,7 +72,7 @@ class Nowiki extends ExtensionTagHandler implements ExtensionModule {
 
 	/** @inheritDoc */
 	public function domToWikitext(
-		ParsoidExtensionAPI $extApi, DOMElement $node, bool $wrapperUnmodified
+		ParsoidExtensionAPI $extApi, Element $node, bool $wrapperUnmodified
 	) {
 		if ( !$node->hasChildNodes() ) {
 			$extApi->setHtml2wtStateFlag( 'hasSelfClosingNowikis' ); // FIXME
@@ -79,10 +81,10 @@ class Nowiki extends ExtensionTagHandler implements ExtensionModule {
 		$str = '<nowiki>';
 		for ( $child = $node->firstChild;  $child;  $child = $child->nextSibling ) {
 			$out = null;
-			if ( $child instanceof DOMElement ) {
+			if ( $child instanceof Element ) {
 				if ( DOMUtils::isDiffMarker( $child ) ) {
 					/* ignore */
-				} elseif ( $child->nodeName === 'span' &&
+				} elseif ( DOMCompat::nodeName( $child ) === 'span' &&
 					DOMUtils::hasTypeOf( $child, 'mw:Entity' ) &&
 					DOMUtils::hasNChildren( $child, 1 )
 				) {
@@ -99,7 +101,7 @@ class Nowiki extends ExtensionTagHandler implements ExtensionModule {
 				// need to deal with the possibility of its presence
 				// FIXME(T254501): Should avoid the need for this
 				} elseif (
-					$child->nodeName === 'span' &&
+					DOMCompat::nodeName( $child ) === 'span' &&
 					DOMUtils::hasTypeOf( $child, 'mw:DisplaySpace' ) &&
 					DOMUtils::hasNChildren( $child, 1 )
 				) {
@@ -111,10 +113,10 @@ class Nowiki extends ExtensionTagHandler implements ExtensionModule {
 					$extApi->log( 'error/html2wt/nowiki', 'Invalid nowiki content' );
 					$out = $child->textContent;
 				}
-			} elseif ( $child instanceof DOMText ) {
+			} elseif ( $child instanceof Text ) {
 				$out = $child->nodeValue;
 			} else {
-				Assert::invariant( DOMUtils::isComment( $child ), "Expected a comment here" );
+				Assert::invariant( $child instanceof Comment, "Expected a comment here" );
 				/* Comments can't be embedded in a <nowiki> */
 				$extApi->log( 'error/html2wt/nowiki',
 					'Discarded invalid embedded comment in a <nowiki>' );

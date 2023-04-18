@@ -3,7 +3,6 @@
 namespace MediaWiki\Tests\Storage;
 
 use MediaWiki\Logger\LoggerFactory;
-use MediaWiki\MediaWikiServices;
 use MediaWiki\Storage\NameTableStore;
 use MediaWiki\Storage\NameTableStoreFactory;
 use MediaWikiIntegrationTestCase;
@@ -21,11 +20,9 @@ class NameTableStoreFactoryTest extends MediaWikiIntegrationTestCase {
 	 * @return MockObject|ILoadBalancer
 	 */
 	private function getMockLoadBalancer( $localDomain ) {
-		$mock = $this->getMockBuilder( ILoadBalancer::class )
-			->disableOriginalConstructor()->getMock();
+		$mock = $this->createMock( ILoadBalancer::class );
 
-		$mock->expects( $this->any() )
-			->method( 'getLocalDomainID' )
+		$mock->method( 'getLocalDomainID' )
 			->willReturn( $localDomain );
 
 		return $mock;
@@ -36,17 +33,16 @@ class NameTableStoreFactoryTest extends MediaWikiIntegrationTestCase {
 	 * @return MockObject|ILBFactory
 	 */
 	private function getMockLoadBalancerFactory( $expectedWiki ) {
-		$mock = $this->getMockBuilder( ILBFactory::class )
-			->disableOriginalConstructor()->getMock();
+		$mock = $this->createMock( ILBFactory::class );
 
-		$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
+		$lbFactory = $this->getServiceContainer()->getDBLoadBalancerFactory();
 		$localDomain = $lbFactory->getLocalDomainID();
 
-		$mock->expects( $this->any() )->method( 'getLocalDomainID' )->willReturn( $localDomain );
+		$mock->method( 'getLocalDomainID' )->willReturn( $localDomain );
 
 		$mock->expects( $this->once() )
 			->method( 'getMainLB' )
-			->with( $this->equalTo( $expectedWiki ) )
+			->with( $expectedWiki )
 			->willReturnCallback( function ( $domain ) use ( $localDomain ) {
 				return $this->getMockLoadBalancer( $localDomain );
 			} );
@@ -81,7 +77,7 @@ class NameTableStoreFactoryTest extends MediaWikiIntegrationTestCase {
 
 	/** @dataProvider provideTestGet */
 	public function testGet( $tableName, $wiki, $expectedWiki ) {
-		$services = MediaWikiServices::getInstance();
+		$services = $this->getServiceContainer();
 		$wiki2 = ( $wiki === false )
 			? $services->getDBLoadBalancerFactory()->getLocalDomainID()
 			: $wiki;
@@ -103,21 +99,21 @@ class NameTableStoreFactoryTest extends MediaWikiIntegrationTestCase {
 	 */
 
 	public function testIntegratedGetChangeTagDef() {
-		$services = MediaWikiServices::getInstance();
+		$services = $this->getServiceContainer();
 		$factory = $services->getNameTableStoreFactory();
 		$store = $factory->getChangeTagDef();
 		$this->assertIsArray( $store->getMap() );
 	}
 
 	public function testIntegratedGetContentModels() {
-		$services = MediaWikiServices::getInstance();
+		$services = $this->getServiceContainer();
 		$factory = $services->getNameTableStoreFactory();
 		$store = $factory->getContentModels();
 		$this->assertIsArray( $store->getMap() );
 	}
 
 	public function testIntegratedGetSlotRoles() {
-		$services = MediaWikiServices::getInstance();
+		$services = $this->getServiceContainer();
 		$factory = $services->getNameTableStoreFactory();
 		$store = $factory->getSlotRoles();
 		$this->assertIsArray( $store->getMap() );

@@ -21,9 +21,12 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\User\UserFactory;
 use MediaWiki\User\UserGroupManager;
 use MediaWiki\User\UserGroupManagerFactory;
+use MediaWiki\User\UserIdentity;
 use MediaWiki\User\UserNamePrefixSearch;
 use MediaWiki\User\UserNameUtils;
 
@@ -55,21 +58,27 @@ class UserrightsPage extends SpecialPage {
 	/** @var UserNamePrefixSearch */
 	private $userNamePrefixSearch;
 
+	/** @var UserFactory */
+	private $userFactory;
+
 	/**
 	 * @param UserGroupManagerFactory|null $userGroupManagerFactory
 	 * @param UserNameUtils|null $userNameUtils
 	 * @param UserNamePrefixSearch|null $userNamePrefixSearch
+	 * @param UserFactory|null $userFactory
 	 */
 	public function __construct(
 		UserGroupManagerFactory $userGroupManagerFactory = null,
 		UserNameUtils $userNameUtils = null,
-		UserNamePrefixSearch $userNamePrefixSearch = null
+		UserNamePrefixSearch $userNamePrefixSearch = null,
+		UserFactory $userFactory = null
 	) {
 		parent::__construct( 'Userrights' );
 		$services = MediaWikiServices::getInstance();
 		// This class is extended and therefore falls back to global state - T263207
 		$this->userNameUtils = $userNameUtils ?? $services->getUserNameUtils();
 		$this->userNamePrefixSearch = $userNamePrefixSearch ?? $services->getUserNamePrefixSearch();
+		$this->userFactory = $userFactory ?? $services->getUserFactory();
 
 		// TODO don't hard code false, use interwiki domains. See T14518
 		$this->userGroupManager = ( $userGroupManagerFactory ?? $services->getUserGroupManagerFactory() )
@@ -83,13 +92,13 @@ class UserrightsPage extends SpecialPage {
 	/**
 	 * Check whether the current user (from context) can change the target user's rights.
 	 *
-	 * @param User $targetUser User whose rights are being changed
+	 * @param UserIdentity $targetUser User whose rights are being changed
 	 * @param bool $checkIfSelf If false, assume that the current user can add/remove groups defined
 	 *   in $wgGroupsAddToSelf / $wgGroupsRemoveFromSelf, without checking if it's the same as target
 	 *   user
 	 * @return bool
 	 */
-	public function userCanChangeRights( $targetUser, $checkIfSelf = true ) {
+	public function userCanChangeRights( UserIdentity $targetUser, $checkIfSelf = true ) {
 		$isself = $this->getUser()->equals( $targetUser );
 
 		$available = $this->changeableGroups();
@@ -158,18 +167,13 @@ class UserrightsPage extends SpecialPage {
 
 			$out->addModuleStyles( 'mediawiki.notification.convertmessagebox.styles' );
 			$out->addHTML(
-				Html::rawElement(
-					'div',
-					[
-						'class' => 'mw-notify-success successbox',
-						'id' => 'mw-preferences-success',
-						'data-mw-autohide' => 'false',
-					],
+				Html::successBox(
 					Html::element(
 						'p',
 						[],
 						$this->msg( 'savedrights', $this->mFetchedUser->getName() )->text()
-					)
+					),
+					'mw-notify-success'
 				)
 			);
 		}
@@ -226,7 +230,9 @@ class UserrightsPage extends SpecialPage {
 			$userGroups = $targetUser->getGroups();
 
 			if ( $userGroups !== $conflictCheck ) {
-				$out->wrapWikiMsg( '<span class="error">$1</span>', 'userrights-conflict' );
+				$out->addHTML( Html::errorBox(
+					$this->msg( 'userrights-conflict' )->parse()
+				) );
 			} else {
 				$status = $this->saveUserGroups(
 					$this->mTarget,
@@ -458,7 +464,7 @@ class UserrightsPage extends SpecialPage {
 	 * of the logging table. Only keeps essential data, removing redundant fields.
 	 *
 	 * @param UserGroupMembership|null $ugm May be null if things get borked
-	 * @return array
+	 * @return array|null
 	 */
 	protected static function serialiseUgmForLog( $ugm ) {
 		if ( !$ugm instanceof UserGroupMembership ) {
@@ -496,7 +502,7 @@ class UserrightsPage extends SpecialPage {
 		$logEntry = new ManualLogEntry( 'rights', 'rights' );
 		$logEntry->setPerformer( $this->getUser() );
 		$logEntry->setTarget( $user->getUserPage() );
-		$logEntry->setComment( $reason );
+		$logEntry->setComment( is_string( $reason ) ? $reason : "" );
 		$logEntry->setParameters( [
 			'4::oldgroups' => $oldGroups,
 			'5::newgroups' => $newGroups,
@@ -547,7 +553,8 @@ class UserrightsPage extends SpecialPage {
 	 * @return Status
 	 */
 	public function fetchUser( $username, $writing = true ) {
-		$parts = explode( $this->getConfig()->get( 'UserrightsInterwikiDelimiter' ), $username );
+		$parts = explode( $this->getConfig()->get( MainConfigNames::UserrightsInterwikiDelimiter ),
+			$username );
 		if ( count( $parts ) < 2 ) {
 			$name = trim( $username );
 			$dbDomain = '';
@@ -595,7 +602,7 @@ class UserrightsPage extends SpecialPage {
 		}
 
 		if ( $dbDomain == '' ) {
-			$user = User::newFromName( $name );
+			$user = $this->userFactory->newFromName( $name );
 		} else {
 			$user = UserRightsProxy::newFromName( $dbDomain, $name );
 		}
@@ -653,7 +660,7 @@ class UserrightsPage extends SpecialPage {
 				'user',
 				'username',
 				30,
-				str_replace( '_', ' ', $this->mTarget ),
+				$this->mTarget ? str_replace( '_', ' ', $this->mTarget ) : '',
 				[
 					'class' => 'mw-autocomplete-user', // used by mediawiki.userSuggest
 				] + (
@@ -673,9 +680,9 @@ class UserrightsPage extends SpecialPage {
 	 * Show the form to edit group memberships.
 	 *
 	 * @param User|UserRightsProxy $user User or UserRightsProxy you're editing
-	 * @param array $groups Array of groups the user is in. Not used by this implementation
+	 * @param string[] $groups Array of groups the user is in. Not used by this implementation
 	 *   anymore, but kept for backward compatibility with subclasses
-	 * @param array $groupMemberships Associative array of (group name => UserGroupMembership
+	 * @param UserGroupMembership[] $groupMemberships Associative array of (group name => UserGroupMembership
 	 *   object) containing the groups the user is in
 	 */
 	protected function showEditUserGroupsForm( $user, $groups, $groupMemberships ) {
@@ -798,7 +805,7 @@ class UserrightsPage extends SpecialPage {
 							Xml::label( $this->msg( 'userrights-reason' )->text(), 'wpReason' ) .
 						"</td>
 						<td class='mw-input'>" .
-							Xml::input( 'user-reason', 60, $this->getRequest()->getVal( 'user-reason', false ), [
+							Xml::input( 'user-reason', 60, $this->getRequest()->getVal( 'user-reason' ) ?? false, [
 								'id' => 'wpReason',
 								// HTML maxlength uses "UTF-16 code units", which means that characters outside BMP
 								// (e.g. emojis) count for two each. This limit is overridden in JS to instead count
@@ -867,7 +874,7 @@ class UserrightsPage extends SpecialPage {
 			// expiries, not shorten them. So they should only see the expiry
 			// dropdown if the group currently has a finite expiry
 			$canOnlyLengthenExpiry = ( $set && $this->canAdd( $group ) &&
-				 !$this->canRemove( $group ) && $usergroups[$group]->getExpiry() );
+				!$this->canRemove( $group ) && $usergroups[$group]->getExpiry() );
 			// Should the checkbox be disabled?
 			$disabledCheckbox = !(
 				( $set && $this->canRemove( $group ) ) ||
@@ -909,6 +916,8 @@ class UserrightsPage extends SpecialPage {
 		}
 
 		$ret .= "</tr>\n<tr>\n";
+		$uiLanguage = $this->getLanguage();
+		$userName = $user->getName();
 		foreach ( $columns as $column ) {
 			if ( $column === [] ) {
 				continue;
@@ -920,7 +929,7 @@ class UserrightsPage extends SpecialPage {
 					$attr['disabled'] = 'disabled';
 				}
 
-				$member = UserGroupMembership::getGroupMemberName( $group, $user->getName() );
+				$member = $uiLanguage->getGroupMemberName( $group, $userName );
 				if ( $checkbox['irreversible'] ) {
 					$text = $this->msg( 'userrights-irreversible-marker', $member )->text();
 				} elseif ( $checkbox['disabled'] && !$checkbox['disabled-expiry'] ) {
@@ -933,7 +942,6 @@ class UserrightsPage extends SpecialPage {
 
 				if ( $this->canProcessExpiries() ) {
 					$uiUser = $this->getUser();
-					$uiLanguage = $this->getLanguage();
 
 					$currentExpiry = isset( $usergroups[$group] ) ?
 						$usergroups[$group]->getExpiry() :
@@ -1062,8 +1070,6 @@ class UserrightsPage extends SpecialPage {
 	}
 
 	/**
-	 * Returns $this->getUser()->changeableGroups()
-	 *
 	 * @return array [
 	 *   'add' => [ addablegroups ],
 	 *   'remove' => [ removablegroups ],
@@ -1072,7 +1078,7 @@ class UserrightsPage extends SpecialPage {
 	 *  ]
 	 */
 	protected function changeableGroups() {
-		return $this->getUser()->changeableGroups();
+		return $this->userGroupManager->getGroupsChangeableBy( $this->getContext()->getAuthority() );
 	}
 
 	/**

@@ -3,11 +3,12 @@ declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\Ext\Poem;
 
-use DOMDocumentFragment;
+use Wikimedia\Parsoid\DOM\DocumentFragment;
 use Wikimedia\Parsoid\Ext\ExtensionModule;
 use Wikimedia\Parsoid\Ext\ExtensionTagHandler;
 use Wikimedia\Parsoid\Ext\ParsoidExtensionAPI;
 use Wikimedia\Parsoid\Utils\DOMCompat;
+use Wikimedia\Parsoid\Utils\PHPUtils;
 
 class Poem extends ExtensionTagHandler implements ExtensionModule {
 
@@ -38,7 +39,7 @@ class Poem extends ExtensionTagHandler implements ExtensionModule {
 	/** @inheritDoc */
 	public function sourceToDom(
 		ParsoidExtensionAPI $extApi, string $content, array $extArgs
-	): DOMDocumentFragment {
+	): DocumentFragment {
 		/*
 		 * Transform wikitext found in <poem>...</poem>
 		 * 1. Strip leading & trailing newlines
@@ -49,15 +50,15 @@ class Poem extends ExtensionTagHandler implements ExtensionModule {
 
 		if ( strlen( $content ) > 0 ) {
 			// 1. above
-			$content = preg_replace( '/^\n/', '', $content, 1 );
-			$content = preg_replace( '/\n$/D', '', $content, 1 );
+			$content = PHPUtils::stripPrefix( $content, "\n" );
+			$content = PHPUtils::stripSuffix( $content, "\n" );
 
 			// 2. above
 			$content = preg_replace( '/^ /m', '&nbsp;', $content );
 
 			// 3. above
 			$contentArray = explode( "\n", $content );
-			$contentMap = array_map( function ( $line ) use ( $extApi ) {
+			$contentMap = array_map( static function ( $line ) use ( $extApi ) {
 				$i = 0;
 				$lineLength = strlen( $line );
 				while ( $i < $lineLength && $line[$i] === ':' ) {
@@ -69,8 +70,9 @@ class Poem extends ExtensionTagHandler implements ExtensionModule {
 					$span = $doc->createElement( 'span' );
 					$span->setAttribute( 'class', 'mw-poem-indented' );
 					$span->setAttribute( 'style', 'display: inline-block; margin-inline-start: ' . $i . 'em;' );
-					$span->appendChild( $doc->createTextNode( ltrim( $line, ':' ) ) );
-					return DOMCompat::getOuterHTML( $span );
+					// $line isn't an HTML text node, it's wikitext that will be passed to extTagToDOM
+					return substr( DOMCompat::getOuterHTML( $span ), 0, -7 ) .
+						ltrim( $line, ':' ) . '</span>';
 				} else {
 					return $line;
 				}
@@ -84,7 +86,7 @@ class Poem extends ExtensionTagHandler implements ExtensionModule {
 			$splitContent = preg_split( '/(<nowiki>[\s\S]*?<\/nowiki>)/', $content,
 				-1, PREG_SPLIT_DELIM_CAPTURE );
 			$content = implode( '',
-				array_map( function ( $p, $i ) {
+				array_map( static function ( $p, $i ) {
 					if ( $i % 2 === 1 ) {
 						return $p;
 					}
@@ -102,7 +104,7 @@ class Poem extends ExtensionTagHandler implements ExtensionModule {
 		}
 
 		// Add the 'poem' class to the 'class' attribute, or if not found, add it
-		$value = $extApi->findAndUpdateArg( $extArgs, 'class', function ( string $value ) {
+		$value = $extApi->findAndUpdateArg( $extArgs, 'class', static function ( string $value ) {
 			return strlen( $value ) ? "poem {$value}" : 'poem';
 		} );
 

@@ -3,9 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
- *
+ * @ingroup Languages
  */
 
 $fallback = 'ru';
@@ -28,3 +27,8 @@ $namespaceNames = [
 	NS_CATEGORY         => 'Категория',
 	NS_CATEGORY_TALK    => 'Категорияны_шӱӱжери',
 ];
+
+// Remove Russian aliases
+$namespaceGenderAliases = [];
+
+$linkTrail = '/^([a-zабвгдеёжзийклмнопрстуфхцчшщъыьэюяјҥӧӱ]+)(.*)$/sDu';

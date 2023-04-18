@@ -15,6 +15,9 @@ use Wikimedia\ScopedCallback;
 class ParserTestTopLevelSuite extends TestSuite {
 	use SuiteEventsTrait;
 
+	/** @var PhpunitTestRecorder */
+	private $ptRecorder;
+
 	/** @var ParserTestRunner */
 	private $ptRunner;
 
@@ -64,11 +67,20 @@ class ParserTestTopLevelSuite extends TestSuite {
 		return new self( $flags );
 	}
 
-	public function __construct( $flags ) {
+	public function __construct( $flags, array $parserTestFlags = null ) {
 		parent::__construct();
 
 		$this->ptRecorder = new PhpunitTestRecorder;
-		$this->ptRunner = new ParserTestRunner( $this->ptRecorder );
+		$runnerOpts = $parserTestFlags ?? json_decode( getenv( "PARSERTEST_FLAGS" ) ?: "[]", true );
+		// PHPUnit test runners requires all tests to be pregenerated.
+		// But, generating Parsoid selser edit trees requires the DOM.
+		// So, we cannot pregenerate Parsoid selser auto-edit tests.
+		// They have to be generated dynamically. So, set this to 0.
+		// We will handle auto-edit selser tests as a composite test.
+		$runnerOpts['numchanges'] = 0;
+		$this->ptRunner = new ParserTestRunner(
+			$this->ptRecorder, $runnerOpts
+		);
 
 		if ( is_string( $flags ) ) {
 			$flags = self::CORE_ONLY;
@@ -146,7 +158,7 @@ class ParserTestTopLevelSuite extends TestSuite {
 		}
 	}
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		// MediaWikiIntegrationTestCase leaves its test DB hanging around.
 		// we want to make sure we have a clean instance, so tear down any
 		// existing test DB.  This has no effect if no test DB exists.
@@ -160,7 +172,7 @@ class ParserTestTopLevelSuite extends TestSuite {
 		$this->ptTeardownScope = $teardown;
 	}
 
-	protected function tearDown() : void {
+	protected function tearDown(): void {
 		if ( $this->ptTeardownScope ) {
 			ScopedCallback::consume( $this->ptTeardownScope );
 		}

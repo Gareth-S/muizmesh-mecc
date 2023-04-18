@@ -23,7 +23,7 @@ namespace MediaWiki\Json;
 
 trait JsonUnserializableTrait {
 
-	public function jsonSerialize() {
+	public function jsonSerialize(): array {
 		return $this->annotateJsonForDeserialization(
 			$this->toJsonArray()
 		);
@@ -35,7 +35,7 @@ trait JsonUnserializableTrait {
 	 * @param array $json
 	 * @return array
 	 */
-	private function annotateJsonForDeserialization( array $json ) : array {
+	private function annotateJsonForDeserialization( array $json ): array {
 		$json[JsonConstants::TYPE_ANNOTATION] = get_class( $this );
 		return $json;
 	}

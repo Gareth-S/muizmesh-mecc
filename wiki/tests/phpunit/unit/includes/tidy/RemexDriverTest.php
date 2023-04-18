@@ -1,6 +1,7 @@
 <?php
 
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\MainConfigNames;
 
 class RemexDriverTest extends MediaWikiUnitTestCase {
 	private static $remexTidyTestData = [
@@ -206,7 +207,6 @@ class RemexDriverTest extends MediaWikiUnitTestCase {
 			'a<small><i><div>d</div></i>e</small>',
 			'<p>a</p><small><i><div>d</div></i></small><p><small>e</small></p>'
 		],
-		// phpcs:disable Generic.Files.LineLength
 		[
 			'Complex pwrap test 6',
 			'<i>a<div>b</div>c<b>d<div>e</div>f</b>g</i>',
@@ -354,7 +354,10 @@ MathML;
 		$r = new MediaWiki\Tidy\RemexDriver(
 			new ServiceOptions(
 				MediaWiki\Tidy\RemexDriver::CONSTRUCTOR_OPTIONS,
-				new HashConfig( [ 'TidyConfig' => [] ] )
+				new HashConfig( [
+					MainConfigNames::TidyConfig => [],
+					MainConfigNames::ParserEnableLegacyMediaDOM => false,
+				] )
 			)
 		);
 		$result = $r->tidy( $input );
@@ -383,7 +386,10 @@ MathML;
 		$r = new MediaWiki\Tidy\RemexDriver(
 			new ServiceOptions(
 				MediaWiki\Tidy\RemexDriver::CONSTRUCTOR_OPTIONS,
-				new HashConfig( [ 'TidyConfig' => [] ] )
+				new HashConfig( [
+					MainConfigNames::TidyConfig => [],
+					MainConfigNames::ParserEnableLegacyMediaDOM => false,
+				] )
 			)
 		);
 		$result = $r->tidy( $input );

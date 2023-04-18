@@ -8,8 +8,7 @@
  */
 
 ( function () {
-	var timing, editingSessionId,
-		actionPrefixMap = {
+	var actionPrefixMap = {
 			firstChange: 'first_change',
 			saveIntent: 'save_intent',
 			saveAttempt: 'save_attempt',
@@ -24,8 +23,9 @@
 			mw.Uri().query.editingStatsId;
 	}
 
-	timing = {};
-	editingSessionId = getEditingSessionIdFromRequest() || mw.user.generateRandomSessionId();
+	var timing = {};
+	var editingSessionId = getEditingSessionIdFromRequest() || mw.user.generateRandomSessionId();
+	ve.init.editingSessionId = editingSessionId;
 
 	function log() {
 		// mw.log is a no-op unless resource loader is in debug mode, so
@@ -40,6 +40,16 @@
 			1 / mw.config.get( 'wgWMESchemaEditAttemptStepSamplingRate' ),
 			editingSessionId
 		);
+	}
+
+	function addABTestData( data ) {
+		// DiscussionTools New Topic A/B test for logged out users
+		if ( !mw.config.get( 'wgDiscussionToolsABTest' ) ) {
+			return;
+		}
+		if ( mw.config.get( 'wgDiscussionToolsABTestBucket' ) ) {
+			data.bucket = mw.config.get( 'wgDiscussionToolsABTestBucket' );
+		}
 	}
 
 	function computeDuration( action, event, timeStamp ) {
@@ -83,22 +93,63 @@
 		return -1;
 	}
 
+	/**
+	 * Log the equivalent of an EditAttemptStep event via
+	 * [the Metrics Platform](https://wikitech.wikimedia.org/wiki/Metrics_Platform).
+	 *
+	 * See https://phabricator.wikimedia.org/T309013.
+	 *
+	 * @param {Object} data
+	 * @param {string} actionPrefix
+	 */
+	function logEditViaMetricsPlatform( data, actionPrefix ) {
+		var eventName = 'eas.ve.' + actionPrefix;
+
+		/* eslint-disable camelcase */
+		var customData = ve.extendObject(
+			{
+				editor_interface: 'visualeditor',
+				integration: ve.init && ve.init.target && ve.init.target.constructor.static.integrationType || 'page',
+				editing_session_id: editingSessionId
+			},
+			data
+		);
+
+		if ( !mw.config.get( 'wgRevisionId' ) ) {
+
+			// eslint-disable-next-line no-jquery/no-global-selector
+			customData.revision_id = +$( 'input[name=parentRevId]' ).val() || 0;
+		}
+
+		/* eslint-enable camelcase */
+
+		delete customData.action;
+
+		// Sampling rate (and therefore whether a stream should oversample) is captured in the
+		// stream config ($wgEventStreams).
+		delete customData.is_oversample;
+
+		// Platform can be derived from the agent_client_platform_family context attribute mixed in
+		// by the JavaScript Metrics Platform Client. The context attribute will be
+		// "desktop_browser" or "mobile_browser" depending on whether the MobileFrontend extension
+		// has signalled that it is enabled.
+		delete customData.platform;
+
+		mw.eventLog.dispatch( eventName, customData );
+	}
+
 	function mwEditHandler( topic, data, timeStamp ) {
 		var action = topic.split( '.' )[ 1 ],
 			actionPrefix = actionPrefixMap[ action ] || action,
-			duration = 0,
-			event;
+			duration = 0;
 
 		if ( action === 'init' ) {
 			if ( firstInitDone ) {
 				// Regenerate editingSessionId
 				editingSessionId = mw.user.generateRandomSessionId();
+				ve.init.editingSessionId = editingSessionId;
 			}
 			firstInitDone = true;
-		}
-
-		if ( !inSample() && !mw.config.get( 'wgWMESchemaEditAttemptStepOversample' ) && !trackdebug ) {
-			return;
 		}
 
 		if (
@@ -140,8 +191,46 @@
 			}
 		}
 
+		// Schema's kind of a mess of special properties
+		if ( action === 'init' || action === 'abort' || action === 'saveFailure' ) {
+			data[ actionPrefix + '_type' ] = data.type;
+		}
+		if ( action === 'init' || action === 'abort' ) {
+			data[ actionPrefix + '_mechanism' ] = data.mechanism;
+		}
+		if ( action !== 'init' ) {
+			// Schema actually does have an init_timing field, but we don't want to
+			// store it because it's not meaningful.
+			duration = Math.round( computeDuration( action, data, timeStamp ) );
+			data[ actionPrefix + '_timing' ] = duration;
+		}
+		if ( action === 'saveFailure' ) {
+			data[ actionPrefix + '_message' ] = data.message;
+		}
+
+		// Remove renamed properties
+		delete data.type;
+		delete data.mechanism;
+		delete data.timing;
+		delete data.message;
+
+		if ( action === 'abort' ) {
+			timing = {};
+		} else {
+			timing[ action ] = timeStamp;
+		}
+		/* eslint-enable camelcase */
+
+		addABTestData( data );
+
+		logEditViaMetricsPlatform( data, actionPrefix );
+
+		if ( !inSample() && !mw.config.get( 'wgWMESchemaEditAttemptStepOversample' ) && !trackdebug ) {
+			return;
+		}
+
 		/* eslint-disable camelcase */
-		event = $.extend( {
+		var event = ve.extendObject( {
 			version: 1,
 			action: action,
 			is_oversample: !inSample(),
@@ -162,40 +251,6 @@
 
 		if ( mw.user.isAnon() ) {
 			event.user_class = 'IP';
-		}
-
-		// Schema's kind of a mess of special properties
-		if ( action === 'init' || action === 'abort' || action === 'saveFailure' ) {
-			event[ actionPrefix + '_type' ] = event.type;
-		}
-		if ( action === 'init' || action === 'abort' ) {
-			event[ actionPrefix + '_mechanism' ] = event.mechanism;
-		}
-		if ( action !== 'init' ) {
-			// Schema actually does have an init_timing field, but we don't want to
-			// store it because it's not meaningful.
-			duration = Math.round( computeDuration( action, event, timeStamp ) );
-			event[ actionPrefix + '_timing' ] = duration;
-		}
-		if ( action === 'saveFailure' ) {
-			event[ actionPrefix + '_message' ] = event.message;
-		}
-		/* eslint-enable camelcase */
-
-		// Remove renamed properties
-		delete event.type;
-		delete event.mechanism;
-		delete event.timing;
-		delete event.message;
-
-		if ( action === 'abort' ) {
-			timing = {};
-		} else {
-			timing[ action ] = timeStamp;
-		}
-
-		if ( mw.user.options.get( 'discussiontools-abtest' ) ) {
-			event.bucket = mw.user.options.get( 'discussiontools-abtest' );
 		}
 
 		if ( trackdebug ) {
@@ -221,8 +276,7 @@
 	}
 
 	function activityHandler( topic, data ) {
-		var feature = topic.split( '.' )[ 1 ],
-			event;
+		var feature = topic.split( '.' )[ 1 ];
 
 		if ( !inSample() && !mw.config.get( 'wgWMESchemaEditAttemptStepOversample' ) && !trackdebug ) {
 			return;
@@ -241,7 +295,7 @@
 		}
 
 		/* eslint-disable camelcase */
-		event = {
+		var event = {
 			feature: feature,
 			action: data.action,
 			editingSessionId: editingSessionId,
@@ -254,9 +308,7 @@
 		};
 		/* eslint-enable camelcase */
 
-		if ( mw.user.options.get( 'discussiontools-abtest' ) ) {
-			event.bucket = mw.user.options.get( 'discussiontools-abtest' );
-		}
+		addABTestData( data );
 
 		if ( trackdebug ) {
 			log( topic, event );

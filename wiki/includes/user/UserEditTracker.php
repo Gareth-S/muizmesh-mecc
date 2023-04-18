@@ -3,9 +3,11 @@
 namespace MediaWiki\User;
 
 use ActorMigration;
+use DeferredUpdates;
 use InvalidArgumentException;
 use JobQueueGroup;
 use UserEditCountInitJob;
+use UserEditCountUpdate;
 use Wikimedia\Rdbms\ILoadBalancer;
 use Wikimedia\Timestamp\ConvertibleTimestamp;
 
@@ -57,12 +59,11 @@ class UserEditTracker {
 	 * Get a user's edit count from the user_editcount field, falling back to initialize
 	 *
 	 * @param UserIdentity $user
-	 * @return int
-	 * @throws InvalidArgumentException If user is not registered
+	 * @return int|null Null for anonymous users
 	 */
-	public function getUserEditCount( UserIdentity $user ) : int {
-		if ( !$user->getId() ) {
-			throw new InvalidArgumentException( __METHOD__ . ' requires a user ID' );
+	public function getUserEditCount( UserIdentity $user ): ?int {
+		if ( !$user->isRegistered() ) {
+			return null;
 		}
 
 		$userId = $user->getId();
@@ -94,7 +95,7 @@ class UserEditTracker {
 	 * @param UserIdentity $user
 	 * @return int
 	 */
-	public function initializeUserEditCount( UserIdentity $user ) : int {
+	public function initializeUserEditCount( UserIdentity $user ): int {
 		$dbr = $this->loadBalancer->getConnectionRef( DB_REPLICA );
 		$actorWhere = $this->actorMigration->getWhere( $dbr, 'rev_user', $user );
 
@@ -117,11 +118,29 @@ class UserEditTracker {
 	}
 
 	/**
+	 * Schedule a job to increase a user's edit count
+	 *
+	 * @since 1.37
+	 * @param UserIdentity $user
+	 */
+	public function incrementUserEditCount( UserIdentity $user ) {
+		if ( !$user->isRegistered() ) {
+			// Anonymous users don't have edit counts
+			return;
+		}
+
+		DeferredUpdates::addUpdate(
+			new UserEditCountUpdate( $user, 1 ),
+			DeferredUpdates::POSTSEND
+		);
+	}
+
+	/**
 	 * Get the user's first edit timestamp
 	 *
 	 * @param UserIdentity $user
-	 * @return string|bool Timestamp of first edit, or false for
-	 *     non-existent/anonymous user accounts.
+	 * @return string|false Timestamp of first edit, or false for non-existent/anonymous user
+	 *  accounts.
 	 */
 	public function getFirstEditTimestamp( UserIdentity $user ) {
 		return $this->getUserEditTimestamp( $user, self::FIRST_EDIT );
@@ -131,8 +150,8 @@ class UserEditTracker {
 	 * Get the user's latest edit timestamp
 	 *
 	 * @param UserIdentity $user
-	 * @return string|bool Timestamp of latest edit, or false for
-	 *     non-existent/anonymous user accounts.
+	 * @return string|false Timestamp of latest edit, or false for non-existent/anonymous user
+	 *  accounts.
 	 */
 	public function getLatestEditTimestamp( UserIdentity $user ) {
 		return $this->getUserEditTimestamp( $user, self::LATEST_EDIT );
@@ -143,27 +162,23 @@ class UserEditTracker {
 	 *
 	 * @param UserIdentity $user
 	 * @param int $type either self::FIRST_EDIT or ::LATEST_EDIT
-	 * @return string|bool Timestamp of edit, or false for
-	 *     non-existent/anonymous user accounts.
+	 * @return string|false Timestamp of edit, or false for non-existent/anonymous user accounts.
 	 */
 	private function getUserEditTimestamp( UserIdentity $user, int $type ) {
-		if ( $user->getId() === 0 ) {
-			return false; // anonymous user
+		if ( !$user->isRegistered() ) {
+			return false;
 		}
 
 		$dbr = $this->loadBalancer->getConnectionRef( DB_REPLICA );
 		$actorWhere = $this->actorMigration->getWhere( $dbr, 'rev_user', $user );
 
-		$tsField = isset( $actorWhere['tables']['temp_rev_user'] )
-			? 'revactor_timestamp' : 'rev_timestamp';
-
 		$sortOrder = ( $type === self::FIRST_EDIT ) ? 'ASC' : 'DESC';
 		$time = $dbr->selectField(
 			[ 'revision' ] + $actorWhere['tables'],
-			$tsField,
+			'rev_timestamp',
 			[ $actorWhere['conds'] ],
 			__METHOD__,
-			[ 'ORDER BY' => "$tsField $sortOrder" ],
+			[ 'ORDER BY' => "rev_timestamp $sortOrder" ],
 			$actorWhere['joins']
 		);
 
@@ -175,7 +190,7 @@ class UserEditTracker {
 	}
 
 	/**
-	 * @internal For use by User::clearInstanceCache
+	 * @internal For use by User::clearInstanceCache()
 	 * @param UserIdentity $user
 	 */
 	public function clearUserEditCache( UserIdentity $user ) {
@@ -186,7 +201,24 @@ class UserEditTracker {
 		$userId = $user->getId();
 		$cacheKey = 'u' . (string)$userId;
 
-		$this->userEditCountCache[ $cacheKey ] = null;
+		unset( $this->userEditCountCache[ $cacheKey ] );
+	}
+
+	/**
+	 * @internal For use by User::loadFromRow() and tests
+	 * @param UserIdentity $user
+	 * @param int $editCount
+	 * @throws InvalidArgumentException If the user is not registered
+	 */
+	public function setCachedUserEditCount( UserIdentity $user, int $editCount ) {
+		if ( !$user->isRegistered() ) {
+			throw new InvalidArgumentException( __METHOD__ . ' with an anonymous user' );
+		}
+
+		$userId = $user->getId();
+		$cacheKey = 'u' . (string)$userId;
+
+		$this->userEditCountCache[ $cacheKey ] = $editCount;
 	}
 
 }

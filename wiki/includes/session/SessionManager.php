@@ -29,13 +29,14 @@ use Config;
 use FauxRequest;
 use MediaWiki\HookContainer\HookContainer;
 use MediaWiki\HookContainer\HookRunner;
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\User\UserNameUtils;
 use MWException;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use User;
 use WebRequest;
-use Wikimedia\ObjectFactory;
 
 /**
  * This serves as the entry point to the MediaWiki session handling system.
@@ -46,11 +47,35 @@ use Wikimedia\ObjectFactory;
  *
  * To provide custom session handling, implement a MediaWiki\Session\SessionProvider.
  *
+ * @anchor SessionManager-storage-expectations
+ *
+ * ## Storage expectations
+ *
+ * The SessionManager should be configured with a very fast storage system that is
+ * optimized for holding key-value pairs. It expects:
+ *
+ * - Low latencies. Session data is read or written to during nearly all web requests from
+ *   people that have contributed to or otherwise engaged with the site, including those not
+ *   logged in with a registered account.
+ *
+ * - Locally writable data. The data must be writable from both primary and secondary
+ *   data centres.
+ *
+ * - Locally latest reads. Writes must by default be immediately consistent within
+ *   the local data centre, and visible to other reads from web servers in that data centre.
+ *
+ * - Replication. The data must be eventually consistent across all data centres. Writes
+ *   are either synced to all remote data centres, or locally overwritten by another write
+ *   that is.
+ *
+ * The SessionManager uses `set()` and `delete()` for write operations, which should be
+ * synchronous in the local data centre, and replicate asynchronously to any others.
+ *
  * @ingroup Session
  * @since 1.27
  * @see https://www.mediawiki.org/wiki/Manual:SessionManager_and_AuthManager
  */
-final class SessionManager implements SessionManagerInterface {
+class SessionManager implements SessionManagerInterface {
 	/** @var SessionManager|null */
 	private static $instance = null;
 
@@ -72,6 +97,9 @@ final class SessionManager implements SessionManagerInterface {
 	/** @var Config */
 	private $config;
 
+	/** @var UserNameUtils */
+	private $userNameUtils;
+
 	/** @var CachedBagOStuff|null */
 	private $store;
 
@@ -90,7 +118,7 @@ final class SessionManager implements SessionManagerInterface {
 	/** @var SessionId[] */
 	private $allSessionIds = [];
 
-	/** @var string[] */
+	/** @var true[] */
 	private $preventUsers = [];
 
 	/**
@@ -110,7 +138,7 @@ final class SessionManager implements SessionManagerInterface {
 	 *
 	 * @return Session
 	 */
-	public static function getGlobalSession() : Session {
+	public static function getGlobalSession(): Session {
 		if ( !PHPSessionHandler::isEnabled() ) {
 			$id = '';
 		} else {
@@ -188,11 +216,12 @@ final class SessionManager implements SessionManagerInterface {
 			}
 			$store = $options['store'];
 		} else {
-			$store = \ObjectCache::getInstance( $this->config->get( 'SessionCacheType' ) );
+			$store = \ObjectCache::getInstance( $this->config->get( MainConfigNames::SessionCacheType ) );
 		}
 
 		$this->logger->debug( 'SessionManager using store ' . get_class( $store ) );
 		$this->store = $store instanceof CachedBagOStuff ? $store : new CachedBagOStuff( $store );
+		$this->userNameUtils = MediawikiServices::getInstance()->getUserNameUtils();
 
 		register_shutdown_function( [ $this, 'shutdown' ] );
 	}
@@ -214,7 +243,7 @@ final class SessionManager implements SessionManagerInterface {
 		$info = $this->getSessionInfoForRequest( $request );
 
 		if ( !$info ) {
-			$session = $this->getEmptySession( $request );
+			$session = $this->getInitialSession( $request );
 		} else {
 			$session = $this->getSessionFromInfo( $info, $request );
 		}
@@ -330,7 +359,23 @@ final class SessionManager implements SessionManagerInterface {
 			throw new \UnexpectedValueException( 'No provider could provide an empty session!' );
 		}
 
+		// @phan-suppress-next-line PhanTypePossiblyInvalidDimOffset False positive
 		return $this->getSessionFromInfo( $infos[0], $request );
+	}
+
+	/**
+	 * Create a new session. Populate it with a default secret token, to avoid
+	 * a session replication race on a subsequent edit/save cycle (e.g. in
+	 * a multi-dc setup, ref https://phabricator.wikimedia.org/T279664#8139533).
+	 *
+	 * @param WebRequest|null $request Corresponding request. Any existing
+	 *  session associated with this WebRequest object will be overwritten.
+	 * @return Session
+	 */
+	private function getInitialSession( WebRequest $request = null ) {
+		$session = $this->getEmptySession( $request );
+		$session->getToken();
+		return $session;
 	}
 
 	public function invalidateSessionsForUser( User $user ) {
@@ -426,13 +471,17 @@ final class SessionManager implements SessionManagerInterface {
 	protected function getProviders() {
 		if ( $this->sessionProviders === null ) {
 			$this->sessionProviders = [];
-			foreach ( $this->config->get( 'SessionProviders' ) as $spec ) {
+			$objectFactory = MediaWikiServices::getInstance()->getObjectFactory();
+			foreach ( $this->config->get( MainConfigNames::SessionProviders ) as $spec ) {
 				/** @var SessionProvider */
-				$provider = ObjectFactory::getObjectFromSpec( $spec );
-				$provider->setLogger( $this->logger );
-				$provider->setConfig( $this->config );
-				$provider->setManager( $this );
-				$provider->setHookContainer( $this->hookContainer );
+				$provider = $objectFactory->createObject( $spec );
+				$provider->init(
+					$this->logger,
+					$this->config,
+					$this,
+					$this->hookContainer,
+					$this->userNameUtils
+				);
 				if ( isset( $this->sessionProviders[(string)$provider] ) ) {
 					// @phan-suppress-next-line PhanTypeSuspiciousStringExpression
 					throw new \UnexpectedValueException( "Duplicate provider name \"$provider\"" );
@@ -568,7 +617,7 @@ final class SessionManager implements SessionManagerInterface {
 		$newParams = [];
 
 		if ( $blob !== false ) {
-			// Sanity check: blob must be an array, if it's saved at all
+			// Double check: blob must be an array, if it's saved at all
 			if ( !is_array( $blob ) ) {
 				$this->logger->warning( 'Session "{session}": Bad data', [
 					'session' => $info->__toString(),
@@ -577,7 +626,7 @@ final class SessionManager implements SessionManagerInterface {
 				return $failHandler();
 			}
 
-			// Sanity check: blob has data and metadata arrays
+			// Double check: blob has data and metadata arrays
 			if ( !isset( $blob['data'] ) || !is_array( $blob['data'] ) ||
 				!isset( $blob['metadata'] ) || !is_array( $blob['metadata'] )
 			) {
@@ -591,7 +640,7 @@ final class SessionManager implements SessionManagerInterface {
 			$data = $blob['data'];
 			$metadata = $blob['metadata'];
 
-			// Sanity check: metadata must be an array and must contain certain
+			// Double check: metadata must be an array and must contain certain
 			// keys, if it's saved at all
 			if ( !array_key_exists( 'userId', $metadata ) ||
 				!array_key_exists( 'userName', $metadata ) ||
@@ -840,13 +889,15 @@ final class SessionManager implements SessionManagerInterface {
 	public function getSessionFromInfo( SessionInfo $info, WebRequest $request ) {
 		// @codeCoverageIgnoreStart
 		if ( defined( 'MW_NO_SESSION' ) ) {
+			$ep = defined( 'MW_ENTRY_POINT' ) ? MW_ENTRY_POINT : 'this';
+
 			if ( MW_NO_SESSION === 'warn' ) {
 				// Undocumented safety case for converting existing entry points
 				$this->logger->error( 'Sessions are supposed to be disabled for this entry point', [
-					'exception' => new \BadMethodCallException( 'Sessions are disabled for this entry point' ),
+					'exception' => new \BadMethodCallException( "Sessions are disabled for $ep entry point" ),
 				] );
 			} else {
-				throw new \BadMethodCallException( 'Sessions are disabled for this entry point' );
+				throw new \BadMethodCallException( "Sessions are disabled for $ep entry point" );
 			}
 		}
 		// @codeCoverageIgnoreEnd
@@ -863,7 +914,7 @@ final class SessionManager implements SessionManagerInterface {
 				$this->store,
 				$this->logger,
 				$this->hookContainer,
-				$this->config->get( 'ObjectCacheSessionExpiry' )
+				$this->config->get( MainConfigNames::ObjectCacheSessionExpiry )
 			);
 			$this->allSessionBackends[$id] = $backend;
 			$delay = $backend->delaySave();
@@ -935,10 +986,10 @@ final class SessionManager implements SessionManagerInterface {
 	 * @return string
 	 */
 	public function generateSessionId() {
-		do {
-			$id = \Wikimedia\base_convert( \MWCryptRand::generateHex( 40 ), 16, 32, 32 );
-			$key = $this->store->makeKey( 'MWSession', $id );
-		} while ( isset( $this->allSessionIds[$id] ) || is_array( $this->store->get( $key ) ) );
+		$id = \Wikimedia\base_convert( \MWCryptRand::generateHex( 40 ), 16, 32, 32 );
+		// Cache non-existence to avoid a later fetch
+		$key = $this->store->makeKey( 'MWSession', $id );
+		$this->store->set( $key, false, 0, BagOStuff::WRITE_CACHE_ONLY );
 		return $id;
 	}
 
@@ -997,7 +1048,7 @@ final class SessionManager implements SessionManagerInterface {
 	public function logPotentialSessionLeakage( Session $session = null ) {
 		$proxyLookup = MediaWikiServices::getInstance()->getProxyLookup();
 		$session = $session ?: self::getGlobalSession();
-		$suspiciousIpExpiry = $this->config->get( 'SuspiciousIpExpiry' );
+		$suspiciousIpExpiry = $this->config->get( MainConfigNames::SuspiciousIpExpiry );
 
 		if ( $suspiciousIpExpiry === false
 			// We only care about logged-in users.
@@ -1016,7 +1067,7 @@ final class SessionManager implements SessionManagerInterface {
 			return;
 		}
 		$mwuser = $session->getRequest()->getCookie( 'mwuser-sessionId' );
-		$now = \MWTimestamp::now( TS_UNIX );
+		$now = (int)\MWTimestamp::now( TS_UNIX );
 
 		// Record (and possibly log) that the IP is using the current session.
 		// Don't touch the stored data unless we are changing the IP or re-adding an expired one.
@@ -1074,6 +1125,7 @@ final class SessionManager implements SessionManagerInterface {
 				'userAgent' => $session->getRequest()->getHeader( 'user-agent' ),
 			];
 			$logger = \MediaWiki\Logger\LoggerFactory::getInstance( 'session-ip' );
+			// @phan-suppress-next-line PhanTypeMismatchArgumentNullable message is set when used here
 			$logger->log( $logLevel, $message, $logData );
 		}
 	}

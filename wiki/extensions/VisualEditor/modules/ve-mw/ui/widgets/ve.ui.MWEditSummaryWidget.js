@@ -46,14 +46,14 @@ OO.mixinClass( ve.ui.MWEditSummaryWidget, OO.ui.mixin.LookupElement );
 
 /* Static properties */
 
-ve.ui.MWEditSummaryWidget.static.summarySplitter = /^(\/\*.*?\*\/\s*)?(.*)$/;
+ve.ui.MWEditSummaryWidget.static.summarySplitter = /^(\/\*.*?\*\/\s*)?([^]*)$/;
 
 /* Static methods */
 
 /**
  * Split a summary into the section and the actual summary
  *
- * @param {string} summary Summary
+ * @param {string} summary
  * @return {Object} Object with section and comment string properties
  */
 ve.ui.MWEditSummaryWidget.static.splitSummary = function ( summary ) {
@@ -65,7 +65,7 @@ ve.ui.MWEditSummaryWidget.static.splitSummary = function ( summary ) {
 };
 
 /**
- * Filter a list of edit summaries to a specific query stirng
+ * Filter a list of edit summaries to a specific query string
  *
  * @param {string[]} summaries Edit summaries
  * @param {string} query User query
@@ -89,7 +89,7 @@ ve.ui.MWEditSummaryWidget.static.getMatchingSummaries = function ( summaries, qu
 				summaryPrefixMatches.push( summary );
 			}
 		} else if ( index !== -1 ) {
-			if ( lowerSummary[ index - 1 ].match( /\s/ ) ) {
+			if ( /\s/.test( lowerSummary[ index - 1 ] ) ) {
 				// Character before match is whitespace
 				wordPrefixMatches.push( summary );
 			} else {
@@ -131,8 +131,7 @@ ve.ui.MWEditSummaryWidget.prototype.getSummaries = function () {
 				list: 'usercontribs',
 				ucuser: mw.user.getName(),
 				ucprop: 'comment',
-				uclimit: 500,
-				format: 'json'
+				uclimit: 500
 			} ).then( function ( response ) {
 				var usedComments = {},
 					changes = ve.getProp( response, 'query', 'usercontribs' ) || [];

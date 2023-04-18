@@ -4,12 +4,12 @@ namespace MediaWiki\Rest\Handler;
 
 use Config;
 use LogicException;
+use MediaWiki\Page\PageLookup;
 use MediaWiki\Rest\LocalizedHttpException;
 use MediaWiki\Rest\Response;
 use MediaWiki\Rest\SimpleHandler;
 use MediaWiki\Revision\RevisionLookup;
 use MediaWiki\Revision\RevisionRecord;
-use TitleFactory;
 use TitleFormatter;
 
 /**
@@ -26,19 +26,19 @@ class RevisionSourceHandler extends SimpleHandler {
 	 * @param Config $config
 	 * @param RevisionLookup $revisionLookup
 	 * @param TitleFormatter $titleFormatter
-	 * @param TitleFactory $titleFactory
+	 * @param PageLookup $pageLookup
 	 */
 	public function __construct(
 		Config $config,
 		RevisionLookup $revisionLookup,
 		TitleFormatter $titleFormatter,
-		TitleFactory $titleFactory
+		PageLookup $pageLookup
 	) {
 		$this->contentHelper = new RevisionContentHelper(
 			$config,
 			$revisionLookup,
 			$titleFormatter,
-			$titleFactory
+			$pageLookup
 		);
 	}
 
@@ -52,7 +52,7 @@ class RevisionSourceHandler extends SimpleHandler {
 	 */
 	private function constructHtmlUrl( RevisionRecord $rev ): string {
 		return $this->getRouter()->getRouteUrl(
-			'/coredev/v0/revision/{id}/html',
+			'/v1/revision/{id}/html',
 			[ 'id' => $rev->getId() ]
 		);
 	}
@@ -69,6 +69,7 @@ class RevisionSourceHandler extends SimpleHandler {
 			case 'bare':
 				$revisionRecord = $this->contentHelper->getTargetRevision();
 				$body = $this->contentHelper->constructMetadata();
+				// @phan-suppress-next-line PhanTypeMismatchArgumentNullable revisionRecord is set when used
 				$body['html_url'] = $this->constructHtmlUrl( $revisionRecord );
 				$response = $this->getResponseFactory()->createJson( $body );
 				$this->contentHelper->setCacheControl( $response );
@@ -89,9 +90,9 @@ class RevisionSourceHandler extends SimpleHandler {
 	}
 
 	/**
-	 * @return string
+	 * @return string|null
 	 */
-	protected function getETag(): string {
+	protected function getETag(): ?string {
 		return $this->contentHelper->getETag();
 	}
 

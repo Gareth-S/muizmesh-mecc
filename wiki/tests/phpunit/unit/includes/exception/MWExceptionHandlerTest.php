@@ -1,4 +1,8 @@
 <?php
+
+use Wikimedia\NormalizedException\NormalizedException;
+use Wikimedia\TestingAccessWrapper;
+
 /**
  * @author Antoine Musso
  * @copyright Copyright © 2013, Antoine Musso
@@ -10,14 +14,16 @@ class MWExceptionHandlerTest extends \MediaWikiUnitTestCase {
 
 	private $oldSettingValue;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 		// We need to make sure the traces have function arguments as we're testing
 		// their handling.
 		$this->oldSettingValue = ini_set( 'zend.exception_ignore_args', 0 );
 	}
 
-	protected function tearDown() : void {
+	protected function tearDown(): void {
+		TestingAccessWrapper::newFromClass( MWExceptionHandler::class )
+			->logExceptionBacktrace = true;
 		ini_set( 'zend.exception_ignore_args', $this->oldSettingValue );
 		parent::tearDown();
 	}
@@ -40,11 +46,11 @@ class MWExceptionHandlerTest extends \MediaWikiUnitTestCase {
 		$dummyFile = TestThrowerDummy::getFile();
 		$dummyClass = TestThrowerDummy::class;
 		$expected = <<<TEXT
-from ${dummyFile}(17)
-#0 ${dummyFile}(13): ${dummyClass}->getQuux()
-#1 ${dummyFile}(9): ${dummyClass}->getBar()
-#2 ${dummyFile}(5): ${dummyClass}->doFoo()
-#3 ${startFile}($startLine): ${dummyClass}->main()
+from {$dummyFile}(17)
+#0 {$dummyFile}(13): {$dummyClass}->getQuux()
+#1 {$dummyFile}(9): {$dummyClass}->getBar()
+#2 {$dummyFile}(5): {$dummyClass}->doFoo()
+#3 {$startFile}($startLine): {$dummyClass}->main()
 TEXT;
 
 		// Trim up until our call()
@@ -105,6 +111,40 @@ TEXT;
 	}
 
 	/**
+	 * @covers MWExceptionHandler::getLogNormalMessage
+	 */
+	public function testGetLogNormalMessage() {
+		$this->assertSame(
+			'[{reqId}] {exception_url}   Exception: message',
+			MWExceptionHandler::getLogNormalMessage( new Exception( 'message' ) )
+		);
+		$this->assertSame(
+			'[{reqId}] {exception_url}   message',
+			MWExceptionHandler::getLogNormalMessage( new ErrorException( 'message' ) )
+		);
+		$this->assertSame(
+			'[{reqId}] {exception_url}   ' . NormalizedException::class . ': {placeholder}',
+			MWExceptionHandler::getLogNormalMessage(
+				new NormalizedException( '{placeholder}', [ 'placeholder' => 'message' ] )
+			)
+		);
+	}
+
+	/**
+	 * @covers MWExceptionHandler::getLogContext
+	 */
+	public function testGetLogContext() {
+		$e = new Exception( 'message' );
+		$context = MWExceptionHandler::getLogContext( $e );
+		$this->assertSame( $e, $context['exception'] );
+
+		$e = new NormalizedException( 'message', [ 'param' => 'value' ] );
+		$context = MWExceptionHandler::getLogContext( $e );
+		$this->assertSame( $e, $context['exception'] );
+		$this->assertSame( 'value', $context['param'] );
+	}
+
+	/**
 	 * @dataProvider provideJsonSerializedKeys
 	 * @covers MWExceptionHandler::jsonSerializeException
 	 *
@@ -113,9 +153,6 @@ TEXT;
 	 * @param string $key Name of the key to validate in the serialized JSON
 	 */
 	public function testJsonserializeexceptionKeys( $expectedKeyType, $exClass, $key ) {
-		// Make sure we log a backtrace:
-		$GLOBALS['wgLogExceptionBacktrace'] = true;
-
 		$json = json_decode(
 			MWExceptionHandler::jsonSerializeException( new $exClass() )
 		);
@@ -145,7 +182,8 @@ TEXT;
 	 * @covers MWExceptionHandler::jsonSerializeException
 	 */
 	public function testJsonserializeexceptionBacktracingEnabled() {
-		$GLOBALS['wgLogExceptionBacktrace'] = true;
+		TestingAccessWrapper::newFromClass( MWExceptionHandler::class )
+			->logExceptionBacktrace = true;
 		$json = json_decode(
 			MWExceptionHandler::jsonSerializeException( new Exception() )
 		);
@@ -159,7 +197,8 @@ TEXT;
 	 * @covers MWExceptionHandler::jsonSerializeException
 	 */
 	public function testJsonserializeexceptionBacktracingDisabled() {
-		$GLOBALS['wgLogExceptionBacktrace'] = false;
+		TestingAccessWrapper::newFromClass( MWExceptionHandler::class )
+			->logExceptionBacktrace = false;
 		$json = json_decode(
 			MWExceptionHandler::jsonSerializeException( new Exception() )
 		);

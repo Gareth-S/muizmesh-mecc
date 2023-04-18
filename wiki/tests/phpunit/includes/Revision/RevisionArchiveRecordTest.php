@@ -64,7 +64,7 @@ class RevisionArchiveRecordTest extends MediaWikiIntegrationTestCase {
 			$slots,
 		];
 
-		$title = Title::newFromText( 'Dummy' );
+		$title = Title::makeTitle( NS_MAIN, 'Dummy' );
 		$title->resetArticleID( 17 );
 
 		yield 'all info, local, with Title' => [
@@ -112,7 +112,7 @@ class RevisionArchiveRecordTest extends MediaWikiIntegrationTestCase {
 
 		$row = $protoRow;
 		yield 'no length, no hash' => [
-			Title::newFromText( 'DummyDoesNotExist' ),
+			Title::makeTitle( NS_MAIN, 'DummyDoesNotExist' ),
 			$user,
 			$comment,
 			(object)$row,
@@ -186,7 +186,7 @@ class RevisionArchiveRecordTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function provideConstructorFailure() {
-		$title = Title::newFromText( 'Dummy' );
+		$title = Title::makeTitle( NS_MAIN, 'Dummy' );
 		$title->resetArticleID( 17 );
 
 		$user = new UserIdentityValue( 11, 'Tester' );
@@ -209,6 +209,8 @@ class RevisionArchiveRecordTest extends MediaWikiIntegrationTestCase {
 			'ar_sha1' => $slots->computeSha1(),
 		];
 
+		$row = $protoRow;
+
 		yield 'mismatching wiki ID' => [
 			new PageIdentityValue(
 				$title->getArticleID(),
@@ -218,24 +220,10 @@ class RevisionArchiveRecordTest extends MediaWikiIntegrationTestCase {
 			),
 			$user,
 			$comment,
-			'not a row',
+			(object)$row,
 			$slots,
 			'acmewiki',
 			PreconditionException::class
-		];
-
-		yield 'not a row' => [
-			new PageIdentityValue(
-				$title->getArticleID(),
-				$title->getNamespace(),
-				$title->getDBkey(),
-				'acmewiki'
-			),
-			$user,
-			$comment,
-			'not a row',
-			$slots,
-			'acmewiki'
 		];
 
 		$row = $protoRow;

@@ -11,31 +11,27 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 
 	/**
 	 * Limit on string lengths, in bytes not characters
-	 * If null, $wgMaxArticleSize * 1024 will be used
-	 * @var int|null
+	 * @var int
 	 */
-	private $stringLengthLimit = null;
+	private $stringLengthLimit;
 
 	/**
 	 * PHP until 5.6.9 are buggy when the regex in preg_replace an
 	 * preg_match_all matches the empty string.
 	 * @var bool
 	 */
-	private $phpBug53823 = false;
+	private $phpBug53823;
 
 	/**
 	 * A cache of patterns and the regexes they generate.
 	 * @var MapCacheLRU
 	 */
-	private $patternRegexCache = null;
+	private $patternRegexCache;
 
 	/** @inheritDoc */
 	public function __construct( $engine ) {
-		if ( $this->stringLengthLimit === null ) {
-			global $wgMaxArticleSize;
-			$this->stringLengthLimit = $wgMaxArticleSize * 1024;
-		}
-
+		global $wgMaxArticleSize;
+		$this->stringLengthLimit = $wgMaxArticleSize * 1024;
 		$this->phpBug53823 = preg_replace( '//us', 'x', "\xc3\xa1" ) === "x\xc3x\xa1x";
 		$this->patternRegexCache = new MapCacheLRU( 100 );
 
@@ -86,10 +82,10 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 	/**
 	 * Check a string first parameter
 	 * @param string $name Function name, for errors
-	 * @param mixed $s Value to check
+	 * @param mixed &$s Value to check
 	 * @param bool $checkEncoding Whether to validate UTF-8 encoding.
 	 */
-	private function checkString( $name, $s, $checkEncoding = true ) {
+	private function checkString( $name, &$s, $checkEncoding = true ) {
 		if ( $this->getLuaType( $s ) == 'number' ) {
 			$s = (string)$s;
 		} else {
@@ -314,8 +310,8 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 		if ( $j < $i ) {
 			return [ '' ];
 		}
-		$i = max( 1, min( $i, $len + 1 ) );
-		$j = max( 1, min( $j, $len + 1 ) );
+		$i = max( 1, min( (int)$i, $len + 1 ) );
+		$j = max( 1, min( (int)$j, $len + 1 ) );
 		$s = mb_substr( $s, $i - 1, $j - $i + 1, 'UTF-8' );
 		return [ $s ];
 	}
@@ -614,7 +610,8 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 			// "(?!)" would be simpler and could be quantified if not for a bug in PCRE 8.13 to 8.33
 			$re = '(?:(*FAIL))';
 		} elseif ( $re === '[^]' ) {
-			$re = '.'; // 's' modifier is always used, so this works
+			// 's' modifier is always used, so this works
+			$re = '.';
 		}
 
 		return [ $i, $re ];
@@ -818,11 +815,11 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 		switch ( $this->getLuaType( $repl ) ) {
 		case 'string':
 		case 'number':
-			$cb = function ( $m ) use ( $repl, $anypos, &$captures ) {
+			$cb = static function ( $m ) use ( $repl, $anypos, &$captures ) {
 				if ( $anypos ) {
 					$m = array_shift( $captures );
 				}
-				return preg_replace_callback( '/%([%0-9])/', function ( $m2 ) use ( $m ) {
+				return preg_replace_callback( '/%([%0-9])/', static function ( $m2 ) use ( $m ) {
 					$x = $m2[1];
 					if ( $x === '%' ) {
 						return '%';
@@ -846,7 +843,7 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 					$m = array_shift( $captures );
 				}
 				$x = $m['m1'] ?? $m[0];
-				if ( !isset( $repl[$x] ) || $repl[$x] === null ) {
+				if ( !isset( $repl[$x] ) ) {
 					return $m[0];
 				}
 				$type = $this->getLuaType( $repl[$x] );
@@ -896,7 +893,7 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 			$maxMatches = $n < 0 ? INF : $n;
 			$n = -1;
 			$realCallback = $cb;
-			$cb = function ( $m ) use ( $realCallback, &$skippedMatches, &$maxMatches ) {
+			$cb = static function ( $m ) use ( $realCallback, &$skippedMatches, &$maxMatches ) {
 				$c = ord( $m['phpBug53823'] );
 				if ( $c >= 0x80 && $c <= 0xbf || $maxMatches <= 0 ) {
 					$skippedMatches++;
@@ -911,7 +908,7 @@ class Scribunto_LuaUstringLibrary extends Scribunto_LuaLibraryBase {
 		$count = 0;
 		$s2 = preg_replace_callback( $re, $cb, $s, $n, $count );
 		if ( $s2 === null ) {
-			self::handlePCREError( preg_last_error(), $pattern );
+			$this->handlePCREError( preg_last_error(), $pattern );
 		}
 		return [ $s2, $count - $skippedMatches ];
 	}

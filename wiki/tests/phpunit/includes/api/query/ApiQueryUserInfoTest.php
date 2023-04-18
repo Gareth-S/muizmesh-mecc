@@ -26,32 +26,27 @@ class ApiQueryUserInfoTest extends ApiTestCase {
 		];
 
 		$page = $this->getNonexistingTestPage();
-		$user = $this->getTestUser()->getUser();
+		$performer = $this->getTestUser()->getAuthority();
 
-		$apiResult = $this->doApiRequest( $params, null, false, $user );
+		$apiResult = $this->doApiRequest( $params, null, false, $performer );
 		$this->assertArrayNotHasKey( 'continue', $apiResult[0] );
 		$this->assertArrayHasKey( 'query', $apiResult[0] );
 		$this->assertArrayHasKey( 'userinfo', $apiResult[0]['query'] );
 		$this->assertArrayNotHasKey( 'latestcontrib', $apiResult[0]['query']['userinfo'] );
 
 		$status = $this->editPage( $page, 'one' );
-		$this->assertTrue( $status->isOK() );
+		$this->assertStatusOK( $status );
 		$status = $this->editPage( $page, 'two' );
-		$this->assertTrue( $status->isOK() );
+		$this->assertStatusOK( $status );
 
 		$revisionTimestamp = MWTimestamp::convert( TS_ISO_8601, $page->getTimestamp() );
 
-		$apiResult = $this->doApiRequest( $params, null, false, $user );
+		$apiResult = $this->doApiRequest( $params, null, false, $performer );
 		$this->assertArrayNotHasKey( 'continue', $apiResult[0] );
 		$this->assertArrayHasKey( 'query', $apiResult[0] );
 		$this->assertArrayHasKey( 'userinfo', $apiResult[0]['query'] );
 		$this->assertArrayHasKey( 'latestcontrib', $apiResult[0]['query']['userinfo'] );
 		$queryTimestamp = $apiResult[0]['query']['userinfo']['latestcontrib'];
 		$this->assertSame( $revisionTimestamp, $queryTimestamp );
-	}
-
-	public function tearDown(): void {
-		parent::tearDown();
-		MWTimestamp::setFakeTime( false );
 	}
 }

@@ -82,7 +82,12 @@ class TitleCleanup extends TableCleanup {
 		// XXX: Doesn't actually check for file existence, just presence of image record.
 		// This is reasonable, since cleanupImages.php only iterates over the image table.
 		$dbr = $this->getDB( DB_REPLICA );
-		$row = $dbr->selectRow( 'image', [ 'img_name' ], [ 'img_name' => $name ], __METHOD__ );
+		$row = $dbr->newSelectQueryBuilder()
+			->select( '*' )
+			->from( 'image' )
+			->where( [ 'img_name' => $name ] )
+			->caller( __METHOD__ )
+			->fetchRow();
 
 		return $row !== false;
 	}
@@ -121,7 +126,7 @@ class TitleCleanup extends TableCleanup {
 		} else {
 			$this->output( "renaming $row->page_id ($row->page_namespace," .
 				"'$row->page_title') to ($row->page_namespace,'$dest')\n" );
-			$dbw = $this->getDB( DB_MASTER );
+			$dbw = $this->getDB( DB_PRIMARY );
 			$dbw->update( 'page',
 				[ 'page_title' => $dest ],
 				[ 'page_id' => $row->page_id ],
@@ -183,7 +188,7 @@ class TitleCleanup extends TableCleanup {
 		} else {
 			$this->output( "renaming $row->page_id ($row->page_namespace," .
 				"'$row->page_title') to ($ns,'$dest')\n" );
-			$dbw = $this->getDB( DB_MASTER );
+			$dbw = $this->getDB( DB_PRIMARY );
 			$dbw->update( 'page',
 				[
 					'page_namespace' => $ns,

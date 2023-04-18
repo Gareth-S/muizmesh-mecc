@@ -159,7 +159,6 @@ class WikiTextStructure {
 			// empty text - nothing to seek here
 			return;
 		}
-		$opening = null;
 
 		$this->openingText = $this->extractHeadingBeforeFirstHeading( $text );
 
@@ -244,6 +243,6 @@ class WikiTextStructure {
 	 * @return string|null
 	 */
 	public function getDefaultSort() {
-		return $this->parserOutput->getProperty( 'defaultsort' );
+		return $this->parserOutput->getPageProperty( 'defaultsort' );
 	}
 }

@@ -33,7 +33,7 @@ defined('LOG_DRIVER') or define('LOG_DRIVER', getenv('LOG_DRIVER') ?: 'system');
 defined('LOG_FILE') or define('LOG_FILE', getenv('LOG_FILE') ?: DATA_DIR.DIRECTORY_SEPARATOR.'debug.log');
 
 // Application version
-defined('APP_VERSION') or define('APP_VERSION', getenv('APP_VERSION') ?: build_app_version(' (tag: v1.2.22)', '4e218efd97061291dc4ef847c2206965bcc6b5dc'));
+defined('APP_VERSION') or define('APP_VERSION', getenv('APP_VERSION') ?: build_app_version(' (HEAD -> main, tag: v1.2.27)', '0620c13d71ee429ae8cbd5b1324487fd66157c48'));
 
 // Run automatically database migrations
 defined('DB_RUN_MIGRATIONS') or define('DB_RUN_MIGRATIONS', getenv('DB_RUN_MIGRATIONS') ? strtolower(getenv('DB_RUN_MIGRATIONS')) === 'true' : true);
@@ -43,6 +43,7 @@ defined('DB_DRIVER') or define('DB_DRIVER', getenv('DB_DRIVER') ?: 'sqlite');
 
 // Sqlite configuration
 defined('DB_FILENAME') or define('DB_FILENAME', getenv('DB_FILENAME') ?: DATA_DIR.DIRECTORY_SEPARATOR.'db.sqlite');
+defined('DB_WAL_MODE') or define('DB_WAL_MODE', getenv('DB_WAL_MODE') ? strtolower(getenv('DB_WAL_MODE')) === 'true' : true);
 
 // Mysql/Postgres configuration
 defined('DB_USERNAME') or define('DB_USERNAME', getenv('DB_USERNAME') ?: 'root');
@@ -50,6 +51,7 @@ defined('DB_PASSWORD') or define('DB_PASSWORD', getenv('DB_PASSWORD') ?: '');
 defined('DB_HOSTNAME') or define('DB_HOSTNAME', getenv('DB_HOSTNAME') ?: 'localhost');
 defined('DB_NAME') or define('DB_NAME', getenv('DB_NAME') ?: 'kanboard');
 defined('DB_PORT') or define('DB_PORT', intval(getenv('DB_PORT')) ?: null);
+defined('DB_ODBC_DSN') or define('DB_ODBC_DSN', getenv('DB_ODBC_DSN') ?: 'kanboard');
 defined('DB_SSL_KEY') or define('DB_SSL_KEY', getenv('DB_SSL_KEY') ?: null);
 defined('DB_SSL_CERT') or define('DB_SSL_CERT', getenv('DB_SSL_CERT') ?: null);
 defined('DB_SSL_CA') or define('DB_SSL_CA', getenv('DB_SSL_CA') ?: null);
@@ -99,6 +101,7 @@ defined('LDAP_GROUP_SYNC') or define('LDAP_GROUP_SYNC', getenv('LDAP_GROUP_SYNC'
 defined('REVERSE_PROXY_AUTH') or define('REVERSE_PROXY_AUTH', strtolower(getenv('REVERSE_PROXY_AUTH')) === 'true');
 defined('REVERSE_PROXY_USER_HEADER') or define('REVERSE_PROXY_USER_HEADER', getenv('REVERSE_PROXY_USER_HEADER') ?: 'REMOTE_USER');
 defined('REVERSE_PROXY_EMAIL_HEADER') or define('REVERSE_PROXY_EMAIL_HEADER', getenv('REVERSE_PROXY_EMAIL_HEADER') ?: 'REMOTE_EMAIL');
+defined('REVERSE_PROXY_FULLNAME_HEADER') or define('REVERSE_PROXY_FULLNAME_HEADER', getenv('REVERSE_PROXY_FULLNAME_HEADER') ?: 'REMOTE_FULLNAME');
 defined('REVERSE_PROXY_DEFAULT_ADMIN') or define('REVERSE_PROXY_DEFAULT_ADMIN', getenv('REVERSE_PROXY_DEFAULT_ADMIN') ?: '');
 defined('REVERSE_PROXY_DEFAULT_DOMAIN') or define('REVERSE_PROXY_DEFAULT_DOMAIN', getenv('REVERSE_PROXY_DEFAULT_DOMAIN') ?: '');
 
@@ -175,4 +178,4 @@ defined('SHOW_GROUP_MEMBERSHIPS_IN_USERLIST') or define('SHOW_GROUP_MEMBERSHIPS_
 defined('SHOW_GROUP_MEMBERSHIPS_IN_USERLIST_WITH_LIMIT') or define('SHOW_GROUP_MEMBERSHIPS_IN_USERLIST_WITH_LIMIT', intval(getenv('SHOW_GROUP_MEMBERSHIPS_IN_USERLIST_WITH_LIMIT')) ?: 7);
 
 // Documentation URL
-defined('DOCUMENTATION_URL_PATTERN') or define('DOCUMENTATION_URL_PATTERN', getenv('DOCUMENTATION_URL_PATTERN') ?: 'https://docs.kanboard.org/en/%s/user_guide/%s.html');
+defined('DOCUMENTATION_URL_PATTERN') or define('DOCUMENTATION_URL_PATTERN', getenv('DOCUMENTATION_URL_PATTERN') ?: 'https://docs.kanboard.org/v1/user/%s');

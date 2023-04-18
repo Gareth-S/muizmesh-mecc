@@ -25,8 +25,6 @@
  * @author Daniel Kinzler
  */
 
-use MediaWiki\MediaWikiServices;
-
 /**
  * Content for JavaScript pages.
  *
@@ -50,42 +48,6 @@ class JavaScriptContent extends TextContent {
 	}
 
 	/**
-	 * Returns a Content object with pre-save transformations applied using
-	 * Parser::preSaveTransform().
-	 *
-	 * @param Title $title
-	 * @param User $user
-	 * @param ParserOptions $popts
-	 *
-	 * @return JavaScriptContent
-	 */
-	public function preSaveTransform( Title $title, User $user, ParserOptions $popts ) {
-		// @todo Make pre-save transformation optional for script pages (T34858)
-
-		if ( !MediaWikiServices::getInstance()->getUserOptionsLookup()->getBoolOption( $user, 'pst-cssjs' ) ) {
-			// Allow bot users to disable the pre-save transform for CSS/JS (T236828).
-			$popts = clone $popts;
-			$popts->setPreSaveTransform( false );
-		}
-
-		$text = $this->getText();
-		$pst = MediaWikiServices::getInstance()->getParser()
-			->preSaveTransform( $text, $title, $user, $popts );
-
-		return new static( $pst );
-	}
-
-	/**
-	 * @return string JavaScript wrapped in a <pre> tag.
-	 */
-	protected function getHtml() {
-		return Html::element( 'pre',
-			[ 'class' => 'mw-code mw-js', 'dir' => 'ltr' ],
-			"\n" . $this->getText() . "\n"
-		) . "\n";
-	}
-
-	/**
 	 * If this page is a redirect, return the content
 	 * if it should redirect to $target instead
 	 *
@@ -97,6 +59,7 @@ class JavaScriptContent extends TextContent {
 			return $this;
 		}
 
+		// @phan-suppress-next-line PhanTypeMismatchReturnSuperType False positive
 		return $this->getContentHandler()->makeRedirectContent( $target );
 	}
 

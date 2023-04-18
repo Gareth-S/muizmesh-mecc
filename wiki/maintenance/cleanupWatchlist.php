@@ -29,6 +29,7 @@
  * @ingroup Maintenance
  */
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
 
 require_once __DIR__ . '/TableCleanup.php';
@@ -78,13 +79,13 @@ class CleanupWatchlist extends TableCleanup {
 
 	private function removeWatch( $row ) {
 		if ( !$this->dryrun && $this->hasOption( 'fix' ) ) {
-			$dbw = $this->getDB( DB_MASTER );
+			$dbw = $this->getDB( DB_PRIMARY );
 			$dbw->delete(
 				'watchlist',
 				[ 'wl_id' => $row->wl_id ],
 				__METHOD__
 			);
-			if ( $this->getConfig()->get( 'WatchlistExpiry' ) ) {
+			if ( $this->getConfig()->get( MainConfigNames::WatchlistExpiry ) ) {
 				$dbw->delete(
 					'watchlist_expiry',
 					[ 'we_item' => $row->wl_id ],

@@ -1,6 +1,6 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Timestamp\ConvertibleTimestamp;
 
@@ -11,12 +11,12 @@ use Wikimedia\Timestamp\ConvertibleTimestamp;
  */
 class CategoryChangesAsRdfTest extends MediaWikiLangTestCase {
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
-		$this->setMwGlobals( [
-			'wgServer' => 'http://acme.test',
-			'wgCanonicalServer' => 'http://acme.test',
-			'wgArticlePath' => '/wiki/$1',
+		$this->overrideConfigValues( [
+			MainConfigNames::Server => 'http://acme.test',
+			MainConfigNames::CanonicalServer => 'http://acme.test',
+			MainConfigNames::ArticlePath => '/wiki/$1',
 		] );
 	}
 
@@ -217,11 +217,10 @@ class CategoryChangesAsRdfTest extends MediaWikiLangTestCase {
 			array $preProcessed = [] ) {
 		$dumpScript =
 			$this->getMockBuilder( CategoryChangesAsRdf::class )
-				->setMethods( [ $iterator, 'getCategoryLinksIterator' ] )
+				->onlyMethods( [ $iterator, 'getCategoryLinksIterator' ] )
 				->getMock();
 
-		$dumpScript->expects( $this->any() )
-			->method( 'getCategoryLinksIterator' )
+		$dumpScript->method( 'getCategoryLinksIterator' )
 			->willReturnCallback( [ $this, 'getCategoryLinksIterator' ] );
 
 		$dumpScript->expects( $this->once() )
@@ -266,7 +265,10 @@ class CategoryChangesAsRdfTest extends MediaWikiLangTestCase {
 	}
 
 	public function testCategorization() {
-		$this->setMwGlobals( [ 'wgRCWatchCategoryMembership' => true ] );
+		$this->overrideConfigValue(
+			MainConfigNames::RCWatchCategoryMembership,
+			true
+		);
 		$start = new MWTimestamp( "2020-07-31T10:00:00" );
 		$end = new MWTimestamp( "2020-07-31T10:01:00" );
 		ConvertibleTimestamp::setFakeTime( "2020-07-31T10:00:00" );
@@ -279,7 +281,7 @@ class CategoryChangesAsRdfTest extends MediaWikiLangTestCase {
 
 		$output = fopen( "php://memory", "w+b" );
 
-		MediaWikiServices::getInstance()->getJobRunner()->run( [
+		$this->runJobs( [], [
 			'type' => 'categoryMembershipChange'
 		] );
 

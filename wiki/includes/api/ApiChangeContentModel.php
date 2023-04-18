@@ -2,6 +2,7 @@
 
 use MediaWiki\Content\IContentHandlerFactory;
 use MediaWiki\Page\ContentModelChangeFactory;
+use Wikimedia\ParamValidator\ParamValidator;
 
 /**
  * Api module to change the content model of existing pages
@@ -44,6 +45,7 @@ class ApiChangeContentModel extends ApiBase {
 		$params = $this->extractRequestParams();
 		$wikiPage = $this->getTitleOrPageId( $params );
 		$title = $wikiPage->getTitle();
+		$this->getErrorFormatter()->setContextTitle( $title );
 
 		if ( !$title->exists() ) {
 			$this->dieWithError( 'apierror-changecontentmodel-missingtitle' );
@@ -113,19 +115,21 @@ class ApiChangeContentModel extends ApiBase {
 
 		return [
 			'title' => [
-				ApiBase::PARAM_TYPE => 'string',
+				ParamValidator::PARAM_TYPE => 'string',
 			],
 			'pageid' => [
-				ApiBase::PARAM_TYPE => 'integer',
+				ParamValidator::PARAM_TYPE => 'integer',
 			],
-			'summary' => null,
+			'summary' => [
+				ParamValidator::PARAM_TYPE => 'string',
+			],
 			'tags' => [
-				ApiBase::PARAM_TYPE => 'tags',
-				ApiBase::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_TYPE => 'tags',
+				ParamValidator::PARAM_ISMULTI => true,
 			],
 			'model' => [
-				ApiBase::PARAM_TYPE => $modelOptions,
-				ApiBase::PARAM_REQUIRED => true,
+				ParamValidator::PARAM_TYPE => $modelOptions,
+				ParamValidator::PARAM_REQUIRED => true,
 			],
 			'bot' => false,
 		];

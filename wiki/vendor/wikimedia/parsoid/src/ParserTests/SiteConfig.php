@@ -3,8 +3,6 @@ declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\ParserTests;
 
-use Monolog\Formatter\LineFormatter;
-use Monolog\Handler\ErrorLogHandler;
 use Monolog\Handler\FilterHandler;
 use Monolog\Logger;
 use Psr\Log\LoggerInterface;
@@ -34,28 +32,27 @@ class SiteConfig extends ApiSiteConfig {
 	 */
 	public $responsiveReferences;
 
+	/** @var int */
+	public $thumbsize;
+
 	/** @var LoggerInterface */
 	public $suppressLogger;
 
+	/** @var string|false */
+	private $externalLinkTarget = false;
+
 	/** @inheritDoc */
 	public function __construct( ApiHelper $api, array $opts ) {
-		// Use Monolog's PHP console handler
-		$errorLogHandler = new ErrorLogHandler();
-		$errorLogHandler->setFormatter( new LineFormatter( '%message%' ) );
-
-		// Default logger
-		$logger = new Logger( "ParserTests" );
-		$logger->pushHandler( $errorLogHandler );
-
+		$logger = self::createLogger();
 		$opts['logger'] = $logger;
 		parent::__construct( $api, $opts );
-		$this->registerParserTestExtension( new ParserHook() );
 
 		// Needed for bidi-char-scrubbing html2wt tests.
 		$this->scrubBidiChars = true;
 
 		// Logger to suppress all logs but fatals (critical errors)
 		$this->suppressLogger = new Logger( "ParserTests" );
+		$errorLogHandler = $logger->getHandlers()[0];
 		$filterHandler = new FilterHandler( $errorLogHandler, Logger::CRITICAL );
 		$this->suppressLogger->pushHandler( $filterHandler );
 	}
@@ -102,10 +99,15 @@ class SiteConfig extends ApiSiteConfig {
 		}
 
 		// Reset other values to defaults
-		$this->responsiveReferences = [ 'enabled' => false, 'threshold' => 10 ];
+		$this->responsiveReferences = [ 'enabled' => true, 'threshold' => 10 ];
 		$this->disableSubpagesForNS( 0 );
 		$this->unregisterParserTestExtension( new StyleTag() );
 		$this->unregisterParserTestExtension( new RawHTML() );
+		$this->unregisterParserTestExtension( new ParserHook() );
+		$this->unregisterParserTestExtension( new DummyAnnotation() );
+		$this->unregisterParserTestExtension( new I18nTag() );
+		$this->thumbsize = null;
+		$this->externalLinkTarget = false;
 	}
 
 	/**
@@ -228,6 +230,10 @@ class SiteConfig extends ApiSiteConfig {
 		return 0;
 	}
 
+	public function widthOption(): int {
+		return $this->thumbsize ?? 180;  // wgThumbLimits setting in core ParserTestRunner
+	}
+
 	/**
 	 * Register an extension for use in parser tests
 	 * @param ExtensionModule $ext
@@ -249,7 +255,13 @@ class SiteConfig extends ApiSiteConfig {
 		foreach ( ( $extConfig['tags'] ?? [] ) as $tagConfig ) {
 			$lowerTagName = mb_strtolower( $tagConfig['name'] );
 			unset( $this->extConfig['allTags'][$lowerTagName] );
-			unset( $this->extConfig['nativeTags'][$lowerTagName] );
+			unset( $this->extConfig['parsoidExtTags'][$lowerTagName] );
+		}
+
+		foreach ( ( $extConfig['annotations'] ?? [] ) as $annotationTag ) {
+			$lowerTagName = mb_strtolower( $annotationTag );
+			unset( $this->extConfig['allTags'][$lowerTagName] );
+			unset( $this->extConfig['annotationTags'][$lowerTagName] );
 		}
 
 		if ( isset( $extConfig['domProcessors'] ) ) {
@@ -257,19 +269,25 @@ class SiteConfig extends ApiSiteConfig {
 		}
 
 		/*
-		 * FIXME: Leaving styles behind for now since they are harmless
-		 * and we cannot unset styles without resetting all styles across
-		 * all registered extensions.
-		 *
-		 * If unregistering extensions becomes a broader use case beyond
-		 * parser tests, we might want to handle this by tracking styles separately.
-		 */
-
-		/*
 		 * FIXME: Unsetting contentmodels is also tricky with the current
 		 * state tracked during registration. We will have to reprocess all
 		 * extensions or maintain a linked list of applicable extensions
 		 * for every content model
 		 */
+	}
+
+	/**
+	 * @param string|false $value
+	 * @return void
+	 */
+	public function setExternalLinkTarget( $value ): void {
+		$this->externalLinkTarget = $value;
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	public function getExternalLinkTarget() {
+		return $this->externalLinkTarget;
 	}
 }

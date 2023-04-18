@@ -358,15 +358,12 @@ class ApiResult implements ApiSerializable {
 			}
 			$value = $contentLanguage->normalize( $value );
 		} elseif ( is_array( $value ) ) {
-			// Work around https://bugs.php.net/bug.php?id=45959 by copying to a temporary
-			// (in this case, foreach gets $k === "1" but $tmp[$k] assigns as if $k === 1)
-			$tmp = [];
 			foreach ( $value as $k => $v ) {
-				$tmp[$k] = self::validateValue( $v );
+				$value[$k] = self::validateValue( $v );
 			}
-			$value = $tmp;
 		} elseif ( $value !== null && !is_scalar( $value ) ) {
 			$type = gettype( $value );
+			// phpcs:ignore MediaWiki.Usage.ForbiddenFunctions.is_resource
 			if ( is_resource( $value ) ) {
 				$type .= '(' . get_resource_type( $value ) . ')';
 			}
@@ -832,7 +829,7 @@ class ApiResult implements ApiSerializable {
 			}
 			if ( !in_array( 'nobool', $transforms['BC'], true ) ) {
 				$boolKeys = isset( $metadata[self::META_BC_BOOLS] )
-					? array_flip( $metadata[self::META_BC_BOOLS] )
+					? array_fill_keys( $metadata[self::META_BC_BOOLS], true )
 					: [];
 			}
 
@@ -902,6 +899,7 @@ class ApiResult implements ApiSerializable {
 				$keepMetadata = &$metadata;
 				break;
 			case 'bc':
+				// @phan-suppress-next-line PhanTypeMismatchArgumentNullableInternal Type mismatch on pass-by-ref args
 				$keepMetadata = array_intersect_key( $metadata, [
 					self::META_INDEXED_TAG_NAME => 1,
 					self::META_SUBELEMENTS => 1,
@@ -946,6 +944,7 @@ class ApiResult implements ApiSerializable {
 				ksort( $data );
 				$data = array_values( $data );
 				$metadata[self::META_TYPE] = 'array';
+				// @phan-suppress-next-line PhanTypeMismatchReturnNullable Type mismatch on pass-by-ref args
 				return $data + $keepMetadata;
 
 			case 'kvp':
@@ -972,6 +971,7 @@ class ApiResult implements ApiSerializable {
 						$mergeType = 'n/a';
 					}
 					if ( $mergeType === 'assoc' ) {
+						// @phan-suppress-next-line PhanPossiblyUndeclaredVariable vArr set when used
 						$item = $vArr + [
 							$key => $k,
 						];
@@ -995,6 +995,7 @@ class ApiResult implements ApiSerializable {
 				}
 				$metadata[self::META_TYPE] = 'array';
 
+				// @phan-suppress-next-line PhanTypeMismatchReturnNullable Type mismatch on pass-by-ref args
 				return $ret + $keepMetadata;
 
 			default:

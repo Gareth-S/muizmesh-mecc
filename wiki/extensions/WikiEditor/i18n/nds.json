@@ -6,8 +6,6 @@
 		]
 	},
 	"wikieditor-wikitext-tab": "Wikitext",
-	"wikieditor-loading": "An’t Laden...",
-	"wikieditor-toolbar-loading": "An’t Laden...",
 	"wikieditor-toolbar-tool-bold": "Fett",
 	"wikieditor-toolbar-tool-bold-example": "Fetten Text",
 	"wikieditor-toolbar-tool-italic": "Kursiv",
@@ -25,7 +23,6 @@
 	"wikieditor-toolbar-tool-link-cancel": "Afbreken",
 	"wikieditor-toolbar-tool-link-int-target-status-notexists": "Siet gifft dat nich",
 	"wikieditor-toolbar-tool-link-int-target-status-external": "Externen Lenk",
-	"wikieditor-toolbar-tool-link-int-target-status-loading": "Kieken, wat de Siet al besteiht...",
 	"wikieditor-toolbar-tool-link-lookslikeinternal-int": "Internen Lenk",
 	"wikieditor-toolbar-tool-link-lookslikeinternal-ext": "Externen Lenk",
 	"wikieditor-toolbar-tool-file": "Biller un Medien",

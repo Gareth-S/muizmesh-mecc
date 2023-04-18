@@ -1,4 +1,5 @@
 <?php
+declare( strict_types = 1 );
 
 /**
  * General token sanitizer. Strips out (or encapsulates) unsafe and disallowed
@@ -13,7 +14,6 @@
 namespace Wikimedia\Parsoid\Wt2Html\TT;
 
 use Wikimedia\Parsoid\Config\SiteConfig;
-use Wikimedia\Parsoid\Config\WikitextConstants;
 use Wikimedia\Parsoid\Core\Sanitizer;
 use Wikimedia\Parsoid\Tokens\EndTagTk;
 use Wikimedia\Parsoid\Tokens\SelfclosingTagTk;
@@ -21,6 +21,7 @@ use Wikimedia\Parsoid\Tokens\TagTk;
 use Wikimedia\Parsoid\Tokens\Token;
 use Wikimedia\Parsoid\Utils\PHPUtils;
 use Wikimedia\Parsoid\Utils\TokenUtils;
+use Wikimedia\Parsoid\Wikitext\Consts;
 use Wikimedia\Parsoid\Wt2Html\Frame;
 use Wikimedia\Parsoid\Wt2Html\TokenTransformManager;
 
@@ -33,6 +34,8 @@ class SanitizerHandler extends TokenHandler {
 	/**
 	 * Sanitize a token.
 	 *
+	 * If the token is unmodified, return null.
+	 *
 	 * XXX: Make attribute sanitation reversible by storing round-trip info in
 	 * token.dataAttribs object (which is serialized as JSON in a data-parsoid
 	 * attribute in the DOM).
@@ -41,7 +44,7 @@ class SanitizerHandler extends TokenHandler {
 	 * @param Frame $frame
 	 * @param Token|string $token
 	 * @param bool $inTemplate
-	 * @return Token|string
+	 * @return Token|string|null
 	 */
 	private function sanitizeToken(
 		SiteConfig $siteConfig, Frame $frame, $token, bool $inTemplate
@@ -50,7 +53,7 @@ class SanitizerHandler extends TokenHandler {
 		$l = null;
 		$kv = null;
 		$attribs = $token->attribs ?? null;
-		$allowedTags = WikitextConstants::$Sanitizer['AllowedLiteralTags'];
+		$allowedTags = Consts::$Sanitizer['AllowedLiteralTags'];
 
 		if ( TokenUtils::isHTMLTag( $token )
 			&& ( empty( $allowedTags[$token->getName()] )
@@ -61,7 +64,7 @@ class SanitizerHandler extends TokenHandler {
 				// Just get the original token source, so that we can avoid
 				// whitespace differences.
 				$token = $token->getWTSource( $frame );
-			} elseif ( !$token instanceof EndTagTk ) {
+			} elseif ( !( $token instanceof EndTagTk ) ) {
 				// Handle things without a TSR: For example template or extension
 				// content. Whitespace in these is not necessarily preserved.
 				$buf = '<' . $token->getName();
@@ -78,7 +81,10 @@ class SanitizerHandler extends TokenHandler {
 			} else {
 				$token = '</' . $token->getName() . '>';
 			}
-		} elseif ( $attribs && count( $attribs ) > 0 ) {
+			return $token;
+		}
+
+		if ( $attribs && count( $attribs ) > 0 ) {
 			// Sanitize attributes
 			if ( $token instanceof TagTk || $token instanceof SelfclosingTagTk ) {
 				$newAttrs = Sanitizer::sanitizeTagAttrs( $siteConfig, null, $token, $attribs );
@@ -92,7 +98,6 @@ class SanitizerHandler extends TokenHandler {
 				// and unacceptable attributes in the interest of safety/security and the
 				// resultant dirty diffs should be acceptable.  But, this is something to do
 				// in the future once we have passed the initial tests of parsoid acceptance.
-				// Object::keys( $newAttrs )->forEach( function ( $j ) use ( &$newAttrs, &$token ) {
 				foreach ( $newAttrs as $k => $v ) {
 					// explicit check against null to prevent discarding empty strings
 					if ( $v[0] !== null ) {
@@ -105,9 +110,10 @@ class SanitizerHandler extends TokenHandler {
 				// EndTagTk, drop attributes
 				$token->attribs = [];
 			}
+			return $token;
 		}
 
-		return $token;
+		return null;
 	}
 
 	/**
@@ -116,31 +122,34 @@ class SanitizerHandler extends TokenHandler {
 	 */
 	public function __construct( TokenTransformManager $manager, array $options ) {
 		parent::__construct( $manager, $options );
-		$this->inTemplate = !empty( $options['inTemplate'] );
+		$this->inTemplate = $options['inTemplate'];
 	}
 
 	/**
 	 * @inheritDoc
 	 */
-	public function onAny( $token ) {
-		$env = $this->manager->env;
-		$env->log( 'trace/sanitizer', $this->manager->pipelineId, function () use ( $token ) {
+	public function onAny( $token ): ?TokenHandlerResult {
+		if ( is_string( $token ) ) {
+			return null;
+		}
+		$env = $this->env;
+		$env->log( 'trace/sanitizer', $this->pipelineId, static function () use ( $token ) {
 			return PHPUtils::jsonEncode( $token );
 		} );
 
 		// Pass through a transparent line meta-token
 		if ( TokenUtils::isEmptyLineMetaToken( $token ) ) {
-			$env->log( 'trace/sanitizer', $this->manager->pipelineId, '--unchanged--' );
-			return [ 'tokens' => [ $token ] ];
+			$env->log( 'trace/sanitizer', $this->pipelineId, '--unchanged--' );
+			return null;
 		}
 
 		$token = $this->sanitizeToken(
 			$env->getSiteConfig(), $this->manager->getFrame(), $token, $this->inTemplate
 		);
 
-		$env->log( 'trace/sanitizer', $this->manager->pipelineId, function () use ( $token ) {
+		$env->log( 'trace/sanitizer', $this->pipelineId, static function () use ( $token ) {
 			return ' ---> ' . PHPUtils::jsonEncode( $token );
 		} );
-		return [ 'tokens' => [ $token ] ];
+		return $token === null ? null : new TokenHandlerResult( [ $token ] );
 	}
 }

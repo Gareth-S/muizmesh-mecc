@@ -22,11 +22,11 @@ if (isset($_GET['clearsitemapcache'])) {
 }
 
 $webpath = WEBPATH . '/' . ZENFOLDER . '/';
-$zenphoto_tabs['overview']['subtabs'] = array(gettext('Sitemap') => FULLWEBPATH . '/' . ZENFOLDER . '/' . PLUGIN_FOLDER . '/sitemap-extended/sitemap-extended-admin.php');
+$_zp_admin_menu['overview']['subtabs'] = array(gettext('Sitemap') => FULLWEBPATH . '/' . ZENFOLDER . '/' . PLUGIN_FOLDER . '/sitemap-extended/sitemap-extended-admin.php');
 printAdminHeader('overview', 'sitemap');
 if (isset($_GET['generatesitemaps'])) {
 	$_zp_loggedin = NULL;
-	$_sitemap_number = sanitize_numeric($_GET['number']);
+	$_zp_sitemap_number = sanitize_numeric($_GET['number']);
 	$sitemap_index = sitemap::getIndexLinks();
 	$sitemap_albums = sitemap::getAlbums();
 	$sitemap_images = sitemap::getImages();
@@ -39,14 +39,14 @@ if (isset($_GET['generatesitemaps'])) {
 	$numberAppend = '';
 	if (isset($_GET['generatesitemaps']) &&
 					(!empty($sitemap_index) || !empty($sitemap_albums) || !empty($sitemap_images) || !empty($sitemap_newsindex) || !empty($sitemap_articles) || !empty($sitemap_categories) || !empty($sitemap_pages))) {
-		$numberAppend = '-' . floor( ($_sitemap_number / SITEMAP_CHUNK) + 1 );
-		$metaURL = 'sitemap-extended-admin.php?generatesitemaps&amp;number=' . ($_sitemap_number + SITEMAP_CHUNK);
+		$numberAppend = '-' . floor( ($_zp_sitemap_number / SITEMAP_CHUNK) + 1 );
+		$metaURL = 'sitemap-extended-admin.php?generatesitemaps&amp;number=' . ($_zp_sitemap_number + SITEMAP_CHUNK);
 	} else {
 		$metaURL = '';
 	}
 	if (!empty($metaURL)) {
 		?>
-		<meta http-equiv="refresh" content="1; url=<?php echo $metaURL; ?>" />
+		<meta http-equiv="refresh" content="0; url=<?php echo $metaURL; ?>" />
 		<?php
 	}
 } // if(isset($_GET['generatesitemaps']) end
@@ -114,7 +114,7 @@ echo '</head>';
 				if (isset($_GET['generatesitemaps'])) {
 
 					// clear cache before creating new ones
-					if ($_sitemap_number == 1) {
+					if ($_zp_sitemap_number == 1) {
 						sitemap::clearCache();
 					}
 					echo '<ul>';

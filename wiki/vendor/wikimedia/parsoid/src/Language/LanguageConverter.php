@@ -31,11 +31,12 @@
 
 namespace Wikimedia\Parsoid\Language;
 
-use DOMDocument;
-use DOMNode;
 use Wikimedia\LangConv\ReplacementMachine;
 use Wikimedia\Parsoid\Config\Env;
 use Wikimedia\Parsoid\Core\ClientError;
+use Wikimedia\Parsoid\DOM\Document;
+use Wikimedia\Parsoid\DOM\Node;
+use Wikimedia\Parsoid\NodeData\TempData;
 use Wikimedia\Parsoid\Utils\DOMCompat;
 use Wikimedia\Parsoid\Utils\DOMDataUtils;
 use Wikimedia\Parsoid\Utils\DOMUtils;
@@ -114,10 +115,8 @@ class LanguageConverter {
 		if ( $fallback && $code === 'en' ) {
 			return '\Wikimedia\Parsoid\Language\Language';
 		} else {
-			$code = preg_replace_callback( '/^\w/', function ( $matches ) {
-				return strtoupper( $matches[0] );
-			}, $code, 1 );
-			$code = preg_replace( '/-/', '_', $code );
+			$code = ucfirst( $code );
+			$code = str_replace( '-', '_', $code );
 			$code = preg_replace( '#/|^\.+#', '', $code ); // avoid path attacks
 			return "\Wikimedia\Parsoid\Language\Language{$code}";
 		}
@@ -180,13 +179,13 @@ class LanguageConverter {
 	 * consistent convention on the wiki (as for zhwiki, for instance).
 	 *
 	 * @param Env $env
-	 * @param DOMDocument $doc The input document.
+	 * @param Document $doc The input document.
 	 * @param ?string $targetVariant The desired output variant.
 	 * @param ?string $sourceVariant The variant used by convention when
 	 *   authoring pages, if there is one; otherwise left null.
 	 */
 	public static function maybeConvert(
-		Env $env, DOMDocument $doc, ?string $targetVariant,
+		Env $env, Document $doc, ?string $targetVariant,
 		?string $sourceVariant
 	): void {
 		// language converter must be enabled for the pagelanguage
@@ -225,13 +224,13 @@ class LanguageConverter {
 	 * construct round-trip metadata, instead of using a heuristic to guess the best variant
 	 * for each DOM subtree of wikitext.
 	 * @param Env $env
-	 * @param DOMNode $rootNode The root node of a fragment to convert.
+	 * @param Node $rootNode The root node of a fragment to convert.
 	 * @param string $targetVariant The variant to be used for the output DOM.
 	 * @param ?string $sourceVariant An optional variant assumed for the
 	 *  input DOM in order to create roundtrip metadata.
 	 */
 	public static function baseToVariant(
-		Env $env, DOMNode $rootNode, string $targetVariant,
+		Env $env, Node $rootNode, string $targetVariant,
 		?string $sourceVariant
 	): void {
 		// PageConfig guarantees getPageLanguage() never returns null.
@@ -247,7 +246,7 @@ class LanguageConverter {
 		$loadTiming->end( "langconv.{$targetVariant}.init" );
 		$loadTiming->end( 'langconv.init' );
 
-		// Check the the target variant is valid (and implemented!)
+		// Check the target variant is valid (and implemented!)
 		$validTarget = $langconv !== null && $langconv->getMachine() !== null
 			&& array_key_exists( $targetVariant, $langconv->getMachine()->getCodes() );
 		if ( !$validTarget ) {
@@ -274,12 +273,13 @@ class LanguageConverter {
 			$guesser = new ConstantLanguageGuesser( $sourceVariant );
 		} else {
 			$guesser = new MachineLanguageGuesser(
+				// @phan-suppress-next-line PhanTypeMismatchArgumentSuperType
 				$langconv->getMachine(), $rootNode, $targetVariant
 			);
 		}
 
 		$ct = new ConversionTraverser( $targetVariant, $guesser, $langconv->getMachine() );
-		$ct->traverse( $env, $rootNode, [], true );
+		$ct->traverse( $env, $rootNode );
 
 		// HACK: to avoid data-parsoid="{}" in the output, set the isNew flag
 		// on synthetic spans
@@ -290,7 +290,7 @@ class LanguageConverter {
 			$dmwv = DOMDataUtils::getJSONAttribute( $span, 'data-mw-variant', null );
 			if ( $dmwv->rt ?? false ) {
 				$dp = DOMDataUtils::getDataParsoid( $span );
-				$dp->tmp->isNew = true;
+				$dp->setTempFlag( TempData::IS_NEW );
 			}
 		}
 

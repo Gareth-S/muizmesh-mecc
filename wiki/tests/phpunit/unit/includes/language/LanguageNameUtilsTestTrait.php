@@ -3,6 +3,7 @@
 // phpcs:disable MediaWiki.Commenting.FunctionComment.MissingParamTag -- Traits are not excluded
 
 use MediaWiki\Languages\LanguageNameUtils;
+use MediaWiki\MainConfigNames;
 
 const AUTONYMS = LanguageNameUtils::AUTONYMS;
 const ALL = LanguageNameUtils::ALL;
@@ -190,7 +191,7 @@ trait LanguageNameUtilsTestTrait {
 	 * @param string $hookName
 	 * @param mixed $handler Value suitable for a hook handler
 	 */
-	abstract protected function setLanguageTemporaryHook( string $hookName, $handler ) : void;
+	abstract protected function setLanguageTemporaryHook( string $hookName, $handler ): void;
 
 	/**
 	 * @dataProvider provideGetLanguageNames_withHook
@@ -267,7 +268,7 @@ trait LanguageNameUtilsTestTrait {
 			}
 		);
 		$this->assertGetLanguageNames(
-			[ 'ExtraLanguageNames' => [ 'de' => 'deutsche Sprache', 'sqsqsqsq' => '!!?!' ] ],
+			[ MainConfigNames::ExtraLanguageNames => [ 'de' => 'deutsche Sprache', 'sqsqsqsq' => '!!?!' ] ],
 			$expected, $code, ...$otherArgs
 		);
 	}
@@ -325,10 +326,10 @@ trait LanguageNameUtilsTestTrait {
 		return [
 			[],
 			[ AUTONYMS ],
-			[ AUTONYMS, 'mw' ],
+			[ AUTONYMS, DEFINED ],
 			[ AUTONYMS, ALL ],
 			[ AUTONYMS, SUPPORTED ],
-			[ 'he', 'mw' ],
+			[ 'he', DEFINED ],
 			[ 'he', ALL ],
 			[ 'he', SUPPORTED ],
 		];
@@ -381,7 +382,7 @@ trait LanguageNameUtilsTestTrait {
 		);
 
 		$this->assertGetLanguageNames(
-			[ 'UsePigLatinVariant' => true ], $expected, 'en-x-piglatin', ...$otherArgs );
+			[ MainConfigNames::UsePigLatinVariant => true ], $expected, 'en-x-piglatin', ...$otherArgs );
 	}
 
 	public function provideGetLanguageNames_pigLatin() {
@@ -408,8 +409,8 @@ trait LanguageNameUtilsTestTrait {
 	public function testGetLanguageNames_pigLatinAndExtraLanguageNames() {
 		$this->assertGetLanguageNames(
 			[
-				'UsePigLatinVariant' => true,
-				'ExtraLanguageNames' => [ 'en-x-piglatin' => 'igpay atinlay' ]
+				MainConfigNames::UsePigLatinVariant => true,
+				MainConfigNames::ExtraLanguageNames => [ 'en-x-piglatin' => 'igpay atinlay' ]
 			],
 			'Igpay Atinlay',
 			'en-x-piglatin'

@@ -1,23 +1,27 @@
-/* global FetchEndEvent, SuggestionClickEvent, SubmitEvent */
-/** @module Instrumentation */
-
+/* global FetchEndEvent, SuggestionClickEvent, SearchSubmitEvent */
 /**
  * The value of the `inputLocation` property of any and all SearchSatisfaction events sent by the
  * corresponding instrumentation.
  *
  * @see https://gerrit.wikimedia.org/r/plugins/gitiles/mediawiki/skins/Vector/+/refs/heads/master/includes/Constants.php
  */
-var INPUT_LOCATION_MOVED = 'header-moved',
+const INPUT_LOCATION_MOVED = 'header-moved',
 	wgScript = mw.config.get( 'wgScript' ),
 	// T251544: Collect search performance metrics to compare Vue search with
 	// mediawiki.searchSuggest performance. Marks and Measures will only be
 	// recorded on the Vector skin and only if browser supported.
 	shouldTestSearchPerformance = !!( window.performance &&
+		// @ts-ignore
 		window.requestAnimationFrame &&
+		/* eslint-disable compat/compat */
+		// @ts-ignore
 		performance.mark &&
+		// @ts-ignore
 		performance.measure &&
+		// @ts-ignore
 		performance.getEntriesByName &&
 		performance.clearMarks ),
+	/* eslint-enable compat/compat */
 	loadStartMark = 'mwVectorVueSearchLoadStart',
 	queryMark = 'mwVectorVueSearchQuery',
 	renderMark = 'mwVectorVueSearchRender',
@@ -37,6 +41,7 @@ function onFetchStart() {
 		performance.clearMarks( queryMark );
 	}
 
+	/* eslint-disable-next-line compat/compat */
 	performance.mark( queryMark );
 }
 
@@ -85,7 +90,7 @@ function onFetchEnd( event ) {
 }
 
 /**
- * @param {SuggestionClickEvent|SubmitEvent} event
+ * @param {SuggestionClickEvent|SearchSubmitEvent} event
  */
 function onSuggestionClick( event ) {
 	mw.track( 'mediawiki.searchSuggest', {
@@ -126,7 +131,7 @@ function getWprovFromResultIndex( index ) {
  */
 
 /**
- * Used by the `wvui-typeahead-search` component to generate URLs for the search results. Adds a
+ * Used by the Vue-enhanced search component to generate URLs for the search results. Adds a
  * `wprov` paramater to the URL to satisfy the SearchSatisfaction instrumentation.
  *
  * @see getWprovFromResultIndex
@@ -136,7 +141,7 @@ function getWprovFromResultIndex( index ) {
  * @return {string}
  */
 function generateUrl( suggestion, meta ) {
-	var result = new mw.Uri( wgScript );
+	const result = new mw.Uri( wgScript );
 
 	if ( typeof suggestion !== 'string' ) {
 		suggestion = suggestion.title;
@@ -148,12 +153,21 @@ function generateUrl( suggestion, meta ) {
 
 	return result.toString();
 }
+/**
+ * @typedef {Object} Instrumentation
+ * @property {Object} listeners
+ * @property {Function} getWprovFromResultIndex
+ * @property {Function} generateUrl
+ */
 
+/**
+ * @type {Instrumentation}
+ */
 module.exports = {
 	listeners: {
-		onFetchStart: onFetchStart,
-		onFetchEnd: onFetchEnd,
-		onSuggestionClick: onSuggestionClick,
+		onFetchStart,
+		onFetchEnd,
+		onSuggestionClick,
 
 		// As of writing (2020/12/08), both the "click-result" and "submit-form" kind of
 		// mediawiki.searchSuggestion events result in a "click" SearchSatisfaction event being
@@ -170,6 +184,6 @@ module.exports = {
 		// [1] https://phabricator.wikimedia.org/T257698#6416826
 		onSubmit: onSuggestionClick
 	},
-	getWprovFromResultIndex: getWprovFromResultIndex,
-	generateUrl: generateUrl
+	getWprovFromResultIndex,
+	generateUrl
 };

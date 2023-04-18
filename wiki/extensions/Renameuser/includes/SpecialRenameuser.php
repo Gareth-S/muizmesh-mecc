@@ -1,11 +1,24 @@
 <?php
 
+namespace MediaWiki\Extension\Renameuser;
+
+use Exception;
+use Html;
+use Language;
+use LogEventsList;
+use LogPage;
 use MediaWiki\HookContainer\HookContainer;
 use MediaWiki\Page\MovePageFactory;
 use MediaWiki\Permissions\PermissionManager;
 use MediaWiki\User\UserFactory;
 use MediaWiki\User\UserNamePrefixSearch;
 use MediaWiki\User\UserNameUtils;
+use OutputPage;
+use SpecialPage;
+use Title;
+use TitleFactory;
+use UserBlockedError;
+use Xml;
 
 /**
  * Special page that allows authorised users to rename
@@ -65,12 +78,7 @@ class SpecialRenameuser extends SpecialPage {
 	/**
 	 * Show the special page
 	 *
-	 * @param mixed $par Parameter passed to the page
-	 *
-	 * @suppress SecurityCheck-XSS T211471
-	 * @throws PermissionsError
-	 * @throws ReadOnlyError
-	 * @throws UserBlockedError
+	 * @param null|string $par Parameter passed to the page
 	 */
 	public function execute( $par ) {
 		$this->setHeaders();
@@ -93,8 +101,9 @@ class SpecialRenameuser extends SpecialPage {
 
 		$request = $this->getRequest();
 
-		$usernames = explode( '/', $par, 2 ); // this works as "/" is not valid in usernames
-		$oldnamePar = trim( str_replace( '_', ' ', $request->getText( 'oldusername', $usernames[0] ) ) );
+		// this works as "/" is not valid in usernames
+		$usernames = $par !== null ? explode( '/', $par, 2 ) : [];
+		$oldnamePar = trim( str_replace( '_', ' ', $request->getText( 'oldusername', $usernames[0] ?? '' ) ) );
 		$oldusername = $this->titleFactory->makeTitle( NS_USER, $oldnamePar );
 		$newnamePar = $usernames[1] ?? '';
 		$newnamePar = trim( str_replace( '_', ' ', $request->getText( 'newusername', $newnamePar ) ) );
@@ -112,7 +121,7 @@ class SpecialRenameuser extends SpecialPage {
 		$warnings = [];
 		if ( $oun && $nun && !$request->getCheck( 'confirmaction' ) ) {
 			$oldU = $this->userFactory->newFromName( $oldusername->getText(), $this->userFactory::RIGOR_NONE );
-			if ( $oldU && $oldU->isBlocked() ) {
+			if ( $oldU && $oldU->getBlock() ) {
 				$warnings[] = [
 					'renameuser-warning-currentblock',
 					SpecialPage::getTitleFor( 'Log', 'block' )->getFullURL( [ 'page' => $oun ] )
@@ -253,16 +262,17 @@ class SpecialRenameuser extends SpecialPage {
 			# Let user read warnings
 			return;
 		} elseif ( !$request->wasPosted() || !$user->matchEditToken( $request->getVal( 'token' ) ) ) {
-			$out->wrapWikiMsg( "<div class=\"errorbox\">$1</div>", 'renameuser-error-request' );
+			$out->addHTML( Html::errorBox( $out->msg( 'renameuser-error-request' )->parse() ) );
 
 			return;
 		} elseif ( !is_object( $newusername ) ) {
-			$out->wrapWikiMsg( "<div class=\"errorbox\">$1</div>",
-				[ 'renameusererrorinvalid', $request->getText( 'newusername' ) ] );
+			$out->addHTML( Html::errorBox(
+				$out->msg( 'renameusererrorinvalid' )->params( $request->getText( 'newusername' ) )->parse()
+			) );
 
 			return;
 		} elseif ( $oldusername->getText() === $newusername->getText() ) {
-			$out->wrapWikiMsg( "<div class=\"errorbox\">$1</div>", 'renameuser-error-same-user' );
+			$out->addHTML( Html::errorBox( $out->msg( 'renameuser-error-same-user' )->parse() ) );
 
 			return;
 		}
@@ -273,14 +283,16 @@ class SpecialRenameuser extends SpecialPage {
 
 		// It won't be an object if for instance "|" is supplied as a value
 		if ( !is_object( $olduser ) ) {
-			$out->wrapWikiMsg( "<div class=\"errorbox\">$1</div>",
-				[ 'renameusererrorinvalid', $oldusername->getText() ] );
+			$out->addHTML( Html::errorBox(
+				$out->msg( 'renameusererrorinvalid' )->params( $oldusername->getText() )->parse()
+			) );
 
 			return;
 		}
 		if ( !is_object( $newuser ) || !$this->userNameUtils->isCreatable( $newuser->getName() ) ) {
-			$out->wrapWikiMsg( "<div class=\"errorbox\">$1</div>",
-				[ 'renameusererrorinvalid', $newusername->getText() ] );
+			$out->addHTML( Html::errorBox(
+				$out->msg( 'renameusererrorinvalid' )->params( $newusername->getText() )->parse()
+			) );
 
 			return;
 		}
@@ -308,15 +320,17 @@ class SpecialRenameuser extends SpecialPage {
 		}
 
 		if ( $uid === 0 ) {
-			$out->wrapWikiMsg( "<div class=\"errorbox\">$1</div>",
-				[ 'renameusererrordoesnotexist', $oldusername->getText() ] );
+			$out->addHTML( Html::errorBox(
+				$out->msg( 'renameusererrordoesnotexist' )->params( $oldusername->getText() )->parse()
+			) );
 
 			return;
 		}
 
 		if ( $newuser->idForName() !== 0 ) {
-			$out->wrapWikiMsg( "<div class=\"errorbox\">$1</div>",
-				[ 'renameusererrorexists', $newusername->getText() ] );
+			$out->addHTML( Html::errorBox(
+				$out->msg( 'renameusererrorexists' )->params( $newusername->getText() )->parse()
+			) );
 
 			return;
 		}
@@ -429,8 +443,13 @@ class SpecialRenameuser extends SpecialPage {
 		}
 
 		// Output success message stuff :)
-		$out->wrapWikiMsg( "<div class=\"successbox\">$1</div><br style=\"clear:both\" />",
-			[ 'renameusersuccess', $oldusername->getText(), $newusername->getText() ] );
+		$out->addHTML(
+			Html::successBox(
+				$out->msg( 'renameusersuccess' )
+					->params( $oldusername->getText(), $newusername->getText() )
+					->parse()
+			)
+		);
 	}
 
 	/**

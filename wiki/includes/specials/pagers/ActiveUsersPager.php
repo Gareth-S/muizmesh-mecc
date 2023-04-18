@@ -21,7 +21,9 @@
 
 use MediaWiki\Cache\LinkBatchFactory;
 use MediaWiki\HookContainer\HookContainer;
+use MediaWiki\MainConfigNames;
 use MediaWiki\User\UserGroupManager;
+use MediaWiki\User\UserIdentityValue;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -55,32 +57,32 @@ class ActiveUsersPager extends UsersPager {
 	private $excludegroups;
 
 	/**
-	 * @param IContextSource|null $context
-	 * @param FormOptions $opts
-	 * @param LinkBatchFactory|null $linkBatchFactory
+	 * @param IContextSource $context
 	 * @param HookContainer $hookContainer
+	 * @param LinkBatchFactory $linkBatchFactory
 	 * @param ILoadBalancer $loadBalancer
 	 * @param UserGroupManager $userGroupManager
+	 * @param FormOptions $opts
 	 */
 	public function __construct(
-		?IContextSource $context,
-		FormOptions $opts,
-		LinkBatchFactory $linkBatchFactory,
+		IContextSource $context,
 		HookContainer $hookContainer,
+		LinkBatchFactory $linkBatchFactory,
 		ILoadBalancer $loadBalancer,
-		UserGroupManager $userGroupManager
+		UserGroupManager $userGroupManager,
+		FormOptions $opts
 	) {
 		parent::__construct(
 			$context,
-			null,
-			null,
-			$linkBatchFactory,
 			$hookContainer,
+			$linkBatchFactory,
 			$loadBalancer,
-			$userGroupManager
+			$userGroupManager,
+			null,
+			null
 		);
 
-		$this->RCMaxAge = $this->getConfig()->get( 'ActiveUserDays' );
+		$this->RCMaxAge = $this->getConfig()->get( MainConfigNames::ActiveUserDays );
 		$this->requestedUser = '';
 
 		$un = $opts->getValue( 'username' );
@@ -109,8 +111,8 @@ class ActiveUsersPager extends UsersPager {
 	public function getQueryInfo( $data = null ) {
 		$dbr = $this->getDatabase();
 
-		$activeUserSeconds = $this->getConfig()->get( 'ActiveUserDays' ) * 86400;
-		$timestamp = $dbr->timestamp( wfTimestamp( TS_UNIX ) - $activeUserSeconds );
+		$activeUserSeconds = $this->getConfig()->get( MainConfigNames::ActiveUserDays ) * 86400;
+		$timestamp = $dbr->timestamp( (int)wfTimestamp( TS_UNIX ) - $activeUserSeconds );
 		$fname = __METHOD__ . ' (' . $this->getSqlComment() . ')';
 
 		// Inner subselect to pull the active users out of querycachetwo
@@ -261,7 +263,8 @@ class ActiveUsersPager extends UsersPager {
 
 		$list = [];
 
-		$ugms = self::getGroupMemberships( intval( $row->user_id ), $this->userGroupCache );
+		$userIdentity = new UserIdentityValue( intval( $row->user_id ), $userName );
+		$ugms = $this->getGroupMemberships( $userIdentity );
 		foreach ( $ugms as $ugm ) {
 			$list[] = $this->buildGroupLink( $ugm, $userName );
 		}

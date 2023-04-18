@@ -1,6 +1,15 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
+use MediaWiki\Cache\LinkBatchFactory;
+use MediaWiki\CommentFormatter\CommentFormatter;
+use MediaWiki\HookContainer\HookContainer;
+use MediaWiki\Linker\LinkRenderer;
+use MediaWiki\MainConfigNames;
+use MediaWiki\Revision\RevisionStore;
+use MediaWiki\User\UserIdentity;
+use MediaWiki\User\UserIdentityValue;
+use Wikimedia\Rdbms\FakeResultWrapper;
+use Wikimedia\Rdbms\ILoadBalancer;
 use Wikimedia\TestingAccessWrapper;
 
 /**
@@ -31,10 +40,13 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 	/** @var NamespaceInfo */
 	private $namespaceInfo;
 
-	protected function setUp() : void {
+	/** @var CommentFormatter */
+	private $commentFormatter;
+
+	protected function setUp(): void {
 		parent::setUp();
 
-		$services = MediaWikiServices::getInstance();
+		$services = $this->getServiceContainer();
 		$this->linkRenderer = $services->getLinkRenderer();
 		$this->revisionStore = $services->getRevisionStore();
 		$this->linkBatchFactory = $services->getLinkBatchFactory();
@@ -42,13 +54,14 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 		$this->loadBalancer = $services->getDBLoadBalancer();
 		$this->actorMigration = $services->getActorMigration();
 		$this->namespaceInfo = $services->getNamespaceInfo();
+		$this->commentFormatter = $services->getCommentFormatter();
 		$this->pager = $this->getContribsPager( [
 			'start' => '2017-01-01',
 			'end' => '2017-02-02',
 		] );
 	}
 
-	private function getContribsPager( array $options ) {
+	private function getContribsPager( array $options, UserIdentity $targetUser = null ) {
 		return new ContribsPager(
 			new RequestContext(),
 			$options,
@@ -58,7 +71,9 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 			$this->loadBalancer,
 			$this->actorMigration,
 			$this->revisionStore,
-			$this->namespaceInfo
+			$this->namespaceInfo,
+			$targetUser,
+			$this->commentFormatter
 		);
 	}
 
@@ -76,11 +91,11 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 
 		$allContribsPager = $this->getContribsPager( [] );
 		$allContribsResults = $allContribsPager->reallyDoQuery( '', 2, IndexPager::QUERY_DESCENDING );
-		$this->assertEquals( $allContribsResults->numRows(), 1 );
+		$this->assertSame( 1, $allContribsResults->numRows() );
 
 		$revOnlyPager = $this->getContribsPager( [ 'revisionsOnly' => true ] );
 		$revOnlyResults = $revOnlyPager->reallyDoQuery( '', 2, IndexPager::QUERY_DESCENDING );
-		$this->assertEquals( $revOnlyResults->numRows(), 0 );
+		$this->assertSame( 0, $revOnlyResults->numRows() );
 	}
 
 	/**
@@ -99,36 +114,66 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 
 	public static function dateFilterOptionProcessingProvider() {
 		return [
-			[ [ 'start' => '2016-05-01',
-				'end' => '2016-06-01',
-				'year' => null,
-				'month' => null ],
-			  [ 'start' => '2016-05-01',
-				'end' => '2016-06-01' ] ],
-			[ [ 'start' => '2016-05-01',
-				'end' => '2016-06-01',
-				'year' => '',
-				'month' => '' ],
-			  [ 'start' => '2016-05-01',
-				'end' => '2016-06-01' ] ],
-			[ [ 'start' => '2016-05-01',
-				'end' => '2016-06-01',
-				'year' => '2012',
-				'month' => '5' ],
-			  [ 'start' => '',
-				'end' => '2012-05-31' ] ],
-			[ [ 'start' => '',
-				'end' => '',
-				'year' => '2012',
-				'month' => '5' ],
-			  [ 'start' => '',
-				'end' => '2012-05-31' ] ],
-			[ [ 'start' => '',
-				'end' => '',
-				'year' => '2012',
-				'month' => '' ],
-			  [ 'start' => '',
-				'end' => '2012-12-31' ] ],
+			[
+				[
+					'start' => '2016-05-01',
+					'end' => '2016-06-01',
+					'year' => null,
+					'month' => null
+				],
+				[
+					'start' => '2016-05-01',
+					'end' => '2016-06-01'
+				]
+			],
+			[
+				[
+					'start' => '2016-05-01',
+					'end' => '2016-06-01',
+					'year' => '',
+					'month' => ''
+				],
+				[
+					'start' => '2016-05-01',
+					'end' => '2016-06-01'
+				]
+			],
+			[
+				[
+					'start' => '2016-05-01',
+					'end' => '2016-06-01',
+					'year' => '2012',
+					'month' => '5'
+				],
+				[
+					'start' => '',
+					'end' => '2012-05-31'
+				]
+			],
+			[
+				[
+					'start' => '',
+					'end' => '',
+					'year' => '2012',
+					'month' => '5'
+				],
+				[
+					'start' => '',
+					'end' => '2012-05-31'
+				]
+			],
+			[
+				[
+					'start' => '',
+					'end' => '',
+					'year' => '2012',
+					'month' => ''
+				],
+				[
+					'start' => '',
+					'end' => '2012-12-31'
+				]
+			],
 		];
 	}
 
@@ -137,12 +182,13 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 	 * @dataProvider provideQueryableRanges
 	 */
 	public function testQueryableRanges( $ipRange ) {
-		$this->setMwGlobals( [
-			'wgRangeContributionsCIDRLimit' => [
+		$this->overrideConfigValue(
+			MainConfigNames::RangeContributionsCIDRLimit,
+			[
 				'IPv4' => 16,
 				'IPv6' => 32,
-			],
-		] );
+			]
+		);
 
 		$this->assertTrue(
 			$this->pager->isQueryableRange( $ipRange ),
@@ -164,12 +210,13 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 	 * @dataProvider provideUnqueryableRanges
 	 */
 	public function testUnqueryableRanges( $ipRange ) {
-		$this->setMwGlobals( [
-			'wgRangeContributionsCIDRLimit' => [
+		$this->overrideConfigValue(
+			MainConfigNames::RangeContributionsCIDRLimit,
+			[
 				'IPv4' => 16,
 				'IPv6' => 32,
-			],
-		] );
+			]
+		);
 
 		$this->assertFalse(
 			$this->pager->isQueryableRange( $ipRange ),
@@ -190,6 +237,7 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 	 * @covers \ContribsPager::getExtraSortFields
 	 * @covers \ContribsPager::getIndexField
 	 * @covers \ContribsPager::getQueryInfo
+	 * @covers \ContribsPager::getTargetTable
 	 */
 	public function testUniqueSortOrderWithoutIpChanges() {
 		$pager = $this->getContribsPager( [
@@ -212,6 +260,7 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 	 * @covers \ContribsPager::getExtraSortFields
 	 * @covers \ContribsPager::getIndexField
 	 * @covers \ContribsPager::getQueryInfo
+	 * @covers \ContribsPager::getTargetTable
 	 */
 	public function testUniqueSortOrderOnIpChanges() {
 		$pager = $this->getContribsPager( [
@@ -225,17 +274,14 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 		$queryInfo = $pager->buildQueryInfo( '', 1, false );
 
 		$this->assertContains( 'ip_changes', $queryInfo[0] );
-		$this->assertArrayHasKey( 'ip_changes', $queryInfo[5] );
+		$this->assertArrayHasKey( 'revision', $queryInfo[5] );
 		$this->assertSame( [ 'ipc_rev_timestamp DESC', 'ipc_rev_id DESC' ], $queryInfo[4]['ORDER BY'] );
 	}
 
 	/**
-	 * @covers \ContribsPager::tryToCreateValidRevision
 	 * @covers \ContribsPager::tryCreatingRevisionRecord
 	 */
 	public function testCreateRevision() {
-		$this->hideDeprecated( 'ContribsPager::tryToCreateValidRevision' );
-		$this->hideDeprecated( 'Revision::__construct' );
 		$title = Title::makeTitle( NS_MAIN, __METHOD__ );
 
 		$pager = $this->getContribsPager( [
@@ -244,11 +290,15 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 			'end' => '',
 		] );
 
+		$invalidObject = new class() {
+			public $rev_id;
+		};
+		$this->assertNull( $pager->tryCreatingRevisionRecord( $invalidObject, $title ) );
+
 		$invalidRow = (object)[
 			'foo' => 'bar'
 		];
 
-		$this->assertNull( $pager->tryToCreateValidRevision( $invalidRow, $title ) );
 		$this->assertNull( $pager->tryCreatingRevisionRecord( $invalidRow, $title ) );
 
 		$validRow = (object)[
@@ -273,7 +323,90 @@ class ContribsPagerTest extends MediaWikiIntegrationTestCase {
 			'rev_content_model' => null,
 		];
 
-		$this->assertNotNull( $pager->tryToCreateValidRevision( $validRow, $title ) );
 		$this->assertNotNull( $pager->tryCreatingRevisionRecord( $validRow, $title ) );
 	}
+
+	/**
+	 * Flow uses ContribsPager::reallyDoQuery hook to provide something other then
+	 * stdClass as a row, and then manually formats it's own row in ContributionsLineEnding.
+	 * Emulate this behaviour and check that it works.
+	 *
+	 * @covers ContribsPager::formatRow
+	 */
+	public function testContribProvidedByHook() {
+		$this->setTemporaryHook( 'ContribsPager::reallyDoQuery', static function ( &$data ) {
+			$data = [ [ new class() {
+				public $rev_timestamp = 12345;
+				public $testing = 'TESTING';
+			} ] ];
+		} );
+		$this->setTemporaryHook( 'ContributionsLineEnding', function ( $pager, &$ret, $row ) {
+			$this->assertSame( 'TESTING', $row->testing );
+			$ret .= 'FROM_HOOK!';
+		} );
+		$pager = $this->getContribsPager( [] );
+		$this->assertStringContainsString( 'FROM_HOOK!', $pager->getBody() );
+	}
+
+	public function provideEmptyResultIntegration() {
+		$cases = [
+			[ 'target' => '127.0.0.1' ],
+			[ 'target' => '127.0.0.1/24' ],
+			[ 'testUser' => true ],
+			[ 'target' => '127.0.0.1', 'namespace' => 0 ],
+			[ 'target' => '127.0.0.1', 'namespace' => 0, 'nsInvert' => true ],
+			[ 'target' => '127.0.0.1', 'namespace' => 0, 'associated' => true ],
+			[ 'target' => '127.0.0.1', 'tagfilter' => 'tag' ],
+			[ 'target' => '127.0.0.1', 'topOnly' => true ],
+			[ 'target' => '127.0.0.1', 'newOnly' => true ],
+			[ 'target' => '127.0.0.1', 'hideMinor' => true ],
+			[ 'target' => '127.0.0.1', 'revisionsOnly' => true ],
+			[ 'target' => '127.0.0.1', 'deletedOnly' => true ],
+			[ 'target' => '127.0.0.1', 'start' => '20010115000000' ],
+			[ 'target' => '127.0.0.1', 'end' => '20210101000000' ],
+			[ 'target' => '127.0.0.1', 'start' => '20010115000000', 'end' => '20210101000000' ],
+		];
+		foreach ( $cases as $case ) {
+			yield [ $case ];
+		}
+	}
+
+	/**
+	 * This DB integration test confirms that the query is valid for various
+	 * filter options, by running the query on an empty DB.
+	 *
+	 * @dataProvider provideEmptyResultIntegration
+	 * @covers \ContribsPager::__construct
+	 * @covers \ContribsPager::getQueryInfo
+	 * @covers \ContribsPager::getDatabase
+	 * @covers \ContribsPager::getIpRangeConds
+	 * @covers \ContribsPager::getNamespaceCond
+	 * @covers \ContribsPager::getIndexField
+	 */
+	public function testEmptyResultIntegration( $options ) {
+		if ( !empty( $options['testUser'] ) ) {
+			$targetUser = new UserIdentityValue( 1, 'User' );
+		} else {
+			$targetUser = $this->getServiceContainer()->getUserFactory()
+				->newFromName( $options['target'] );
+		}
+		$pager = $this->getContribsPager( $options, $targetUser );
+		$this->assertIsString( $pager->getBody() );
+	}
+
+	/**
+	 * DB integration test with a row in the result set.
+	 *
+	 * @covers \ContribsPager::formatRow
+	 * @covers \ContribsPager::doBatchLookups
+	 */
+	public function testPopulatedIntegration() {
+		$this->tablesUsed[] = 'page';
+		$user = $this->getTestUser()->getUser();
+		$title = Title::makeTitle( NS_MAIN, 'ContribsPagerTest' );
+		$this->editPage( $title, '', '', NS_MAIN, $user );
+		$pager = $this->getContribsPager( [], $user );
+		$this->assertIsString( $pager->getBody() );
+	}
+
 }

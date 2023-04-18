@@ -3,8 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
+ * @ingroup Languages
  *
  * @author Amikeco
  * @author Andrijko Z.
@@ -56,3 +56,5 @@ $namespaceAliases = [
 
 // Remove Russian gender aliases
 $namespaceGenderAliases = [];
+
+$linkTrail = '/^([a-zабвгдеёжзийклмнопрстуфхцчшщъыьэюяӀ]+)(.*)$/sDu';

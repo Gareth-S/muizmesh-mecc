@@ -14,12 +14,13 @@ class ApiQueryAllPagesTest extends ApiTestCase {
 	 * in wrong search results
 	 */
 	public function testPrefixNormalizationSearchBug() {
-		$title = Title::newFromText( 'Category:Template:xyz' );
-		$page = WikiPage::factory( $title );
-
-		$page->doEditContent(
-			ContentHandler::makeContent( 'Some text', $page->getTitle() ),
-			'inserting content'
+		$title = Title::makeTitle( NS_CATEGORY, 'Template:xyz' );
+		$this->editPage(
+			$title,
+			'Some text',
+			'inserting content',
+			NS_MAIN,
+			$this->getTestSysop()->getAuthority()
 		);
 
 		$result = $this->doApiRequest( [

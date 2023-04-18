@@ -42,13 +42,13 @@ class SpamRegexConstraintTest extends MediaWikiUnitTestCase {
 		$spamChecker = $this->createMock( SpamChecker::class );
 		$spamChecker->expects( $this->once() )
 			->method( 'checkSummary' )
-			->with( $this->equalTo( $summary ) )
+			->with( $summary )
 			->willReturn( false );
 		$spamChecker->expects( $this->exactly( 2 ) )
 			->method( 'checkContent' )
 			->withConsecutive(
-				[ $this->equalTo( $sectionHeading ) ],
-				[ $this->equalTo( $text ) ]
+				[ $sectionHeading ],
+				[ $text ]
 			)
 			->willReturn( false );
 
@@ -62,7 +62,6 @@ class SpamRegexConstraintTest extends MediaWikiUnitTestCase {
 			$logger,
 			$spamChecker,
 			$summary,
-			'new',
 			$sectionHeading,
 			$text,
 			'Request-IP',
@@ -80,7 +79,7 @@ class SpamRegexConstraintTest extends MediaWikiUnitTestCase {
 		$spamChecker = $this->createMock( SpamChecker::class );
 		$spamChecker->expects( $this->once() )
 			->method( 'checkSummary' )
-			->with( $this->equalTo( $summary ) )
+			->with( $summary )
 			->willReturn( $matchingText );
 
 		$prefixedDBKey = 'PrefixedDBKeyGoesHere';
@@ -95,7 +94,6 @@ class SpamRegexConstraintTest extends MediaWikiUnitTestCase {
 			$logger,
 			$spamChecker,
 			$summary,
-			'',
 			$sectionHeading,
 			$text,
 			'Request-IP',

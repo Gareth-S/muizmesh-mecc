@@ -1,6 +1,6 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
 use Wikimedia\TestingAccessWrapper;
 use Wikimedia\Timestamp\ConvertibleTimestamp;
 
@@ -13,14 +13,14 @@ use Wikimedia\Timestamp\ConvertibleTimestamp;
  */
 class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 		self::$users['WatchedItemStoreIntegrationTestUser']
 			= new TestUser( 'WatchedItemStoreIntegrationTestUser' );
 
-		$this->setMwGlobals( [
-			'wgWatchlistExpiry' => true,
-			'$wgWatchlistExpiryMaxDuration' => '6 months',
+		$this->overrideConfigValues( [
+			MainConfigNames::WatchlistExpiry => true,
+			MainConfigNames::WatchlistExpiryMaxDuration => '6 months',
 		] );
 	}
 
@@ -31,7 +31,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 	public function testWatchAndUnWatchItem() {
 		$user = $this->getUser();
 		$title = Title::newFromText( 'WatchedItemStoreIntegrationTestPage' );
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 		// Cleanup after previous tests
 		$store->removeWatch( $user, $title );
 		$initialWatchers = $store->countWatchers( $title );
@@ -121,7 +121,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 	public function testWatchAndUnWatchItemWithExpiry(): void {
 		$user = $this->getUser();
 		$title = Title::newFromText( 'WatchedItemStoreIntegrationTestPage' );
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 		$initialUserWatchedItems = $store->countWatchedItems( $user );
 
 		// Watch for a duration greater than the max ($wgWatchlistExpiryMaxDuration),
@@ -195,7 +195,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 		$user = $this->getUser();
 		$title1 = Title::newFromText( 'WatchedItemStoreIntegrationTestPage1' );
 		$title2 = Title::newFromText( 'WatchedItemStoreIntegrationTestPage1' );
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 
 		// Use a relative timestamp in the near future to ensure we don't exceed the max.
 		// See testWatchAndUnWatchItemWithExpiry() for tests regarding the max duration.
@@ -226,7 +226,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 		$user = $this->getUser();
 		$title1 = Title::newFromText( 'WatchedItemStoreIntegrationTestPage1' );
 		$title2 = Title::newFromText( 'WatchedItemStoreIntegrationTestPage2' );
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 
 		$store->addWatchBatchForUser( $user, [ $title1, $title2 ] );
 
@@ -243,7 +243,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 		$user = $this->getUser();
 		$otherUser = ( new TestUser( 'WatchedItemStoreIntegrationTestUser_otherUser' ) )->getUser();
 		$title = Title::newFromText( 'WatchedItemStoreIntegrationTestPage' );
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 		$store->addWatch( $user, $title );
 		$this->assertNull( $store->loadWatchedItem( $user, $title )->getNotificationTimestamp() );
 		$initialVisitingWatchers = $store->countVisitingWatchers( $title, '20150202020202' );
@@ -285,10 +285,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 		);
 
 		// Run the job queue
-		JobQueueGroup::destroySingletons();
-		$jobs = new RunJobs;
-		$jobs->loadParamsAndArgs( null, [ 'quiet' => true ], null );
-		$jobs->execute();
+		$this->runJobs();
 
 		$this->assertEquals(
 			$initialVisitingWatchers,
@@ -348,7 +345,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 		$user = $this->getUser();
 		$titleOld = Title::newFromText( 'WatchedItemStoreIntegrationTestPageOld' );
 		$titleNew = Title::newFromText( 'WatchedItemStoreIntegrationTestPageNew' );
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 		$store->addWatch( $user, $titleOld->getSubjectPage(), '99990123000000' );
 		$store->addWatch( $user, $titleOld->getTalkPage(), '99990123000000' );
 
@@ -393,7 +390,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function testRemoveExpired() {
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 
 		// Clear out any expired rows, to start from a known point.
 		$store->removeExpired( 10 );
@@ -412,7 +409,7 @@ class WatchedItemStoreIntegrationTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function testRemoveOrphanedExpired() {
-		$store = MediaWikiServices::getInstance()->getWatchedItemStore();
+		$store = $this->getServiceContainer()->getWatchedItemStore();
 		// Clear out any expired rows, to start from a known point.
 		$store->removeExpired( 10 );
 

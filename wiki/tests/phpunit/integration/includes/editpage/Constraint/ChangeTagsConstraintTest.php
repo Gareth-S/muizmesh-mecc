@@ -28,13 +28,13 @@ use MediaWiki\Tests\Unit\Permissions\MockAuthorityTrait;
  * @author DannyS712
  *
  * @covers \MediaWiki\EditPage\Constraint\ChangeTagsConstraint
- * @group database
+ * @group Database
  */
 class ChangeTagsConstraintTest extends MediaWikiIntegrationTestCase {
 	use EditConstraintTestTrait;
 	use MockAuthorityTrait;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 		$this->tablesUsed = array_merge(
 			$this->tablesUsed,

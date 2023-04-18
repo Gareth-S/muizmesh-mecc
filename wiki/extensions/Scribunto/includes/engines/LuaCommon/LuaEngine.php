@@ -1,5 +1,10 @@
 <?php
 
+use MediaWiki\Extension\Scribunto\Engines\LuaSandbox\LuaSandboxInterpreter;
+use MediaWiki\Extension\Scribunto\Scribunto;
+use MediaWiki\Extension\Scribunto\ScribuntoEngineBase;
+use MediaWiki\Extension\Scribunto\ScribuntoException;
+use MediaWiki\MediaWikiServices;
 use Wikimedia\ScopedCallback;
 
 abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
@@ -69,7 +74,7 @@ abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
 		global $wgScribuntoEngineConf;
 		$engine = 'luastandalone';
 		try {
-			Scribunto_LuaSandboxInterpreter::checkLuaSandboxVersion();
+			LuaSandboxInterpreter::checkLuaSandboxVersion();
 			$engine = 'luasandbox';
 		} catch ( Scribunto_LuaInterpreterNotFoundError | Scribunto_LuaInterpreterBadVersionError $e ) {
 			// pass
@@ -77,6 +82,7 @@ abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
 
 		unset( $options['factory'] );
 
+		// @phan-suppress-next-line PhanTypeMismatchReturnSuperType
 		return Scribunto::newEngine( $options + $wgScribuntoEngineConf[$engine] );
 	}
 
@@ -139,6 +145,7 @@ abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
 				'getFrameTitle',
 				'setTTL',
 				'addWarning',
+				'loadJsonData',
 			];
 
 			$lib = [];
@@ -715,7 +722,7 @@ abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
 		if ( $frame->depth >= $this->parser->mOptions->getMaxTemplateDepth() ) {
 			throw new Scribunto_LuaError( 'expandTemplate: template depth limit exceeded' );
 		}
-		if ( MWNamespace::isNonincludable( $title->getNamespace() ) ) {
+		if ( MediaWikiServices::getInstance()->getNamespaceInfo()->isNonincludable( $title->getNamespace() ) ) {
 			throw new Scribunto_LuaError( 'expandTemplate: template inclusion denied' );
 		}
 
@@ -756,7 +763,7 @@ abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
 		$args = array_merge( [], $args );
 
 		# Sort, since we can't rely on the order coming in from Lua
-		uksort( $args, function ( $a, $b ) {
+		uksort( $args, static function ( $a, $b ) {
 			if ( is_int( $a ) !== is_int( $b ) ) {
 				return is_int( $a ) ? -1 : 1;
 			}
@@ -881,7 +888,11 @@ abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
 		$args = func_get_args();
 		$this->checkString( 'addWarning', $args, 0 );
 
-		$this->getParser()->getOutput()->addWarning( $text );
+		// Message localization has to happen on the Lua side
+		$this->getParser()->getOutput()->addWarningMsg(
+			'scribunto-lua-warning',
+			$text
+		);
 	}
 
 	/**
@@ -924,5 +935,33 @@ abstract class Scribunto_LuaEngine extends ScribuntoEngineBase {
 			$this->expandCache[$hash] = $ret;
 		}
 		return $ret;
+	}
+
+	/**
+	 * Implements mw.loadJsonData()
+	 *
+	 * @param string $title Title text, type-checked in Lua
+	 * @return string[]
+	 */
+	public function loadJsonData( $title ) {
+		$this->incrementExpensiveFunctionCount();
+
+		$titleObj = Title::newFromText( $title );
+		if ( !$titleObj || !$titleObj->exists() || !$titleObj->hasContentModel( CONTENT_MODEL_JSON ) ) {
+			throw new Scribunto_LuaError(
+				"bad argument #1 to 'mw.loadJsonData' ('$title' is not a valid JSON page)"
+			);
+		}
+
+		$parser = $this->getParser();
+		list( $text, $finalTitle ) = $parser->fetchTemplateAndTitle( $titleObj );
+
+		$json = FormatJson::decode( $text, true );
+		if ( is_array( $json ) ) {
+			$json = Scribunto_LuaTextLibrary::reindexArrays( $json, false );
+		}
+		// We'll throw an error for non-tables on the Lua side
+
+		return [ $json ];
 	}
 }

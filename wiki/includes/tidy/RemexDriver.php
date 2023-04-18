@@ -3,22 +3,26 @@
 namespace MediaWiki\Tidy;
 
 use MediaWiki\Config\ServiceOptions;
-use RemexHtml\Serializer\Serializer;
-use RemexHtml\Serializer\SerializerWithTracer;
-use RemexHtml\Tokenizer\Tokenizer;
-use RemexHtml\TreeBuilder\Dispatcher;
-use RemexHtml\TreeBuilder\TreeBuilder;
-use RemexHtml\TreeBuilder\TreeMutationTracer;
+use MediaWiki\MainConfigNames;
+use Wikimedia\RemexHtml\HTMLData;
+use Wikimedia\RemexHtml\Serializer\Serializer;
+use Wikimedia\RemexHtml\Serializer\SerializerWithTracer;
+use Wikimedia\RemexHtml\Tokenizer\Tokenizer;
+use Wikimedia\RemexHtml\TreeBuilder\Dispatcher;
+use Wikimedia\RemexHtml\TreeBuilder\TreeBuilder;
+use Wikimedia\RemexHtml\TreeBuilder\TreeMutationTracer;
 
 class RemexDriver extends TidyDriverBase {
 	private $treeMutationTrace;
 	private $serializerTrace;
 	private $mungerTrace;
 	private $pwrap;
+	private $enableLegacyMediaDOM;
 
 	/** @internal */
 	public const CONSTRUCTOR_OPTIONS = [
-		'TidyConfig',
+		MainConfigNames::TidyConfig,
+		MainConfigNames::ParserEnableLegacyMediaDOM,
 	];
 
 	/**
@@ -30,7 +34,8 @@ class RemexDriver extends TidyDriverBase {
 			$config = $options;
 		} else {
 			$options->assertRequiredOptions( self::CONSTRUCTOR_OPTIONS );
-			$config = $options->get( 'TidyConfig' );
+			$config = $options->get( MainConfigNames::TidyConfig );
+			$this->enableLegacyMediaDOM = $options->get( MainConfigNames::ParserEnableLegacyMediaDOM );
 		}
 		$config += [
 			'treeMutationTrace' => false,
@@ -66,7 +71,8 @@ class RemexDriver extends TidyDriverBase {
 		} else {
 			$tracer = $munger;
 		}
-		$treeBuilder = new TreeBuilder( $tracer, [
+		$treeBuilderClass = $this->enableLegacyMediaDOM ? TreeBuilder::class : RemexCompatBuilder::class;
+		$treeBuilder = new $treeBuilderClass( $tracer, [
 			'ignoreErrors' => true,
 			'ignoreNulls' => true,
 		] );
@@ -79,7 +85,7 @@ class RemexDriver extends TidyDriverBase {
 		] );
 
 		$tokenizer->execute( [
-			'fragmentNamespace' => \RemexHtml\HTMLData::NS_HTML,
+			'fragmentNamespace' => HTMLData::NS_HTML,
 			'fragmentName' => 'body'
 		] );
 		return $serializer->getResult();

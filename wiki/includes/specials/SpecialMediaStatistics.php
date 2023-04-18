@@ -31,12 +31,20 @@ use Wikimedia\Rdbms\IResultWrapper;
  * @ingroup SpecialPage
  */
 class SpecialMediaStatistics extends QueryPage {
+
+	public const MAX_LIMIT = 5000;
+
 	protected $totalCount = 0, $totalBytes = 0;
 
 	/**
 	 * @var int Combined file size of all files in a section
 	 */
 	protected $totalPerType = 0;
+
+	/**
+	 * @var int Combined file count of all files in a section
+	 */
+	protected $countPerType = 0;
 
 	/**
 	 * @var int Combined file size of all files
@@ -59,7 +67,7 @@ class SpecialMediaStatistics extends QueryPage {
 		parent::__construct( 'MediaStatistics' );
 		// Generally speaking there is only a small number of file types,
 		// so just show all of them.
-		$this->limit = 5000;
+		$this->limit = self::MAX_LIMIT;
 		$this->shownavigation = false;
 		$this->mimeAnalyzer = $mimeAnalyzer;
 		$this->setDBLoadBalancer( $loadBalancer );
@@ -151,6 +159,7 @@ class SpecialMediaStatistics extends QueryPage {
 				}
 				$this->outputMediaType( $mediaType );
 				$this->totalPerType = 0;
+				$this->countPerType = 0;
 				$this->outputTableStart( $mediaType );
 				$prevMediaType = $mediaType;
 			}
@@ -164,6 +173,7 @@ class SpecialMediaStatistics extends QueryPage {
 				$this->msg( 'mediastatistics-allbytes' )
 					->numParams( $this->totalSize )
 					->sizeParams( $this->totalSize )
+					->numParams( $this->totalCount )
 					->text()
 			);
 		}
@@ -182,6 +192,8 @@ class SpecialMediaStatistics extends QueryPage {
 					->numParams( $this->totalPerType )
 					->sizeParams( $this->totalPerType )
 					->numParams( $this->makePercentPretty( $this->totalPerType / $this->totalBytes ) )
+					->numParams( $this->countPerType )
+					->numParams( $this->makePercentPretty( $this->countPerType / $this->totalCount ) )
 					->text()
 		);
 		$this->totalSize += $this->totalPerType;
@@ -229,6 +241,7 @@ class SpecialMediaStatistics extends QueryPage {
 				->parse()
 		);
 		$this->totalPerType += $bytes;
+		$this->countPerType += $count;
 		$this->getOutput()->addHTML( Html::rawElement( 'tr', [], $row ) );
 	}
 
@@ -307,7 +320,7 @@ class SpecialMediaStatistics extends QueryPage {
 				[],
 				// for grep:
 				// mediastatistics-table-mimetype, mediastatistics-table-extensions
-				// tatistics-table-count, mediastatistics-table-totalbytes
+				// mediastatistics-table-count, mediastatistics-table-totalbytes
 				$this->msg( 'mediastatistics-table-' . $header )->parse()
 			);
 		}
@@ -346,7 +359,7 @@ class SpecialMediaStatistics extends QueryPage {
 	 * parse the fake title format that this special page abuses querycache with.
 	 *
 	 * @param string $fakeTitle A string formatted as <media type>;<mime type>;<count>;<bytes>
-	 * @return array The constituant parts of $fakeTitle
+	 * @return array The constituent parts of $fakeTitle
 	 */
 	private function splitFakeTitle( $fakeTitle ) {
 		return explode( ';', $fakeTitle, 4 );
@@ -368,6 +381,7 @@ class SpecialMediaStatistics extends QueryPage {
 	 * @param stdClass $result Result row
 	 * @return bool|string|void
 	 * @throws MWException
+	 * @suppress PhanPluginNeverReturnMethod
 	 */
 	public function formatResult( $skin, $result ) {
 		throw new MWException( "unimplemented" );

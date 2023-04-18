@@ -1,5 +1,6 @@
 <?php
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\Revision\MutableRevisionRecord;
 use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\Revision\SlotRecord;
@@ -22,7 +23,7 @@ class DifferenceEngineTest extends MediaWikiIntegrationTestCase {
 
 	private static $revisions;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$title = $this->getTitle();
@@ -34,7 +35,7 @@ class DifferenceEngineTest extends MediaWikiIntegrationTestCase {
 			self::$revisions = $this->doEdits();
 		}
 
-		$this->setMwGlobals( [ 'wgDiffEngine' => 'php' ] );
+		$this->overrideConfigValue( MainConfigNames::DiffEngine, 'php' );
 
 		$slotRoleRegistry = $this->getServiceContainer()->getSlotRoleRegistry();
 
@@ -53,7 +54,7 @@ class DifferenceEngineTest extends MediaWikiIntegrationTestCase {
 	 */
 	protected function getTitle() {
 		$namespace = $this->getDefaultWikitextNS();
-		return Title::newFromText( 'Kitten', $namespace );
+		return Title::makeTitle( $namespace, 'Kitten' );
 	}
 
 	/**
@@ -66,9 +67,10 @@ class DifferenceEngineTest extends MediaWikiIntegrationTestCase {
 		$strings = [ "it is a kitten", "two kittens", "three kittens", "four kittens" ];
 		$revisions = [];
 
+		$user = $this->getTestSysop()->getUser();
 		foreach ( $strings as $string ) {
 			$content = ContentHandler::makeContent( $string, $title );
-			$page->doEditContent( $content, 'edit page' );
+			$page->doUserEditContent( $content, $user, 'edit page' );
 			$revisions[] = $page->getLatest();
 		}
 
@@ -159,6 +161,7 @@ class DifferenceEngineTest extends MediaWikiIntegrationTestCase {
 	 */
 	public function testAddLocalisedTitleTooltips( $input, $expected ) {
 		$this->setContentLang( 'qqx' );
+		/** @var DifferenceEngine $diffEngine */
 		$diffEngine = TestingAccessWrapper::newFromObject( new DifferenceEngine() );
 		$this->assertEquals( $expected, $diffEngine->addLocalisedTitleTooltips( $input ) );
 	}
@@ -307,17 +310,15 @@ class DifferenceEngineTest extends MediaWikiIntegrationTestCase {
 			->getMock();
 		$customContentHandler = $this->getMockBuilder( ContentHandler::class )
 			->setConstructorArgs( [ 'foo', [] ] )
-			->setMethods( [ 'createDifferenceEngine' ] )
+			->onlyMethods( [ 'createDifferenceEngine' ] )
 			->getMockForAbstractClass();
-		$customContentHandler->expects( $this->any() )
-			->method( 'createDifferenceEngine' )
+		$customContentHandler->method( 'createDifferenceEngine' )
 			->willReturn( $customDifferenceEngine );
 		/** @var ContentHandler $customContentHandler */
 		$customContent = $this->getMockBuilder( Content::class )
-			->setMethods( [ 'getContentHandler' ] )
+			->onlyMethods( [ 'getContentHandler' ] )
 			->getMockForAbstractClass();
-		$customContent->expects( $this->any() )
-			->method( 'getContentHandler' )
+		$customContent->method( 'getContentHandler' )
 			->willReturn( $customContentHandler );
 		/** @var Content $customContent */
 		$customContent2 = clone $customContent;
@@ -328,6 +329,56 @@ class DifferenceEngineTest extends MediaWikiIntegrationTestCase {
 			': could not maintain backwards compatibility. Please use a SlotDiffRenderer.'
 		);
 		$slotDiffRenderer->getDiff( $customContent, $customContent2 );
+	}
+
+	/**
+	 * @dataProvider provideMarkPatrolledLink
+	 */
+	public function testMarkPatrolledLink( $group, $config, $expectedResult ) {
+		$this->setUserLang( 'qqx' );
+		$user = $this->getTestUser( $group )->getUser();
+		$this->context->setUser( $user );
+		if ( $config ) {
+			$this->context->setConfig( $config );
+		}
+
+		$page = $this->getNonExistingTestPage( 'Page1' );
+		$this->assertTrue( $this->editPage( $page, 'Edit1' )->isGood(), 'edited a page' );
+		$rev1 = $page->getRevisionRecord();
+		$this->assertTrue( $this->editPage( $page, 'Edit2' )->isGood(), 'edited a page' );
+		$rev2 = $page->getRevisionRecord();
+
+		$diffEngine = new DifferenceEngine( $this->context );
+		$diffEngine->setRevisions( $rev1, $rev2 );
+
+		$html = $diffEngine->markPatrolledLink();
+		$this->assertStringContainsString( $expectedResult, $html );
+	}
+
+	public function provideMarkPatrolledLink() {
+		yield 'PatrollingEnabledUserAllowed' => [
+			'sysop',
+			new HashConfig( [ 'UseRCPatrol' => true, 'LanguageCode' => 'qxx' ] ),
+			'Mark as patrolled'
+		];
+
+		yield 'PatrollingEnabledUserNotAllowed' => [
+			null,
+			new HashConfig( [ 'UseRCPatrol' => true, 'LanguageCode' => 'qxx' ] ),
+			''
+		];
+
+		yield 'PatrollingDisabledUserAllowed' => [
+			'sysop',
+			null,
+			''
+		];
+
+		yield 'PatrollingDisabledUserNotAllowed' => [
+			null,
+			null,
+			''
+		];
 	}
 
 	/**

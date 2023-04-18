@@ -1,5 +1,7 @@
 <?php
 
+use MediaWiki\MediaWikiServices;
+use MediaWiki\User\UserRigorOptions;
 use MediaWiki\Widget\UsersMultiselectWidget;
 use Wikimedia\IPUtils;
 
@@ -28,8 +30,10 @@ class HTMLUsersMultiselectField extends HTMLUserTextField {
 
 		// Normalize usernames
 		$normalizedUsers = [];
+		$userNameUtils = MediaWikiServices::getInstance()->getUserNameUtils();
 		$listOfIps = [];
 		foreach ( $usersArray as $user ) {
+			$canonicalUser = false;
 			if ( IPUtils::isIPAddress( $user ) ) {
 				$parsedIPRange = IPUtils::parseRange( $user );
 				if ( !in_array( $parsedIPRange, $listOfIps ) ) {
@@ -37,9 +41,12 @@ class HTMLUsersMultiselectField extends HTMLUserTextField {
 					$listOfIps[] = $parsedIPRange;
 				}
 			} else {
-				$canonicalUser = User::getCanonicalName( $user, false );
+				$canonicalUser = $userNameUtils->getCanonical(
+					$user, UserRigorOptions::RIGOR_NONE );
 			}
-			$normalizedUsers[] = $canonicalUser;
+			if ( $canonicalUser !== false ) {
+				$normalizedUsers[] = $canonicalUser;
+			}
 		}
 		// Remove any duplicate usernames
 		$uniqueUsers = array_unique( $normalizedUsers );
@@ -94,11 +101,8 @@ class HTMLUsersMultiselectField extends HTMLUserTextField {
 			$params['default'] = $this->mParams['default'];
 		}
 
-		if ( isset( $this->mParams['placeholder'] ) ) {
-			$params['placeholder'] = $this->mParams['placeholder'];
-		} else {
-			$params['placeholder'] = $this->msg( 'mw-widgets-usersmultiselect-placeholder' )->plain();
-		}
+		$params['placeholder'] = $this->mParams['placeholder'] ??
+			$this->msg( 'mw-widgets-usersmultiselect-placeholder' )->plain();
 
 		if ( isset( $this->mParams['max'] ) ) {
 			$params['tagLimit'] = $this->mParams['max'];
@@ -127,7 +131,7 @@ class HTMLUsersMultiselectField extends HTMLUserTextField {
 
 		// Make the field auto-infusable when it's used inside a legacy HTMLForm rather than OOUIHTMLForm
 		$params['infusable'] = true;
-		$params['classes'] = [ 'mw-htmlform-field-autoinfuse' ];
+		$params['classes'] = [ 'mw-htmlform-autoinfuse' ];
 		$widget = new UsersMultiselectWidget( $params );
 		$widget->setAttributes( [ 'data-mw-modules' => implode( ',', $this->getOOUIModules() ) ] );
 

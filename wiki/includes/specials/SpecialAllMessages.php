@@ -21,6 +21,9 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\Languages\LanguageFactory;
+use MediaWiki\Languages\LanguageNameUtils;
+use MediaWiki\MainConfigNames;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -31,21 +34,33 @@ use Wikimedia\Rdbms\ILoadBalancer;
  */
 class SpecialAllMessages extends SpecialPage {
 
-	/** @var LocalisationCache */
-	private $localisationCache;
+	/** @var LanguageFactory */
+	private $languageFactory;
+
+	/** @var LanguageNameUtils */
+	private $languageNameUtils;
 
 	/** @var ILoadBalancer */
 	private $loadBalancer;
 
+	/** @var LocalisationCache */
+	private $localisationCache;
+
 	/**
+	 * @param LanguageFactory $languageFactory
+	 * @param LanguageNameUtils $languageNameUtils
 	 * @param LocalisationCache $localisationCache
 	 * @param ILoadBalancer $loadBalancer
 	 */
 	public function __construct(
+		LanguageFactory $languageFactory,
+		LanguageNameUtils $languageNameUtils,
 		LocalisationCache $localisationCache,
 		ILoadBalancer $loadBalancer
 	) {
 		parent::__construct( 'Allmessages' );
+		$this->languageFactory = $languageFactory;
+		$this->languageNameUtils = $languageNameUtils;
 		$this->localisationCache = $localisationCache;
 		$this->loadBalancer = $loadBalancer;
 	}
@@ -58,7 +73,7 @@ class SpecialAllMessages extends SpecialPage {
 
 		$this->setHeaders();
 
-		if ( !$this->getConfig()->get( 'UseDatabaseMessages' ) ) {
+		if ( !$this->getConfig()->get( MainConfigNames::UseDatabaseMessages ) ) {
 			$out->addWikiMsg( 'allmessages-not-supported-database' );
 
 			return;
@@ -82,11 +97,13 @@ class SpecialAllMessages extends SpecialPage {
 
 		$pager = new AllMessagesTablePager(
 			$this->getContext(),
-			$opts,
-			$this->getLinkRenderer(),
 			$this->getContentLanguage(),
+			$this->languageFactory,
+			$this->languageNameUtils,
+			$this->getLinkRenderer(),
+			$this->loadBalancer,
 			$this->localisationCache,
-			$this->loadBalancer
+			$opts
 		);
 
 		$formDescriptor = [

@@ -21,6 +21,7 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
 use Wikimedia\Rdbms\ILoadBalancer;
 
@@ -78,14 +79,14 @@ class SpecialAllPages extends IncludableSpecialPage {
 
 		$this->setHeaders();
 		$this->outputHeader();
-		$out->allowClickjacking();
+		$out->setPreventClickjacking( false );
 
 		# GET values
 		$from = $request->getVal( 'from', null );
 		$to = $request->getVal( 'to', null );
 		$namespace = $request->getInt( 'namespace' );
 
-		$miserMode = (bool)$this->getConfig()->get( 'MiserMode' );
+		$miserMode = (bool)$this->getConfig()->get( MainConfigNames::MiserMode );
 
 		// Redirects filter is disabled in MiserMode
 		$hideredirects = $request->getBool( 'hideredirects', false ) && !$miserMode;
@@ -119,7 +120,7 @@ class SpecialAllPages extends IncludableSpecialPage {
 	protected function outputHTMLForm( $namespace = NS_MAIN,
 		$from = '', $to = '', $hideRedirects = false
 	) {
-		$miserMode = (bool)$this->getConfig()->get( 'MiserMode' );
+		$miserMode = (bool)$this->getConfig()->get( MainConfigNames::MiserMode );
 		$formDescriptor = [
 			'from' => [
 				'type' => 'text',
@@ -158,11 +159,10 @@ class SpecialAllPages extends IncludableSpecialPage {
 			unset( $formDescriptor['hideredirects'] );
 		}
 
-		$context = new DerivativeContext( $this->getContext() );
-		$context->setTitle( $this->getPageTitle() ); // Remove subpage
-		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $context );
+		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $this->getContext() );
 		$htmlForm
 			->setMethod( 'get' )
+			->setTitle( $this->getPageTitle() ) // Remove subpage
 			->setWrapperLegendMsg( 'allpages' )
 			->setSubmitTextMsg( 'allpagessubmit' )
 			->prepareForm()
@@ -171,15 +171,15 @@ class SpecialAllPages extends IncludableSpecialPage {
 
 	/**
 	 * @param int $namespace (default NS_MAIN)
-	 * @param string $from List all pages from this name
-	 * @param string $to List all pages to this name
+	 * @param string|null $from List all pages from this name
+	 * @param string|null $to List all pages to this name
 	 * @param bool $hideredirects Don't show redirects (default false)
 	 */
 	private function showToplevel(
-		$namespace = NS_MAIN, $from = '', $to = '', $hideredirects = false
+		$namespace = NS_MAIN, $from = null, $to = null, $hideredirects = false
 	) {
-		$from = Title::makeTitleSafe( $namespace, $from );
-		$to = Title::makeTitleSafe( $namespace, $to );
+		$from = $from ? Title::makeTitleSafe( $namespace, $from ) : null;
+		$to = $to ? Title::makeTitleSafe( $namespace, $to ) : null;
 		$from = ( $from && $from->isLocal() ) ? $from->getDBkey() : null;
 		$to = ( $to && $to->isLocal() ) ? $to->getDBkey() : null;
 
@@ -188,12 +188,12 @@ class SpecialAllPages extends IncludableSpecialPage {
 
 	/**
 	 * @param int $namespace Namespace (Default NS_MAIN)
-	 * @param string|false $from List all pages from this name (default false)
-	 * @param string|false $to List all pages to this name (default false)
+	 * @param string|null $from List all pages from this name (default null)
+	 * @param string|null $to List all pages to this name (default null)
 	 * @param bool $hideredirects Don't show redirects (default false)
 	 */
 	private function showChunk(
-		$namespace = NS_MAIN, $from = false, $to = false, $hideredirects = false
+		$namespace = NS_MAIN, $from = null, $to = null, $hideredirects = false
 	) {
 		$output = $this->getOutput();
 
@@ -224,7 +224,6 @@ class SpecialAllPages extends IncludableSpecialPage {
 			if ( $toKey !== "" ) {
 				$conds[] = 'page_title <= ' . $dbr->addQuotes( $toKey );
 			}
-
 			$res = $dbr->select( 'page',
 				[ 'page_namespace', 'page_title', 'page_is_redirect', 'page_id' ],
 				$conds,
@@ -232,7 +231,7 @@ class SpecialAllPages extends IncludableSpecialPage {
 				[
 					'ORDER BY' => 'page_title',
 					'LIMIT' => $this->maxPerPage + 1,
-					'USE INDEX' => 'name_title',
+					'USE INDEX' => 'page_name_title',
 				]
 			);
 
@@ -325,6 +324,7 @@ class SpecialAllPages extends IncludableSpecialPage {
 		}
 
 		// Generate a "next page" link if needed
+		// @phan-suppress-next-line PhanPossiblyUndeclaredVariable $res is declared when have maxPerPage
 		if ( $n == $this->maxPerPage && $s = $res->fetchObject() ) {
 			# $s is the first link of the next chunk
 			$t = Title::makeTitle( $namespace, $s->page_title );

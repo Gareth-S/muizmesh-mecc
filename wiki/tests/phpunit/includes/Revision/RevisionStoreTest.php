@@ -2,15 +2,21 @@
 
 namespace MediaWiki\Tests\Revision;
 
+use MediaWiki\Page\PageIdentityValue;
+use MediaWiki\Revision\IncompleteRevisionException;
 use MediaWiki\Revision\RevisionAccessException;
 use MediaWiki\Revision\RevisionStore;
 use MediaWikiIntegrationTestCase;
+use MWException;
 use MWTimestamp;
 use PHPUnit\Framework\MockObject\MockObject;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\ILoadBalancer;
 use Wikimedia\Rdbms\LBFactory;
-use Wikimedia\Rdbms\MaintainableDBConnRef;
+use Wikimedia\TestingAccessWrapper;
+use Wikimedia\Timestamp\ConvertibleTimestamp;
+use WikitextContent;
+use WikitextContentHandler;
 
 /**
  * Tests RevisionStore
@@ -30,10 +36,12 @@ class RevisionStoreTest extends MediaWikiIntegrationTestCase {
 	 * @return MockObject|ILoadBalancer
 	 */
 	private function installMockLoadBalancer( IDatabase $db ) {
-		$lb = $this->createNoOpMock( ILoadBalancer::class, [ 'getConnectionRef', 'getLocalDomainID' ] );
+		$lb = $this->createNoOpMock(
+			ILoadBalancer::class,
+			[ 'getConnectionRef', 'getLocalDomainID', 'reuseConnection' ]
+		);
 
-		$dbRef = new MaintainableDBConnRef( $lb, $db, DB_MASTER );
-		$lb->method( 'getConnectionRef' )->willReturn( $dbRef );
+		$lb->method( 'getConnectionRef' )->willReturn( $db );
 		$lb->method( 'getLocalDomainID' )->willReturn( 'fake' );
 
 		$lbf = $this->createNoOpMock( LBFactory::class, [ 'getMainLB', 'getLocalDomainID' ] );
@@ -56,14 +64,6 @@ class RevisionStoreTest extends MediaWikiIntegrationTestCase {
 		return $db;
 	}
 
-	/**
-	 * @return MockObject|IDatabase
-	 */
-	private function getMockDatabase() {
-		return $this->getMockBuilder( IDatabase::class )
-			->disableOriginalConstructor()->getMock();
-	}
-
 	private function getDummyPageRow( $extra = [] ) {
 		return (object)( $extra + [
 			'page_id' => 1337,
@@ -75,7 +75,7 @@ class RevisionStoreTest extends MediaWikiIntegrationTestCase {
 			'page_links_updated' => MWTimestamp::now(),
 			'page_latest' => 23948576,
 			'page_len' => 2323,
-			'page_content_model' => CONTENT_MODEL_WIKITEXT
+			'page_content_model' => CONTENT_MODEL_WIKITEXT,
 		] );
 	}
 
@@ -253,7 +253,7 @@ class RevisionStoreTest extends MediaWikiIntegrationTestCase {
 	 * @covers \MediaWiki\Revision\RevisionStore::getTitle
 	 */
 	public function testGetTitle_correctFallbackAndthrowsExceptionAfterFallbacks() {
-		$db = $this->getMockDatabase();
+		$db = $this->createMock( IDatabase::class );
 		$mockLoadBalancer = $this->installMockLoadBalancer( $db );
 
 		// Assert that the first call uses a REPLICA and the second falls back to master
@@ -268,7 +268,7 @@ class RevisionStoreTest extends MediaWikiIntegrationTestCase {
 				if ( $callCounter < 3 ) {
 					$this->assertSame( DB_REPLICA, $masterOrReplica );
 				} else {
-					$this->assertSame( DB_MASTER, $masterOrReplica );
+					$this->assertSame( DB_PRIMARY, $masterOrReplica );
 				}
 				return $db;
 			} );
@@ -302,4 +302,120 @@ class RevisionStoreTest extends MediaWikiIntegrationTestCase {
 		$store->getTitle( 1, 2, RevisionStore::READ_NORMAL );
 	}
 
+	public function provideIsRevisionRow() {
+		yield 'invalid row type' => [
+			'row' => new class() {
+			},
+			'expect' => false,
+		];
+		yield 'invalid row' => [
+			'row' => (object)[ 'blabla' => 'bla' ],
+			'expect' => false,
+		];
+		yield 'valid row' => [
+			'row' => (object)[
+				'rev_id' => 321,
+				'rev_page' => 123,
+				'rev_timestamp' => ConvertibleTimestamp::now(),
+				'rev_minor_edit' => 0,
+				'rev_deleted' => 0,
+				'rev_len' => 10,
+				'rev_parent_id' => 123,
+				'rev_sha1' => 'abc',
+				'rev_comment_text' => 'blabla',
+				'rev_comment_data' => 'blablabla',
+				'rev_comment_cid' => 1,
+				'rev_actor' => 1,
+				'rev_user' => 1,
+				'rev_user_text' => 'alala',
+			],
+			'expect' => true,
+		];
+	}
+
+	/**
+	 * @covers \MediaWiki\Revision\RevisionStore::isRevisionRow
+	 * @dataProvider provideIsRevisionRow
+	 */
+	public function testIsRevisionRow( $row, bool $expect ) {
+		$this->assertSame( $expect, $this->getRevisionStore()->isRevisionRow( $row ) );
+	}
+
+	/**
+	 * @covers \MediaWiki\Revision\RevisionStore::failOnNull
+	 */
+	public function testFailOnNull() {
+		$revStore = TestingAccessWrapper::newFromObject( $this->getRevisionStore() );
+		// Success - not null
+		$this->assertSame( 123, $revStore->failOnNull( 123, 'value' ) );
+
+		// Failure - null throws exception
+		$this->expectException( IncompleteRevisionException::class );
+		$revStore->failOnNull( null, 'value' );
+	}
+
+	public function provideFailOnEmpty() {
+		yield 'null' => [ null ];
+		yield 'zero' => [ 0 ];
+		yield 'empty string' => [ '' ];
+	}
+
+	/**
+	 * @covers \MediaWiki\Revision\RevisionStore::failOnEmpty
+	 * @dataProvider provideFailOnEmpty
+	 */
+	public function testFailOnEmpty( $emptyValue ) {
+		$revStore = TestingAccessWrapper::newFromObject( $this->getRevisionStore() );
+		$this->expectException( IncompleteRevisionException::class );
+		$revStore->failOnEmpty( $emptyValue, 'value' );
+	}
+
+	/**
+	 * @covers \MediaWiki\Revision\RevisionStore::failOnEmpty
+	 */
+	public function testFailOnEmpty_pass() {
+		$revStore = TestingAccessWrapper::newFromObject( $this->getRevisionStore() );
+		$this->assertSame( 123, $revStore->failOnEmpty( 123, 'value' ) );
+	}
+
+	public function provideCheckContent() {
+		yield 'unsupported format' => [
+			false,
+			false,
+			'Can\'t use format text/x-wiki with content model wikitext on [0:Example] role main'
+		];
+		yield 'invalid content' => [
+			true,
+			false,
+			'New content for [0:Example] role main is not valid! Content model is wikitext'
+		];
+		yield 'valid content' => [ true, true, null ];
+	}
+
+	/**
+	 * @covers \MediaWiki\Revision\RevisionStore::checkContent
+	 * @dataProvider provideCheckContent
+	 */
+	public function testCheckContent( bool $isSupported, bool $isValid, ?string $error ) {
+		$revStore = TestingAccessWrapper::newFromObject( $this->getRevisionStore() );
+		$contentHandler = $this->createMock( WikitextContentHandler::class );
+		$contentHandler->method( 'isSupportedFormat' )->willReturn( $isSupported );
+		$content = $this->createMock( WikitextContent::class );
+		$content->method( 'getModel' )->willReturn( CONTENT_MODEL_WIKITEXT );
+		$content->method( 'getDefaultFormat' )->willReturn( CONTENT_FORMAT_WIKITEXT );
+		$content->method( 'getContentHandler' )->willReturn( $contentHandler );
+		$content->method( 'isValid' )->willReturn( $isValid );
+
+		if ( $error !== null ) {
+			$this->expectException( MWException::class );
+			$this->expectExceptionMessage( $error );
+		}
+		$revStore->checkContent(
+			$content,
+			new PageIdentityValue( 0, NS_MAIN, 'Example', PageIdentityValue::LOCAL ),
+			'main'
+		);
+		// Avoid issues with no assertions for the non-exception case
+		$this->addToAssertionCount( 1 );
+	}
 }

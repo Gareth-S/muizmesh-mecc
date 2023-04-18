@@ -1,7 +1,9 @@
 <?php
 
+use MediaWiki\Content\Renderer\ContentRenderer;
+use MediaWiki\Deferred\LinksUpdate\LinksDeletionUpdate;
 use MediaWiki\Edit\PreparedEdit;
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
 use MediaWiki\Page\PageIdentity;
 use MediaWiki\Page\PageIdentityValue;
 use MediaWiki\Permissions\Authority;
@@ -9,7 +11,9 @@ use MediaWiki\Revision\MutableRevisionRecord;
 use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\Revision\SlotRecord;
 use MediaWiki\Storage\RevisionSlotsUpdate;
+use MediaWiki\Tests\Unit\DummyServicesTrait;
 use MediaWiki\Tests\Unit\Permissions\MockAuthorityTrait;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\MockObject\MockObject;
 use Wikimedia\TestingAccessWrapper;
 
@@ -18,11 +22,13 @@ use Wikimedia\TestingAccessWrapper;
  * @group Database
  */
 class WikiPageDbTest extends MediaWikiLangTestCase {
+	use DummyServicesTrait;
 	use MockAuthorityTrait;
 
+	/** @var WikiPage[] */
 	private $pagesToDelete;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->pagesToDelete = [];
@@ -57,19 +63,13 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		);
 	}
 
-	protected function tearDown() : void {
-		$user = $this->getTestSysop()->getUser();
+	protected function tearDown(): void {
 		foreach ( $this->pagesToDelete as $p ) {
-			/** @var WikiPage $p */
-
-			try {
-				if ( $p->canExist() && $p->exists() ) {
-					$p->doDeleteArticleReal( "testing done.", $user );
-				}
-			} catch ( MWException $ex ) {
-				// fail silently
+			if ( $p->exists() ) {
+				$this->deletePage( $p, "testing done." );
 			}
 		}
+		ParserOptions::clearStaticCache();
 		parent::tearDown();
 	}
 
@@ -144,22 +144,13 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 	 */
 	public function testConstructionWithPageThatCannotExist( $ns, $text ) {
 		$title = Title::makeTitle( $ns, $text );
-
-		// NOTE: once WikiPage becomes a ProperPageIdentity, the constructor should throw!
-		$this->filterDeprecated( '/WikiPage constructed on a Title that cannot exist as a page/' );
-		$this->filterDeprecated( '/Accessing WikiPage that cannot exist as a page/' );
-		$page = new WikiPage( $title );
-
-		$this->assertFalse( $page->canExist() );
-		$this->assertFalse( $page->exists() );
-		$this->assertNull( $page->getRevisionRecord() );
-
-		$this->expectException( RuntimeException::class );
-		$page->getId();
+		$this->expectException( InvalidArgumentException::class );
+		new WikiPage( $title );
 	}
 
 	/**
 	 * @covers WikiPage::prepareContentForEdit
+	 * @covers WikiPage::getCurrentUpdate
 	 */
 	public function testPrepareContentForEdit() {
 		$performer = $this->mockUserAuthorityWithPermissions(
@@ -204,16 +195,26 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		$this->assertSame( $edit->popts, $edit->popts, "popts field" );
 		$this->assertSame( null, $edit->revid, "revid field" );
 
+		// PreparedUpdate matches PreparedEdit
+		$update = $page->getCurrentUpdate();
+		$this->assertSame( $edit->output, $update->getCanonicalParserOutput() );
+
 		// Re-using the prepared info if possible
 		$sameEdit = $page->prepareContentForEdit( $content, null, $performer->getUser(), null, false );
 		$this->assertPreparedEditEquals( $edit, $sameEdit, 'equivalent PreparedEdit' );
 		$this->assertSame( $edit->pstContent, $sameEdit->pstContent, 're-use output' );
 		$this->assertSame( $edit->output, $sameEdit->output, 're-use output' );
 
+		// re-using the same PreparedUpdate
+		$this->assertSame( $update, $page->getCurrentUpdate() );
+
 		// Not re-using the same PreparedEdit if not possible
 		$edit2 = $page->prepareContentForEdit( $content2, null, $performer->getUser(), null, false );
 		$this->assertPreparedEditNotEquals( $edit, $edit2 );
 		$this->assertStringContainsString( 'At vero eos', $edit2->pstContent->serialize(), "content" );
+
+		// Not re-using the same PreparedUpdate
+		$this->assertNotSame( $update, $page->getCurrentUpdate() );
 
 		// Check pre-safe transform
 		$this->assertStringContainsString( '[[gubergren]]', $edit2->pstContent->serialize() );
@@ -223,54 +224,6 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		$this->assertPreparedEditNotEquals( $edit2, $edit3 );
 
 		// TODO: test with passing revision, then same without revision.
-	}
-
-	/**
-	 * @covers WikiPage::doEditUpdates
-	 */
-	public function testDoEditUpdates_revision() {
-		$this->hideDeprecated( 'WikiPage::doEditUpdates with a Revision object' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
-		$this->hideDeprecated( 'MediaWiki\Revision\RevisionStore::newMutableRevisionFromArray' );
-
-		$user = $this->getTestUser()->getUserIdentity();
-		// NOTE: if site stats get out of whack and drop below 0,
-		// that causes a DB error during tear-down. So bump the
-		// numbers high enough to not drop below 0.
-		$siteStatsUpdate = SiteStatsUpdate::factory(
-			[ 'edits' => 1000, 'articles' => 1000, 'pages' => 1000 ]
-		);
-		$siteStatsUpdate->doUpdate();
-
-		$page = $this->createPage( __METHOD__, __METHOD__ );
-
-		$revision = new Revision(
-			[
-				'id' => 9989,
-				'page' => $page->getId(),
-				'title' => $page->getTitle(),
-				'comment' => __METHOD__,
-				'minor_edit' => true,
-				'text' => __METHOD__ . ' [[|foo]][[bar]]', // PST turns [[|foo]] into [[foo]]
-				'user' => $user->getId(),
-				'user_text' => $user->getName(),
-				'timestamp' => '20170707040404',
-				'content_model' => CONTENT_MODEL_WIKITEXT,
-				'content_format' => CONTENT_FORMAT_WIKITEXT,
-			]
-		);
-
-		$page->doEditUpdates( $revision, $user );
-
-		// TODO: test various options; needs temporary hooks
-
-		$dbr = wfGetDB( DB_REPLICA );
-		$res = $dbr->select( 'pagelinks', '*', [ 'pl_from' => $page->getId() ] );
-		$n = $res->numRows();
-		$res->free();
-
-		$this->assertSame( 1, $n, 'pagelinks should contain only one link if PST was not applied' );
 	}
 
 	/**
@@ -317,97 +270,11 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 	}
 
 	/**
-	 * @covers WikiPage::doEditContent
-	 * @covers WikiPage::doUserEditContent
-	 */
-	public function testDoEditContent() {
-		$this->hideDeprecated( 'Revision::getRecentChange' );
-		$this->hideDeprecated( 'Revision::getSha1' );
-		$this->hideDeprecated( 'Revision::getContent' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getId' );
-		$this->hideDeprecated( 'Revision::getTimestamp' );
-		$this->hideDeprecated( 'WikiPage::getRevision' );
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doCreate status get 'revision'" );
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doModify status get 'revision'" );
-
-		global $wgUser;
-
-		// NOTE: Test that Editing also works with a fragment title!
-		$page = $this->newPage( __METHOD__ . '#Fragment' );
-		$title = $page->getTitle();
-
-		$content = ContentHandler::makeContent(
-			"[[Lorem ipsum]] dolor sit amet, consetetur sadipscing elitr, sed diam "
-			. " nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat.",
-			$title,
-			CONTENT_MODEL_WIKITEXT
-		);
-
-		$status = $page->doEditContent( $content, "[[testing]] 1", EDIT_NEW );
-
-		$this->assertTrue( $status->isOK(), 'OK' );
-		$this->assertTrue( $status->value['new'], 'new' );
-		$this->assertNotNull( $status->value['revision'], 'revision' );
-		$this->assertSame( $status->value['revision']->getId(), $page->getRevision()->getId() );
-		$this->assertSame( $status->value['revision']->getSha1(), $page->getRevision()->getSha1() );
-		$this->assertTrue( $status->value['revision']->getContent()->equals( $content ), 'equals' );
-
-		$this->assertSame( $status->value['revision']->getId(), $page->getLatest() );
-		$this->assertSame( $status->value['revision']->getTimestamp(), $page->getTimestamp() );
-		$this->assertSame( $status->value['revision']->getTimestamp(), $page->getTouched() );
-
-		$content = ContentHandler::makeContent(
-			"At vero eos et accusam et justo duo [[dolores]] et ea rebum. "
-			. "Stet clita kasd [[gubergren]], no sea takimata sanctus est. ~~~~",
-			$title,
-			CONTENT_MODEL_WIKITEXT
-		);
-
-		$status = $page->doEditContent( $content, "testing 2", EDIT_UPDATE );
-		$this->assertTrue( $status->isOK(), 'OK' );
-		$this->assertFalse( $status->value['new'], 'new' );
-		$this->assertNotNull( $status->value['revision'], 'revision' );
-		$this->assertSame( $status->value['revision']->getId(), $page->getRevision()->getId() );
-		$this->assertSame( $status->value['revision']->getSha1(), $page->getRevision()->getSha1() );
-		$this->assertFalse(
-			$status->value['revision']->getContent()->equals( $content ),
-			'not equals (PST must substitute signature)'
-		);
-
-		$rev = $page->getRevision();
-		$this->assertNotNull( $rev->getRecentChange() );
-		$this->assertSame( $rev->getId(), (int)$rev->getRecentChange()->getAttribute( 'rc_this_oldid' ) );
-
-		# ------------------------
-		$page = new WikiPage( $title );
-
-		$retrieved = $page->getContent();
-		$newText = $retrieved->serialize();
-		$this->assertStringContainsString( '[[gubergren]]', $newText, 'New text must replace old text.' );
-		$this->assertStringNotContainsString( '[[Lorem ipsum]]', $newText, 'New text must replace old text.' );
-		$this->assertStringNotContainsString( '~~~~', $newText, 'PST must substitute signature.' );
-		$this->assertStringContainsString( $wgUser->getName(), $newText,
-			'Must fall back to $wgUser when no user has been specified.' );
-	}
-
-	/**
 	 * @covers WikiPage::doUserEditContent
 	 * @covers WikiPage::prepareContentForEdit
 	 */
 	public function testDoUserEditContent() {
-		$this->hideDeprecated( 'Revision::getRecentChange' );
-		$this->hideDeprecated( 'Revision::getSha1' );
-		$this->hideDeprecated( 'Revision::getContent' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getId' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
-		$this->hideDeprecated( 'WikiPage::getRevision' );
-		$this->hideDeprecated( 'WikiPage::prepareContentForEdit with a Revision object' );
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doCreate status get 'revision'" );
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doModify status get 'revision'" );
-
-		$this->setMwGlobals( 'wgPageCreationLog', true );
+		$this->overrideConfigValue( MainConfigNames::PageCreationLog, true );
 
 		$page = $this->newPage( __METHOD__ );
 		$title = $page->getTitle();
@@ -427,18 +294,26 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 
 		$status = $page->doUserEditContent( $content, $user1, "[[testing]] 1", EDIT_NEW );
 
-		$this->assertTrue( $status->isOK(), 'OK' );
+		$this->assertStatusOK( $status, 'OK' );
 		$this->assertTrue( $status->value['new'], 'new' );
-		$this->assertNotNull( $status->value['revision'], 'revision' );
-		$this->assertSame( $status->value['revision']->getId(), $page->getRevision()->getId() );
-		$this->assertSame( $status->value['revision']->getSha1(), $page->getRevision()->getSha1() );
-		$this->assertTrue( $status->value['revision']->getContent()->equals( $content ), 'equals' );
+		$this->assertNotNull( $status->value['revision-record'], 'revision-record' );
 
-		$rev = $page->getRevision();
-		$preparedEditAfter = $page->prepareContentForEdit( $content, $rev, $user1 );
+		$statusRevRecord = $status->value['revision-record'];
+		$this->assertSame( $statusRevRecord->getId(), $page->getRevisionRecord()->getId() );
+		$this->assertSame( $statusRevRecord->getSha1(), $page->getRevisionRecord()->getSha1() );
+		$this->assertTrue(
+			$statusRevRecord->getContent( SlotRecord::MAIN )->equals( $content ),
+			'equals'
+		);
 
-		$this->assertNotNull( $rev->getRecentChange() );
-		$this->assertSame( $rev->getId(), (int)$rev->getRecentChange()->getAttribute( 'rc_this_oldid' ) );
+		$revRecord = $page->getRevisionRecord();
+		$recentChange = $this->getServiceContainer()
+			->getRevisionStore()
+			->getRecentChange( $revRecord );
+		$preparedEditAfter = $page->prepareContentForEdit( $content, $revRecord, $user1 );
+
+		$this->assertNotNull( $recentChange );
+		$this->assertSame( $revRecord->getId(), (int)$recentChange->getAttribute( 'rc_this_oldid' ) );
 
 		// make sure that cached ParserOutput gets re-used throughout
 		$this->assertSame( $preparedEditBefore->output, $preparedEditAfter->output );
@@ -477,11 +352,14 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 
 		// try null edit, with a different user
 		$status = $page->doUserEditContent( $content, $user2, 'This changes nothing', EDIT_UPDATE, false );
-		$this->assertTrue( $status->isOK(), 'OK' );
+		$this->assertStatusOK( $status, 'OK' );
 		$this->assertFalse( $status->value['new'], 'new' );
-		$this->assertNull( $status->value['revision'], 'revision' );
-		$this->assertNotNull( $page->getRevision() );
-		$this->assertTrue( $page->getRevision()->getContent()->equals( $content ), 'equals' );
+		$this->assertNull( $status->value['revision-record'], 'revision-record' );
+		$this->assertNotNull( $page->getRevisionRecord() );
+		$this->assertTrue(
+			$page->getRevisionRecord()->getContent( SlotRecord::MAIN )->equals( $content ),
+			'equals'
+		);
 
 		# ------------------------
 		$content = ContentHandler::makeContent(
@@ -492,19 +370,23 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		);
 
 		$status = $page->doUserEditContent( $content, $user1, "testing 2", EDIT_UPDATE );
-		$this->assertTrue( $status->isOK(), 'OK' );
+		$this->assertStatusOK( $status, 'OK' );
 		$this->assertFalse( $status->value['new'], 'new' );
-		$this->assertNotNull( $status->value['revision'], 'revision' );
-		$this->assertSame( $status->value['revision']->getId(), $page->getRevision()->getId() );
-		$this->assertSame( $status->value['revision']->getSha1(), $page->getRevision()->getSha1() );
+		$this->assertNotNull( $status->value['revision-record'], 'revision-record' );
+		$statusRevRecord = $status->value['revision-record'];
+		$this->assertSame( $statusRevRecord->getId(), $page->getRevisionRecord()->getId() );
+		$this->assertSame( $statusRevRecord->getSha1(), $page->getRevisionRecord()->getSha1() );
 		$this->assertFalse(
-			$status->value['revision']->getContent()->equals( $content ),
+			$statusRevRecord->getContent( SlotRecord::MAIN )->equals( $content ),
 			'not equals (PST must substitute signature)'
 		);
 
-		$rev = $page->getRevision();
-		$this->assertNotNull( $rev->getRecentChange() );
-		$this->assertSame( $rev->getId(), (int)$rev->getRecentChange()->getAttribute( 'rc_this_oldid' ) );
+		$revRecord = $page->getRevisionRecord();
+		$recentChange = $this->getServiceContainer()
+			->getRevisionStore()
+			->getRecentChange( $revRecord );
+		$this->assertNotNull( $recentChange );
+		$this->assertSame( $revRecord->getId(), (int)$recentChange->getAttribute( 'rc_this_oldid' ) );
 
 		# ------------------------
 		$page = new WikiPage( $title );
@@ -570,9 +452,6 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 	 * @covers WikiPage::doUserEditContent
 	 */
 	public function testDoUserEditContent_twice() {
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doCreate status exists 'revision'" );
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doModify status exists 'revision'" );
-
 		$title = Title::newFromText( __METHOD__ );
 		$page = WikiPage::factory( $title );
 		$content = ContentHandler::makeContent( '$1 van $2', $title );
@@ -584,11 +463,11 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		$status1 = $page->doUserEditContent( $content, $user, __METHOD__ );
 		$status2 = $page->doUserEditContent( $content, $user, __METHOD__ );
 
-		$this->assertTrue( $status1->isOK(), 'OK' );
-		$this->assertTrue( $status2->isOK(), 'OK' );
+		$this->assertStatusOK( $status1, 'OK' );
+		$this->assertStatusOK( $status2, 'OK' );
 
-		$this->assertTrue( isset( $status1->value['revision'] ), 'OK' );
-		$this->assertFalse( isset( $status2->value['revision'] ), 'OK' );
+		$this->assertTrue( isset( $status1->value['revision-record'] ), 'OK' );
+		$this->assertFalse( isset( $status2->value['revision-record'] ), 'OK' );
 	}
 
 	/**
@@ -604,9 +483,10 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 			CONTENT_MODEL_WIKITEXT
 		);
 		$id = $page->getId();
-		$user = $this->getTestSysop()->getUserIdentity();
+		$user = $this->getTestSysop()->getUser();
 
-		$page->doDeleteArticleReal( "testing deletion", $user );
+		$reason = "testing deletion";
+		$status = $page->doDeleteArticleReal( $reason, $user );
 
 		$this->assertFalse(
 			$page->getTitle()->getArticleID() > 0,
@@ -629,10 +509,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		);
 
 		// Run the job queue
-		JobQueueGroup::destroySingletons();
-		$jobs = new RunJobs;
-		$jobs->loadParamsAndArgs( null, [ 'quiet' => true ], null );
-		$jobs->execute();
+		$this->runJobs();
 
 		# ------------------------
 		$dbr = wfGetDB( DB_REPLICA );
@@ -641,41 +518,17 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		$res->free();
 
 		$this->assertSame( 0, $n, 'pagelinks should contain no more links from the page' );
-	}
 
-	/**
-	 * @covers WikiPage::doDeleteArticleReal
-	 */
-	public function testDoDeleteArticleReal_user0() {
-		$page = $this->createPage(
-			__METHOD__,
-			"[[original text]] foo",
-			CONTENT_MODEL_WIKITEXT
-		);
-		$id = $page->getId();
-
-		$deleter = $this->getTestSysop()->getUser();
-
-		$errorStack = '';
-		$status = $page->doDeleteArticleReal(
-			/* reason */ "testing user 0 deletion",
-			/* deleter */ $deleter,
-			/* suppress */ false,
-			/* unused 1 */ null,
-			/* errorStack */ $errorStack,
-			/* unused 2 */ null
-		);
+		// Test deletion logging
 		$logId = $status->getValue();
-		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
-		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
+		$commentQuery = $this->getServiceContainer()->getCommentStore()->getJoin( 'log_comment' );
 		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'], /* table */
+			[ 'logging' ] + $commentQuery['tables'], /* table */
 			[
 				'log_type',
 				'log_action',
 				'log_comment' => $commentQuery['fields']['log_comment_text'],
-				'log_user' => $actorQuery['fields']['log_user'],
-				'log_user_text' => $actorQuery['fields']['log_user_text'],
+				'log_actor',
 				'log_namespace',
 				'log_title',
 			],
@@ -683,63 +536,13 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 			[ [
 				'delete',
 				'delete',
-				'testing user 0 deletion',
-				$deleter->getId(),
-				$deleter->getName(),
+				$reason,
+				(string)$user->getActorId(),
 				(string)$page->getTitle()->getNamespace(),
 				$page->getTitle()->getDBkey(),
 			] ],
 			[],
-			$actorQuery['joins'] + $commentQuery['joins']
-		);
-	}
-
-	/**
-	 * @covers WikiPage::doDeleteArticleReal
-	 */
-	public function testDoDeleteArticleReal_userSysop() {
-		$page = $this->createPage(
-			__METHOD__,
-			"[[original text]] foo",
-			CONTENT_MODEL_WIKITEXT
-		);
-		$id = $page->getId();
-
-		$user = $this->getTestSysop()->getUser();
-		$errorStack = '';
-		$status = $page->doDeleteArticleReal(
-			/* reason */ "testing sysop deletion",
-			$user,
-			/* suppress */ false,
-			/* unused 1 */ null,
-			/* errorStack */ $errorStack
-		);
-		$logId = $status->getValue();
-		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
-		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
-		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'], /* table */
-			[
-				'log_type',
-				'log_action',
-				'log_comment' => $commentQuery['fields']['log_comment_text'],
-				'log_user' => $actorQuery['fields']['log_user'],
-				'log_user_text' => $actorQuery['fields']['log_user_text'],
-				'log_namespace',
-				'log_title',
-			],
-			[ 'log_id' => $logId ],
-			[ [
-				'delete',
-				'delete',
-				'testing sysop deletion',
-				(string)$user->getId(),
-				$user->getName(),
-				(string)$page->getTitle()->getNamespace(),
-				$page->getTitle()->getDBkey(),
-			] ],
-			[],
-			$actorQuery['joins'] + $commentQuery['joins']
+			$commentQuery['joins']
 		);
 	}
 
@@ -754,28 +557,24 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 			"[[original text]] foo",
 			CONTENT_MODEL_WIKITEXT
 		);
-		$id = $page->getId();
 
 		$user = $this->getTestSysop()->getUser();
-		$errorStack = '';
 		$status = $page->doDeleteArticleReal(
 			/* reason */ "testing deletion",
 			$user,
-			/* suppress */ true,
-			/* unused 1 */ null,
-			/* errorStack */ $errorStack
+			/* suppress */ true
 		);
+
+		// Test suppression logging
 		$logId = $status->getValue();
-		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
-		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
+		$commentQuery = $this->getServiceContainer()->getCommentStore()->getJoin( 'log_comment' );
 		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'], /* table */
+			[ 'logging' ] + $commentQuery['tables'], /* table */
 			[
 				'log_type',
 				'log_action',
 				'log_comment' => $commentQuery['fields']['log_comment_text'],
-				'log_user' => $actorQuery['fields']['log_user'],
-				'log_user_text' => $actorQuery['fields']['log_user_text'],
+				'log_actor',
 				'log_namespace',
 				'log_title',
 			],
@@ -784,28 +583,39 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 				'suppress',
 				'delete',
 				'testing deletion',
-				(string)$user->getId(),
-				$user->getName(),
+				(string)$user->getActorId(),
 				(string)$page->getTitle()->getNamespace(),
 				$page->getTitle()->getDBkey(),
 			] ],
 			[],
-			$actorQuery['joins'] + $commentQuery['joins']
+			$commentQuery['joins']
+		);
+
+		$archive = new PageArchive( $page->getTitle(), $this->getServiceContainer()->getMainConfig() );
+		$archivedRevs = $archive->listRevisions();
+		if ( !$archivedRevs || $archivedRevs->numRows() !== 1 ) {
+			$this->fail( 'Unexpected number of archived revisions' );
+		}
+		$archivedRev = $this->getServiceContainer()->getRevisionStore()
+			->newRevisionFromArchiveRow( $archivedRevs->current() );
+
+		$this->assertNull(
+			$archivedRev->getContent( SlotRecord::MAIN, RevisionRecord::FOR_PUBLIC ),
+			"Archived content should be null after the page was suppressed for general users"
 		);
 
 		$this->assertNull(
-			$page->getContent( RevisionRecord::FOR_PUBLIC ),
-			"WikiPage::getContent should return null after the page was suppressed for general users"
+			$archivedRev->getContent(
+				SlotRecord::MAIN,
+				RevisionRecord::FOR_THIS_USER,
+				$this->getTestUser()->getUser()
+			),
+			"Archived content should be null after the page was suppressed for individual users"
 		);
 
 		$this->assertNull(
-			$page->getContent( RevisionRecord::FOR_THIS_USER, $this->getTestUser()->getUser() ),
-			"WikiPage::getContent should return null after the page was suppressed for individual users"
-		);
-
-		$this->assertNull(
-			$page->getContent( RevisionRecord::FOR_THIS_USER, $user ),
-			"WikiPage::getContent should return null after the page was suppressed even for a sysop"
+			$archivedRev->getContent( SlotRecord::MAIN, RevisionRecord::FOR_THIS_USER, $user ),
+			"Archived content should be null after the page was suppressed even for a sysop"
 		);
 	}
 
@@ -813,6 +623,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 	 * @covers WikiPage::doDeleteUpdates
 	 */
 	public function testDoDeleteUpdates() {
+		$this->hideDeprecated( 'WikiPage::doDeleteUpdates' );
 		$user = $this->getTestUser()->getUserIdentity();
 		$page = $this->createPage(
 			__METHOD__,
@@ -823,7 +634,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		$page->loadPageData(); // make sure the current revision is cached.
 
 		// Similar to MovePage logic
-		wfGetDB( DB_MASTER )->delete( 'page', [ 'page_id' => $id ], __METHOD__ );
+		wfGetDB( DB_PRIMARY )->delete( 'page', [ 'page_id' => $id ], __METHOD__ );
 		$page->doDeleteUpdates(
 			$page->getId(),
 			$page->getContent(),
@@ -832,10 +643,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		);
 
 		// Run the job queue
-		JobQueueGroup::destroySingletons();
-		$jobs = new RunJobs;
-		$jobs->loadParamsAndArgs( null, [ 'quiet' => true ], null );
-		$jobs->execute();
+		$this->runJobs();
 
 		# ------------------------
 		$dbr = wfGetDB( DB_REPLICA );
@@ -855,16 +663,14 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		/** @var ContentHandler|MockObject $handler */
 		$handler = $this->getMockBuilder( TextContentHandler::class )
 			->setConstructorArgs( [ $name ] )
-			->setMethods(
+			->onlyMethods(
 				[ 'getSecondaryDataUpdates', 'getDeletionUpdates', 'unserializeContent' ]
 			)
 			->getMock();
 
-		$dataUpdate = new MWCallableUpdate( 'time' );
-		$dataUpdate->_name = "$name data update";
+		$dataUpdate = new MWCallableUpdate( 'time', "$name data update" );
 
-		$deletionUpdate = new MWCallableUpdate( 'time' );
-		$deletionUpdate->_name = "$name deletion update";
+		$deletionUpdate = new MWCallableUpdate( 'time', "$name deletion update" );
 
 		$handler->method( 'getSecondaryDataUpdates' )->willReturn( [ $dataUpdate ] );
 		$handler->method( 'getDeletionUpdates' )->willReturn( [ $deletionUpdate ] );
@@ -895,7 +701,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		/** @var Content|MockObject $content */
 		$content = $this->getMockBuilder( TextContent::class )
 			->setConstructorArgs( [ $text ] )
-			->setMethods( [ 'getModel', 'getContentHandler' ] )
+			->onlyMethods( [ 'getModel', 'getContentHandler' ] )
 			->getMock();
 
 		$content->method( 'getModel' )->willReturn( $handler->getModelID() );
@@ -905,6 +711,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 	}
 
 	public function testGetDeletionUpdates() {
+		$this->hideDeprecated( 'WikiPage::getDeletionUpdates' );
 		$m1 = $this->defineMockContentModelForUpdateTesting( 'M1' );
 
 		$mainContent1 = $this->createMockContent( $m1, 'main 1' );
@@ -919,34 +726,11 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		$this->assertNotEmpty( $dataUpdates );
 
 		$updateNames = array_map( static function ( $du ) {
-			return $du->_name ?? get_class( $du );
+			return $du instanceof MWCallableUpdate ? $du->getOrigin() : get_class( $du );
 		}, $dataUpdates );
 
 		$this->assertContains( LinksDeletionUpdate::class, $updateNames );
 		$this->assertContains( 'M1 deletion update', $updateNames );
-	}
-
-	/**
-	 * @covers WikiPage::getRevision
-	 */
-	public function testGetRevision() {
-		$this->hideDeprecated( 'Revision::getContent' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getId' );
-		$this->hideDeprecated( 'WikiPage::getRevision' );
-
-		$page = $this->newPage( __METHOD__ );
-
-		$rev = $page->getRevision();
-		$this->assertNull( $rev );
-
-		# -----------------
-		$this->createPage( $page, "some text", CONTENT_MODEL_WIKITEXT );
-
-		$rev = $page->getRevision();
-
-		$this->assertEquals( $page->getLatest(), $rev->getId() );
-		$this->assertEquals( "some text", $rev->getContent()->getText() );
 	}
 
 	/**
@@ -980,7 +764,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		$this->assertTrue( $page->exists() );
 
 		# -----------------
-		$page->doDeleteArticleReal( "done testing", $this->getTestSysop()->getUser() );
+		$this->deletePage( $page, "done testing" );
 		$this->assertFalse( $page->exists() );
 
 		$page = new WikiPage( $page->getTitle() );
@@ -1033,9 +817,7 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 			[
 				'WikiPageTest_testGetRedirectTarget_4',
 				CONTENT_MODEL_WIKITEXT,
-				// phpcs:ignore Generic.Files.LineLength
 				'#REDIRECT [[Foobar#🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿]]',
-				// phpcs:ignore Generic.Files.LineLength
 				'Foobar#🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬...'
 			]
 		];
@@ -1044,20 +826,20 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 	/**
 	 * @dataProvider provideGetRedirectTarget
 	 * @covers WikiPage::getRedirectTarget
+	 * @covers \Mediawiki\Page\RedirectLookup::getRedirectTarget
 	 */
 	public function testGetRedirectTarget( $title, $model, $text, $target ) {
-		$this->setMwGlobals( [
-			'wgCapitalLinks' => true,
-		] );
+		$this->overrideConfigValue( MainConfigNames::CapitalLinks, true );
 
 		$page = $this->createPage( $title, $text, $model );
 
-		# sanity check, because this test seems to fail for no reason for some people.
+		# double check, because this test seems to fail for no reason for some people.
 		$c = $page->getContent();
 		$this->assertEquals( WikitextContent::class, get_class( $c ) );
 
 		# now, test the actual redirect
-		$t = $page->getRedirectTarget();
+		$redirectStore = $this->getServiceContainer()->getRedirectStore();
+		$t = $redirectStore->getRedirectTarget( $page );
 		$this->assertEquals( $target, $t ? $t->getFullText() : null );
 	}
 
@@ -1150,13 +932,17 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 	 * @covers WikiPage::isCountable
 	 */
 	public function testIsCountable( $title, $model, $text, $mode, $expected ) {
-		$this->setMwGlobals( 'wgArticleCountMethod', $mode );
+		$this->overrideConfigValue( MainConfigNames::ArticleCountMethod, $mode );
 
 		$title = Title::newFromText( $title );
 
 		$page = $this->createPage( $title, $text, $model );
 
-		$editInfo = $page->prepareContentForEdit( $page->getContent() );
+		$editInfo = $page->prepareContentForEdit(
+			$page->getContent(),
+			null,
+			$this->getTestUser()->getUser()
+		);
 
 		$v = $page->isCountable();
 		$w = $page->isCountable( $editInfo );
@@ -1178,12 +964,137 @@ class WikiPageDbTest extends MediaWikiLangTestCase {
 		);
 	}
 
+	/**
+	 * @dataProvider provideMakeParserOptions
+	 * @covers WikiPage::makeParserOptions
+	 */
+	public function testMakeParserOptions( int $ns, string $title, string $model, $context, callable $expectation ) {
+		// Ensure we're working with the default values during this test.
+		$this->overrideConfigValues( [
+			MainConfigNames::TextModelsToParse => [
+				CONTENT_MODEL_WIKITEXT,
+				CONTENT_MODEL_JAVASCRIPT,
+				CONTENT_MODEL_CSS,
+			],
+			MainConfigNames::DisableLangConversion => false,
+		] );
+		// Call the context function first, which lets us setup the
+		// overall wiki context before invoking the function-under-test
+		if ( is_callable( $context ) ) {
+			$context = $context( $this );
+		}
+		$page = $this->createPage(
+			Title::makeTitle( $ns, $title ), __METHOD__, $model
+		);
+		$parserOptions = $page->makeParserOptions( $context );
+		$expected = $expectation();
+		$this->assertTrue( $expected->matches( $parserOptions ) );
+	}
+
+	/**
+	 * @dataProvider provideMakeParserOptions
+	 * @covers WikiPage::makeParserOptionsFromTitleAndModel
+	 */
+	public function testMakeParserOptionsFromTitleAndModel( int $ns, string $title, string $model, $context, callable $expectation ) {
+		// Ensure we're working with the default values during this test.
+		$this->overrideConfigValues( [
+			MainConfigNames::TextModelsToParse => [
+				CONTENT_MODEL_WIKITEXT,
+				CONTENT_MODEL_JAVASCRIPT,
+				CONTENT_MODEL_CSS,
+			],
+			MainConfigNames::DisableLangConversion => false,
+		] );
+		// Call the context function first, which lets us setup the
+		// overall wiki context before invoking the function-under-test
+		if ( is_callable( $context ) ) {
+			$context = $context( $this );
+		}
+		$parserOptions = WikiPage::makeParserOptionsFromTitleAndModel(
+			Title::makeTitle( $ns, $title ), $model, $context
+		);
+		$expected = $expectation();
+		$this->assertTrue( $expected->matches( $parserOptions ) );
+	}
+
+	public function provideMakeParserOptions() {
+		// Default canonical parser options for a normal wikitext page
+		yield [
+			NS_MAIN, 'Main Page', CONTENT_MODEL_WIKITEXT, 'canonical',
+			static function () {
+				return ParserOptions::newFromAnon();
+			},
+		];
+		// JavaScript should have Table Of Contents suppressed
+		yield [
+			NS_MAIN, 'JavaScript Test', CONTENT_MODEL_JAVASCRIPT, 'canonical',
+			static function () {
+				$po = ParserOptions::newFromAnon();
+				$po->setSuppressTOC();
+				return $po;
+			},
+		];
+		// CSS should have Table Of Contents suppressed
+		yield [
+			NS_MAIN, 'CSS Test', CONTENT_MODEL_CSS, 'canonical',
+			static function () {
+				$po = ParserOptions::newFromAnon();
+				$po->setSuppressTOC();
+				return $po;
+			},
+		];
+		// Language Conversion tables have content conversion disabled
+		yield [
+			NS_MEDIAWIKI, 'Conversiontable/Test', CONTENT_MODEL_WIKITEXT,
+			static function ( $test ) {
+				// Switch wiki to a language where LanguageConverter is enabled
+				$test->setContentLang( 'zh' );
+				$test->setUserLang( 'en' );
+				return 'canonical';
+			},
+			static function () {
+				$po = ParserOptions::newFromAnon();
+				$po->disableContentConversion();
+				// "Canonical" PO should use content language not user language
+				Assert::assertSame( 'zh', $po->getUserLang() );
+				return $po;
+			},
+		];
+		// Test "non-canonical" options: parser option should use user
+		// language here, not content language
+		$user = null;
+		yield [
+			NS_MAIN, 'Main Page', CONTENT_MODEL_WIKITEXT,
+			static function ( $test ) use ( &$user ) {
+				$test->setContentLang( 'qqx' );
+				$test->setUserLang( 'fr' );
+				$user = $test->getTestUser()->getUser();
+				return $user;
+			},
+			static function () use ( &$user ) {
+				$po = ParserOptions::newFromUser( $user );
+				Assert::assertSame( 'fr', $po->getUserLang() );
+				return $po;
+			},
+		];
+	}
+
 	public function provideGetParserOutput() {
 		return [
 			[
 				CONTENT_MODEL_WIKITEXT,
 				"hello ''world''\n",
 				"<div class=\"mw-parser-output\"><p>hello <i>world</i></p></div>"
+			],
+			[
+				CONTENT_MODEL_JAVASCRIPT,
+				"var test='<h2>not really a heading</h2>';",
+				"<pre class=\"mw-code mw-js\" dir=\"ltr\">\nvar test='&lt;h2>not really a heading&lt;/h2>';\n</pre>",
+			],
+			[
+				CONTENT_MODEL_CSS,
+				"/* Not ''wikitext'' */",
+				"<pre class=\"mw-code mw-css\" dir=\"ltr\">\n/* Not ''wikitext'' */\n</pre>",
 			],
 			// @todo more...?
 		];
@@ -1327,280 +1238,6 @@ more stuff
 		$this->assertEquals( $expected, $c ? trim( $c->getText() ) : null );
 	}
 
-	/**
-	 * @covers WikiPage::getOldestRevision
-	 */
-	public function testGetOldestRevision() {
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getId' );
-		$this->hideDeprecated( 'WikiPage::getOldestRevision' );
-		$this->hideDeprecated( 'WikiPage::getRevision' );
-
-		$user = $this->getTestUser()->getUser();
-
-		$page = $this->newPage( __METHOD__ );
-		$page->doUserEditContent(
-			new WikitextContent( 'one' ),
-			$user,
-			"first edit",
-			EDIT_NEW
-		);
-		$rev1 = $page->getRevision();
-
-		$page = new WikiPage( $page->getTitle() );
-		$page->doUserEditContent(
-			new WikitextContent( 'two' ),
-			$user,
-			"second edit",
-			EDIT_UPDATE
-		);
-
-		$page = new WikiPage( $page->getTitle() );
-		$page->doUserEditContent(
-			new WikitextContent( 'three' ),
-			$user,
-			"third edit",
-			EDIT_UPDATE
-		);
-
-		// sanity check
-		$this->assertNotEquals(
-			$rev1->getId(),
-			$page->getRevision()->getId(),
-			'$page->getRevision()->getId()'
-		);
-
-		// actual test
-		$this->assertEquals(
-			$rev1->getId(),
-			$page->getOldestRevision()->getId(),
-			'$page->getOldestRevision()->getId()'
-		);
-	}
-
-	/**
-	 * @covers WikiPage::doRollback
-	 * @covers WikiPage::commitRollback
-	 */
-	public function testDoRollback() {
-		$this->hideDeprecated( 'Revision::countByPageId' );
-		$this->hideDeprecated( 'Revision::getUserText' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doCreate status get 'revision'" );
-		$this->hideDeprecated( "MediaWiki\Storage\PageUpdater::doModify status get 'revision'" );
-
-		$admin = $this->getTestSysop()->getUser();
-		$user1 = $this->getTestUser()->getUser();
-		// Use the confirmed group for user2 to make sure the user is different
-		$user2 = $this->getTestUser( [ 'confirmed' ] )->getUser();
-
-		// make sure we can test autopatrolling
-		$this->setMwGlobals( 'wgUseRCPatrol', true );
-
-		// TODO: MCR: test rollback of multiple slots!
-		$page = $this->newPage( __METHOD__ );
-
-		// Make some edits
-		$text = "one";
-		$status1 = $page->doUserEditContent( ContentHandler::makeContent( $text, $page->getTitle() ),
-			$admin, "section one", EDIT_NEW );
-
-		$text .= "\n\ntwo";
-		$status2 = $page->doUserEditContent( ContentHandler::makeContent( $text, $page->getTitle() ),
-			$user1, "adding section two" );
-
-		$text .= "\n\nthree";
-		$status3 = $page->doUserEditContent( ContentHandler::makeContent( $text, $page->getTitle() ),
-			$user2, "adding section three" );
-
-		/** @var Revision $rev1 */
-		/** @var Revision $rev2 */
-		/** @var Revision $rev3 */
-		$rev1 = $status1->getValue()['revision'];
-		$rev2 = $status2->getValue()['revision'];
-		$rev3 = $status3->getValue()['revision'];
-
-		/**
-		 * We are having issues with doRollback spuriously failing. Apparently
-		 * the last revision somehow goes missing or not committed under some
-		 * circumstances. So, make sure the revisions have the correct usernames.
-		 */
-		$this->assertEquals( 3, Revision::countByPageId( wfGetDB( DB_REPLICA ), $page->getId() ) );
-		$this->assertEquals( $admin->getName(), $rev1->getUserText() );
-		$this->assertEquals( $user1->getName(), $rev2->getUserText() );
-		$this->assertEquals( $user2->getName(), $rev3->getUserText() );
-
-		// Now, try the actual rollback
-		$token = $admin->getEditToken( 'rollback' );
-		$rollbackErrors = $page->doRollback(
-			$user2->getName(),
-			"testing rollback",
-			$token,
-			false,
-			$resultDetails,
-			$admin
-		);
-
-		if ( $rollbackErrors ) {
-			$this->fail(
-				"Rollback failed:\n" .
-				print_r( $rollbackErrors, true ) . ";\n" .
-				print_r( $resultDetails, true )
-			);
-		}
-
-		$page = new WikiPage( $page->getTitle() );
-		$this->assertEquals(
-			$rev2->getRevisionRecord()->getSha1(),
-			$page->getRevisionRecord()->getSha1(),
-			"rollback did not revert to the correct revision" );
-		$this->assertEquals( "one\n\ntwo", $page->getContent()->getText() );
-
-		$rc = MediaWikiServices::getInstance()->getRevisionStore()->getRecentChange(
-			$page->getRevisionRecord()
-		);
-
-		$this->assertNotNull( $rc, 'RecentChanges entry' );
-		$this->assertEquals(
-			RecentChange::PRC_AUTOPATROLLED,
-			$rc->getAttribute( 'rc_patrolled' ),
-			'rc_patrolled'
-		);
-
-		// TODO: MCR: assert origin once we write slot data
-		// $mainSlot = $page->getRevision()->getRevisionRecord()->getSlot( SlotRecord::MAIN );
-		// $this->assertTrue( $mainSlot->isInherited(), 'isInherited' );
-		// $this->assertSame( $rev2->getId(), $mainSlot->getOrigin(), 'getOrigin' );
-	}
-
-	/**
-	 * @covers WikiPage::doRollback
-	 * @covers WikiPage::commitRollback
-	 */
-	public function testDoRollbackFailureSameContent() {
-		$this->hideDeprecated( 'Revision::getSha1' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'WikiPage::getRevision' );
-
-		$admin = $this->getTestSysop()->getUser();
-
-		$text = "one";
-		$page = $this->newPage( __METHOD__ );
-		$page->doUserEditContent(
-			ContentHandler::makeContent( $text, $page->getTitle(), CONTENT_MODEL_WIKITEXT ),
-			$admin,
-			"section one",
-			EDIT_NEW
-		);
-		$rev1 = $page->getRevision();
-
-		$user1 = $this->getTestUser( [ 'sysop' ] )->getUser();
-		$text .= "\n\ntwo";
-		$page = new WikiPage( $page->getTitle() );
-		$page->doUserEditContent(
-			ContentHandler::makeContent( $text, $page->getTitle(), CONTENT_MODEL_WIKITEXT ),
-			$user1,
-			"adding section two"
-		);
-
-		# now, do a the rollback from the same user was doing the edit before
-		$resultDetails = [];
-		$token = $user1->getEditToken( 'rollback' );
-		$errors = $page->doRollback(
-			$user1->getName(),
-			"testing revert same user",
-			$token,
-			false,
-			$resultDetails,
-			$admin
-		);
-
-		$this->assertEquals( [], $errors, "Rollback failed same user" );
-
-		# now, try the rollback
-		$resultDetails = [];
-		$token = $admin->getEditToken( 'rollback' );
-		$errors = $page->doRollback(
-			$user1->getName(),
-			"testing revert",
-			$token,
-			false,
-			$resultDetails,
-			$admin
-		);
-
-		$this->assertEquals(
-			[
-				[
-					'alreadyrolled',
-					__METHOD__,
-					$user1->getName(),
-					$admin->getName(),
-				],
-			],
-			$errors,
-			"Rollback not failed"
-		);
-
-		$page = new WikiPage( $page->getTitle() );
-		$this->assertEquals( $rev1->getSha1(), $page->getRevision()->getSha1(),
-			"rollback did not revert to the correct revision" );
-		$this->assertEquals( "one", $page->getContent()->getText() );
-	}
-
-	/**
-	 * Tests tagging for edits that do rollback action
-	 * @covers WikiPage::doRollback
-	 */
-	public function testDoRollbackTagging() {
-		if ( !in_array( 'mw-rollback', ChangeTags::getSoftwareTags() ) ) {
-			$this->markTestSkipped( 'Rollback tag deactivated, skipped the test.' );
-		}
-
-		$admin = new User();
-		$admin->setName( 'Administrator' );
-		$admin->addToDatabase();
-
-		$text = 'First line';
-		$page = $this->newPage( 'WikiPageTest_testDoRollbackTagging' );
-		$page->doUserEditContent(
-			ContentHandler::makeContent( $text, $page->getTitle(), CONTENT_MODEL_WIKITEXT ),
-			$admin,
-			'Added first line',
-			EDIT_NEW
-		);
-
-		$secondUser = new User();
-		$secondUser->setName( '92.65.217.32' );
-		$text .= '\n\nSecond line';
-		$page = new WikiPage( $page->getTitle() );
-		$page->doUserEditContent(
-			ContentHandler::makeContent( $text, $page->getTitle(), CONTENT_MODEL_WIKITEXT ),
-			$secondUser,
-			'Adding second line'
-		);
-
-		// Now, try the rollback
-		$admin->addGroup( 'sysop' ); // Make the test user a sysop
-		MediaWikiServices::getInstance()->getPermissionManager()->invalidateUsersRightsCache();
-		$token = $admin->getEditToken( 'rollback' );
-		$errors = $page->doRollback(
-			$secondUser->getName(),
-			'testing rollback',
-			$token,
-			false,
-			$resultDetails,
-			$admin
-		);
-
-		// If doRollback completed without errors
-		if ( $errors === [] ) {
-			$tags = $resultDetails[ 'tags' ];
-			$this->assertContains( 'mw-rollback', $tags );
-		}
-	}
-
 	public function provideGetAutoDeleteReason() {
 		return [
 			[
@@ -1695,6 +1332,8 @@ more stuff
 			$c += 1;
 		}
 
+		$this->hideDeprecated( 'WikiPage::getAutoDeleteReason:' );
+		$this->hideDeprecated( 'ContentHandler::getAutoDeleteReason:' );
 		$reason = $page->getAutoDeleteReason( $hasHistory );
 
 		if ( is_bool( $expectedResult ) || $expectedResult === null ) {
@@ -1706,8 +1345,6 @@ more stuff
 
 		$this->assertEquals( $expectedHistory, $hasHistory,
 			"expected \$hasHistory to be " . var_export( $expectedHistory, true ) );
-
-		$page->doDeleteArticleReal( "done", $this->getTestSysop()->getUser() );
 	}
 
 	public function providePreSaveTransform() {
@@ -1790,30 +1427,30 @@ more stuff
 		// Add an initial category
 		$page->updateCategoryCounts( [ 'A' ], [], 0 );
 
-		$this->assertSame( '1', Category::newFromName( 'A' )->getPageCount() );
-		$this->assertSame( 0, Category::newFromName( 'B' )->getPageCount() );
-		$this->assertSame( 0, Category::newFromName( 'C' )->getPageCount() );
+		$this->assertSame( 1, Category::newFromName( 'A' )->getMemberCount() );
+		$this->assertSame( 0, Category::newFromName( 'B' )->getMemberCount() );
+		$this->assertSame( 0, Category::newFromName( 'C' )->getMemberCount() );
 
 		// Add a new category
 		$page->updateCategoryCounts( [ 'B' ], [], 0 );
 
-		$this->assertSame( '1', Category::newFromName( 'A' )->getPageCount() );
-		$this->assertSame( '1', Category::newFromName( 'B' )->getPageCount() );
-		$this->assertSame( 0, Category::newFromName( 'C' )->getPageCount() );
+		$this->assertSame( 1, Category::newFromName( 'A' )->getMemberCount() );
+		$this->assertSame( 1, Category::newFromName( 'B' )->getMemberCount() );
+		$this->assertSame( 0, Category::newFromName( 'C' )->getMemberCount() );
 
 		// Add and remove a category
 		$page->updateCategoryCounts( [ 'C' ], [ 'A' ], 0 );
 
-		$this->assertSame( 0, Category::newFromName( 'A' )->getPageCount() );
-		$this->assertSame( '1', Category::newFromName( 'B' )->getPageCount() );
-		$this->assertSame( '1', Category::newFromName( 'C' )->getPageCount() );
+		$this->assertSame( 0, Category::newFromName( 'A' )->getMemberCount() );
+		$this->assertSame( 1, Category::newFromName( 'B' )->getMemberCount() );
+		$this->assertSame( 1, Category::newFromName( 'C' )->getMemberCount() );
 	}
 
 	public function provideUpdateRedirectOn() {
-		yield [ '#REDIRECT [[Foo]]', true, null, true, true, 0 ];
-		yield [ '#REDIRECT [[Foo]]', true, 'Foo', true, true, 1 ];
-		yield [ 'SomeText', false, null, false, true, 0 ];
-		yield [ 'SomeText', false, 'Foo', false, true, 1 ];
+		yield [ '#REDIRECT [[Foo]]', true, null, true, true, [] ];
+		yield [ '#REDIRECT [[Foo]]', true, 'Foo', true, true, [ [ NS_MAIN, 'Foo' ] ] ];
+		yield [ 'SomeText', false, null, false, true, [] ];
+		yield [ 'SomeText', false, 'Foo', false, true, [ [ NS_MAIN, 'Foo' ] ] ];
 	}
 
 	/**
@@ -1825,7 +1462,7 @@ more stuff
 	 * @param string|null $redirectTitle
 	 * @param bool|null $lastRevIsRedirect
 	 * @param bool $expectedSuccess
-	 * @param int $expectedRowCount
+	 * @param array $expectedRows
 	 */
 	public function testUpdateRedirectOn(
 		$initialText,
@@ -1833,11 +1470,8 @@ more stuff
 		$redirectTitle,
 		$lastRevIsRedirect,
 		$expectedSuccess,
-		$expectedRowCount
+		$expectedRows
 	) {
-		// FIXME: fails under sqlite and postgres
-		$this->markTestSkippedIfDbType( 'sqlite' );
-		$this->markTestSkippedIfDbType( 'postgres' );
 		static $pageCounter = 0;
 		$pageCounter++;
 
@@ -1855,15 +1489,15 @@ more stuff
 		 * Most of core checks the page table for redirect status, so we have to be ugly and
 		 * assert a select from the table here.
 		 */
-		$this->assertRedirectTableCountForPageId( $page->getId(), $expectedRowCount );
+		$this->assertRedirectTableCountForPageId( $page->getId(), $expectedRows );
 	}
 
-	private function assertRedirectTableCountForPageId( $pageId, $expected ) {
+	private function assertRedirectTableCountForPageId( $pageId, $expectedRows ) {
 		$this->assertSelect(
 			'redirect',
-			'COUNT(*)',
+			[ 'rd_namespace', 'rd_title' ],
 			[ 'rd_from' => $pageId ],
-			[ [ strval( $expected ) ] ]
+			$expectedRows
 		);
 	}
 
@@ -1872,10 +1506,11 @@ more stuff
 	 */
 	public function testInsertRedirectEntry_insertsRedirectEntry() {
 		$page = $this->createPage( Title::newFromText( __METHOD__ ), 'A' );
-		$this->assertRedirectTableCountForPageId( $page->getId(), 0 );
+		$this->assertRedirectTableCountForPageId( $page->getId(), [] );
 
 		$targetTitle = Title::newFromText( 'SomeTarget#Frag' );
-		$targetTitle->mInterwiki = 'eninter';
+		$reflectedTitle = TestingAccessWrapper::newFromObject( $targetTitle );
+		$reflectedTitle->mInterwiki = 'eninter';
 		$page->insertRedirectEntry( $targetTitle, null );
 
 		$this->assertSelect(
@@ -1897,10 +1532,11 @@ more stuff
 	 */
 	public function testInsertRedirectEntry_insertsRedirectEntryWithPageLatest() {
 		$page = $this->createPage( Title::newFromText( __METHOD__ ), 'A' );
-		$this->assertRedirectTableCountForPageId( $page->getId(), 0 );
+		$this->assertRedirectTableCountForPageId( $page->getId(), [] );
 
 		$targetTitle = Title::newFromText( 'SomeTarget#Frag' );
-		$targetTitle->mInterwiki = 'eninter';
+		$reflectedTitle = TestingAccessWrapper::newFromObject( $targetTitle );
+		$reflectedTitle->mInterwiki = 'eninter';
 		$page->insertRedirectEntry( $targetTitle, $page->getLatest() );
 
 		$this->assertSelect(
@@ -1922,13 +1558,14 @@ more stuff
 	 */
 	public function testInsertRedirectEntry_doesNotInsertIfPageLatestIncorrect() {
 		$page = $this->createPage( Title::newFromText( __METHOD__ ), 'A' );
-		$this->assertRedirectTableCountForPageId( $page->getId(), 0 );
+		$this->assertRedirectTableCountForPageId( $page->getId(), [] );
 
 		$targetTitle = Title::newFromText( 'SomeTarget#Frag' );
-		$targetTitle->mInterwiki = 'eninter';
+		$reflectedTitle = TestingAccessWrapper::newFromObject( $targetTitle );
+		$reflectedTitle->mInterwiki = 'eninter';
 		$page->insertRedirectEntry( $targetTitle, 215251 );
 
-		$this->assertRedirectTableCountForPageId( $page->getId(), 0 );
+		$this->assertRedirectTableCountForPageId( $page->getId(), [] );
 	}
 
 	/**
@@ -1936,13 +1573,13 @@ more stuff
 	 */
 	public function testInsertRedirectEntry_T278367() {
 		$page = $this->createPage( Title::newFromText( __METHOD__ ), 'A' );
-		$this->assertRedirectTableCountForPageId( $page->getId(), 0 );
+		$this->assertRedirectTableCountForPageId( $page->getId(), [] );
 
 		$targetTitle = Title::newFromText( '#Frag' );
 		$ok = $page->insertRedirectEntry( $targetTitle );
 
 		$this->assertFalse( $ok );
-		$this->assertRedirectTableCountForPageId( $page->getId(), 0 );
+		$this->assertRedirectTableCountForPageId( $page->getId(), [] );
 	}
 
 	private function getRow( array $overrides = [] ) {
@@ -1954,10 +1591,10 @@ more stuff
 			'page_latest' => '99',
 			'page_namespace' => '3',
 			'page_title' => 'JaJaTitle',
-			'page_restrictions' => 'edit=autoconfirmed,sysop:move=sysop',
 			'page_touched' => '20120101020202',
 			'page_links_updated' => '20140101020202',
 			'page_lang' => 'it',
+			'page_content_model' => CONTENT_MODEL_WIKITEXT,
 		];
 		foreach ( $overrides as $key => $value ) {
 			$row[$key] = $value;
@@ -1977,13 +1614,6 @@ more stuff
 				$test->assertSame( 'it', $wikiPage->getLanguage() );
 				$test->assertSame( 3, $wikiPage->getTitle()->getNamespace() );
 				$test->assertSame( 'JaJaTitle', $wikiPage->getTitle()->getDBkey() );
-				$test->assertSame(
-					[
-						'edit' => [ 'autoconfirmed', 'sysop' ],
-						'move' => [ 'sysop' ],
-					],
-					$wikiPage->getTitle()->getAllRestrictions()
-				);
 				$test->assertSame( '20120101020202', $wikiPage->getTouched() );
 				$test->assertSame( '20140101020202', $wikiPage->getLinksTimestamp() );
 			}
@@ -1998,27 +1628,12 @@ more stuff
 				$test->assertSame( '20140101020202', $wikiPage->getLinksTimestamp() );
 			}
 		];
-		yield 'no restrictions' => [
-			$this->getRow( [
-				'page_restrictions' => '',
-			] ),
-			static function ( WikiPage $wikiPage, self $test ) {
-			$test->assertSame(
-				[
-					'edit' => [],
-					'move' => [],
-				],
-				$wikiPage->getTitle()->getAllRestrictions()
-			);
-			}
-		];
 		yield 'no language' => [
 			$this->getRow( [
 				'page_lang' => null,
 			] ),
-			function ( WikiPage $wikiPage, self $test ) {
-				$test->assertSame(
-					'en',
+			static function ( WikiPage $wikiPage, self $test ) {
+				$test->assertNull(
 					$wikiPage->getLanguage()
 				);
 			}
@@ -2035,7 +1650,7 @@ more stuff
 			$this->getRow( [
 				'page_is_new' => '0',
 			] ),
-			function ( WikiPage $wikiPage, self $test ) {
+			static function ( WikiPage $wikiPage, self $test ) {
 				$test->assertFalse( $wikiPage->isNew() );
 			}
 		];
@@ -2050,7 +1665,7 @@ more stuff
 	 * @param callable $assertions
 	 */
 	public function testNewFromRow( $row, $assertions ) {
-		$page = WikiPage::newFromRow( $row, 'fromdb' );
+		$page = WikiPage::newFromRow( $row, WikiPage::READ_NORMAL );
 		$assertions( $page, $this );
 	}
 
@@ -2091,149 +1706,51 @@ more stuff
 	 * @covers WikiPage::updateRevisionOn
 	 */
 	public function testUpdateRevisionOn_existingPage() {
-		$this->hideDeprecated( 'WikiPage::getRevision' );
-		$this->hideDeprecated( 'WikiPage::updateRevisionOn with a Revision object' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
-		$this->hideDeprecated( 'Revision::getId' );
-		$this->hideDeprecated( 'MediaWiki\Revision\RevisionStore::newMutableRevisionFromArray' );
-
 		$user = $this->getTestSysop()->getUser();
 		$page = $this->createPage( __METHOD__, 'StartText' );
 
-		$revision = new Revision(
-			[
-				'id' => 9989,
-				'page' => $page->getId(),
-				'title' => $page->getTitle(),
-				'comment' => __METHOD__,
-				'minor_edit' => true,
-				'text' => __METHOD__ . '-text',
-				'len' => strlen( __METHOD__ . '-text' ),
-				'user' => $user->getId(),
-				'user_text' => $user->getName(),
-				'timestamp' => '20170707040404',
-				'content_model' => CONTENT_MODEL_WIKITEXT,
-				'content_format' => CONTENT_FORMAT_WIKITEXT,
-			]
+		$revisionRecord = new MutableRevisionRecord( $page );
+		$revisionRecord->setContent(
+			SlotRecord::MAIN,
+			new WikitextContent( __METHOD__ . '-text' )
 		);
+		$revisionRecord->setUser( $user );
+		$revisionRecord->setTimestamp( '20170707040404' );
+		$revisionRecord->setPageId( $page->getId() );
+		$revisionRecord->setId( 9989 );
+		$revisionRecord->setSize( strlen( __METHOD__ . '-text' ) );
+		$revisionRecord->setMinorEdit( true );
+		$revisionRecord->setComment( CommentStoreComment::newUnsavedComment( __METHOD__ ) );
 
-		$result = $page->updateRevisionOn( $this->db, $revision );
+		$result = $page->updateRevisionOn( $this->db, $revisionRecord );
 		$this->assertTrue( $result );
 		$this->assertSame( 9989, $page->getLatest() );
-		$this->assertEquals( $revision, $page->getRevision() );
+		$this->assertEquals( $revisionRecord, $page->getRevisionRecord() );
 	}
 
 	/**
 	 * @covers WikiPage::updateRevisionOn
 	 */
 	public function testUpdateRevisionOn_NonExistingPage() {
-		$this->hideDeprecated( 'WikiPage::updateRevisionOn with a Revision object' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
-		$this->hideDeprecated( 'Revision::getId' );
-		$this->hideDeprecated( 'MediaWiki\Revision\RevisionStore::newMutableRevisionFromArray' );
-
 		$user = $this->getTestSysop()->getUser();
 		$page = $this->createPage( __METHOD__, 'StartText' );
-		$page->doDeleteArticleReal( 'reason', $user );
+		$this->deletePage( $page, '', $user );
 
-		$revision = new Revision(
-			[
-				'id' => 9989,
-				'page' => $page->getId(),
-				'title' => $page->getTitle(),
-				'comment' => __METHOD__,
-				'minor_edit' => true,
-				'text' => __METHOD__ . '-text',
-				'len' => strlen( __METHOD__ . '-text' ),
-				'user' => $user->getId(),
-				'user_text' => $user->getName(),
-				'timestamp' => '20170707040404',
-				'content_model' => CONTENT_MODEL_WIKITEXT,
-				'content_format' => CONTENT_FORMAT_WIKITEXT,
-			]
+		$revisionRecord = new MutableRevisionRecord( $page );
+		$revisionRecord->setContent(
+			SlotRecord::MAIN,
+			new WikitextContent( __METHOD__ . '-text' )
 		);
+		$revisionRecord->setUser( $user );
+		$revisionRecord->setTimestamp( '20170707040404' );
+		$revisionRecord->setPageId( $page->getId() );
+		$revisionRecord->setId( 9989 );
+		$revisionRecord->setSize( strlen( __METHOD__ . '-text' ) );
+		$revisionRecord->setMinorEdit( true );
+		$revisionRecord->setComment( CommentStoreComment::newUnsavedComment( __METHOD__ ) );
 
-		$result = $page->updateRevisionOn( $this->db, $revision );
+		$result = $page->updateRevisionOn( $this->db, $revisionRecord );
 		$this->assertFalse( $result );
-	}
-
-	/**
-	 * @covers WikiPage::updateIfNewerOn
-	 */
-	public function testUpdateIfNewerOn_olderRevision() {
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
-		$this->hideDeprecated( 'WikiPage::updateIfNewerOn' );
-		$this->hideDeprecated( 'MediaWiki\Revision\RevisionStore::newMutableRevisionFromArray' );
-
-		$user = $this->getTestSysop()->getUser();
-		$page = $this->createPage( __METHOD__, 'StartText' );
-		$initialRevisionRecord = $page->getRevisionRecord();
-
-		$olderTimeStamp = wfTimestamp(
-			TS_MW,
-			wfTimestamp( TS_UNIX, $initialRevisionRecord->getTimestamp() ) - 1
-		);
-
-		$olderRevision = new Revision(
-			[
-				'id' => 9989,
-				'page' => $page->getId(),
-				'title' => $page->getTitle(),
-				'comment' => __METHOD__,
-				'minor_edit' => true,
-				'text' => __METHOD__ . '-text',
-				'len' => strlen( __METHOD__ . '-text' ),
-				'user' => $user->getId(),
-				'user_text' => $user->getName(),
-				'timestamp' => $olderTimeStamp,
-				'content_model' => CONTENT_MODEL_WIKITEXT,
-				'content_format' => CONTENT_FORMAT_WIKITEXT,
-			]
-		);
-
-		$result = $page->updateIfNewerOn( $this->db, $olderRevision );
-		$this->assertFalse( $result );
-	}
-
-	/**
-	 * @covers WikiPage::updateIfNewerOn
-	 */
-	public function testUpdateIfNewerOn_newerRevision() {
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
-		$this->hideDeprecated( 'WikiPage::updateIfNewerOn' );
-		$this->hideDeprecated( 'MediaWiki\Revision\RevisionStore::newMutableRevisionFromArray' );
-
-		$user = $this->getTestSysop()->getUser();
-		$page = $this->createPage( __METHOD__, 'StartText' );
-		$initialRevisionRecord = $page->getRevisionRecord();
-
-		$newerTimeStamp = wfTimestamp(
-			TS_MW,
-			wfTimestamp( TS_UNIX, $initialRevisionRecord->getTimestamp() ) + 1
-		);
-
-		$newerRevision = new Revision(
-			[
-				'id' => 9989,
-				'page' => $page->getId(),
-				'title' => $page->getTitle(),
-				'comment' => __METHOD__,
-				'minor_edit' => true,
-				'text' => __METHOD__ . '-text',
-				'len' => strlen( __METHOD__ . '-text' ),
-				'user' => $user->getId(),
-				'user_text' => $user->getName(),
-				'timestamp' => $newerTimeStamp,
-				'content_model' => CONTENT_MODEL_WIKITEXT,
-				'content_format' => CONTENT_FORMAT_WIKITEXT,
-			]
-		);
-		$result = $page->updateIfNewerOn( $this->db, $newerRevision );
-		$this->assertTrue( $result );
 	}
 
 	/**
@@ -2258,7 +1775,6 @@ more stuff
 			[
 				'page_namespace',
 				'page_title',
-				'page_restrictions',
 				'page_is_redirect',
 				'page_is_new',
 				'page_latest',
@@ -2268,7 +1784,6 @@ more stuff
 			[ [
 				'0',
 				__METHOD__,
-				'',
 				'0',
 				'1',
 				'0',
@@ -2388,44 +1903,44 @@ more stuff
 		} else {
 			$page = new WikiPage( Title::newFromText( __METHOD__ . '-nonexist' ) );
 		}
-		$user = $this->getTestSysop()->getUserIdentity();
+		$user = $this->getTestSysop()->getUser();
+		$userIdentity = $this->getTestSysop()->getUserIdentity();
+
 		$cascade = false;
 
-		$status = $page->doUpdateRestrictions( $limit, $expiry, $cascade, 'aReason', $user, [] );
+		$status = $page->doUpdateRestrictions( $limit, $expiry, $cascade, 'aReason', $userIdentity, [] );
 
 		$logId = $status->getValue();
-		$allRestrictions = $page->getTitle()->getAllRestrictions();
+		$restrictionStore = $this->getServiceContainer()->getRestrictionStore();
+		$allRestrictions = $restrictionStore->getAllRestrictions( $page->getTitle() );
 
-		$this->assertTrue( $status->isGood() );
+		$this->assertStatusGood( $status );
 		$this->assertIsInt( $logId );
 		$this->assertSame( $expectedRestrictions, $allRestrictions );
 		foreach ( $expectedRestrictionExpiries as $key => $value ) {
-			$this->assertSame( $value, $page->getTitle()->getRestrictionExpiry( $key ) );
+			$this->assertSame( $value, $restrictionStore->getRestrictionExpiry( $page->getTitle(), $key ) );
 		}
 
 		// Make sure the log entry looks good
 		// log_params is not checked here
-		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
-		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
+		$commentQuery = $this->getServiceContainer()->getCommentStore()->getJoin( 'log_comment' );
 		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'],
+			[ 'logging' ] + $commentQuery['tables'],
 			[
 				'log_comment' => $commentQuery['fields']['log_comment_text'],
-				'log_user' => $actorQuery['fields']['log_user'],
-				'log_user_text' => $actorQuery['fields']['log_user_text'],
+				'log_actor',
 				'log_namespace',
 				'log_title',
 			],
 			[ 'log_id' => $logId ],
 			[ [
 				'aReason',
-				(string)$user->getId(),
-				$user->getName(),
+				(string)$user->getActorId(),
 				(string)$page->getTitle()->getNamespace(),
 				$page->getTitle()->getDBkey(),
 			] ],
 			[],
-			$actorQuery['joins'] + $commentQuery['joins']
+			$commentQuery['joins']
 		);
 	}
 
@@ -2438,20 +1953,11 @@ more stuff
 		$cascade = false;
 
 		// Set read only
-		$readOnly = $this->getMockBuilder( ReadOnlyMode::class )
-			->disableOriginalConstructor()
-			->setMethods( [ 'isReadOnly', 'getReason' ] )
-			->getMock();
-		$readOnly->expects( $this->once() )
-			->method( 'isReadOnly' )
-			->will( $this->returnValue( true ) );
-		$readOnly->expects( $this->once() )
-			->method( 'getReason' )
-			->will( $this->returnValue( 'Some Read Only Reason' ) );
+		$readOnly = $this->getDummyReadOnlyMode( true );
 		$this->setService( 'ReadOnlyMode', $readOnly );
 
 		$status = $page->doUpdateRestrictions( [], [], $cascade, 'aReason', $user, [] );
-		$this->assertFalse( $status->isOK() );
+		$this->assertStatusNotOK( $status );
 		$this->assertSame( 'readonlytext', $status->getMessage()->getKey() );
 	}
 
@@ -2474,7 +1980,7 @@ more stuff
 		);
 
 		// The first entry should have a logId as it did something
-		$this->assertTrue( $status->isGood() );
+		$this->assertStatusGood( $status );
 		$this->assertIsInt( $status->getValue() );
 
 		$status = $page->doUpdateRestrictions(
@@ -2487,7 +1993,7 @@ more stuff
 		);
 
 		// The second entry should not have a logId as nothing changed
-		$this->assertTrue( $status->isGood() );
+		$this->assertStatusGood( $status );
 		$this->assertNull( $status->getValue() );
 	}
 
@@ -2508,7 +2014,7 @@ more stuff
 			$user,
 			[]
 		);
-		$this->assertTrue( $status->isGood() );
+		$this->assertStatusGood( $status );
 		$this->assertIsInt( $status->getValue() );
 		$this->assertSelect(
 			'logging',
@@ -2526,7 +2032,7 @@ more stuff
 			$user,
 			[]
 		);
-		$this->assertTrue( $status->isGood() );
+		$this->assertStatusGood( $status );
 		$this->assertIsInt( $status->getValue() );
 		$this->assertSelect(
 			'logging',
@@ -2544,7 +2050,7 @@ more stuff
 			$user,
 			[]
 		);
-		$this->assertTrue( $status->isGood() );
+		$this->assertStatusGood( $status );
 		$this->assertIsInt( $status->getValue() );
 		$this->assertSelect(
 			'logging',
@@ -2561,35 +2067,48 @@ more stuff
 	public function testNewPageUpdater() {
 		$user = $this->getTestUser()->getUser();
 		$page = $this->newPage( __METHOD__, __METHOD__ );
+		$content = new WikitextContent( 'Hello World' );
 
-		/** @var Content $content */
-		$content = $this->getMockBuilder( WikitextContent::class )
-			->setConstructorArgs( [ 'Hello World' ] )
-			->setMethods( [ 'getParserOutput' ] )
+		/** @var ContentRenderer $contentRenderer */
+		$contentRenderer = $this->getMockBuilder( ContentRenderer::class )
+			->onlyMethods( [ 'getParserOutput' ] )
+			->disableOriginalConstructor()
 			->getMock();
-		$content->expects( $this->once() )
+		$contentRenderer->expects( $this->once() )
 			->method( 'getParserOutput' )
 			->willReturn( new ParserOutput( 'HTML' ) );
 
+		$this->setService( 'ContentRenderer', $contentRenderer );
+
 		$preparedEditBefore = $page->prepareContentForEdit( $content, null, $user );
+		$preparedUpdateBefore = $page->getCurrentUpdate();
 
 		// provide context, so the cache can be kept in place
 		$slotsUpdate = new revisionSlotsUpdate();
 		$slotsUpdate->modifyContent( SlotRecord::MAIN, $content );
 
-		$updater = $page->newPageUpdater( $user, $slotsUpdate );
-		$updater->setContent( SlotRecord::MAIN, $content );
-		$revision = $updater->saveRevision(
-			CommentStoreComment::newUnsavedComment( 'test' ),
-			EDIT_NEW
-		);
+		$revision = $page->newPageUpdater( $user, $slotsUpdate )
+			->setContent( SlotRecord::MAIN, $content )
+			->saveRevision( CommentStoreComment::newUnsavedComment( 'test' ), EDIT_NEW );
 
 		$preparedEditAfter = $page->prepareContentForEdit( $content, $revision, $user );
+		$preparedUpdateAfter = $page->getCurrentUpdate();
 
 		$this->assertSame( $revision->getId(), $page->getLatest() );
 
 		// Parsed output must remain cached throughout.
-		$this->assertSame( $preparedEditBefore->output, $preparedEditAfter->output );
+		$this->assertSame(
+			$preparedEditBefore->output,
+			$preparedEditAfter->output
+		);
+		$this->assertSame(
+			$preparedEditBefore->output,
+			$preparedUpdateBefore->getCanonicalParserOutput()
+		);
+		$this->assertSame(
+			$preparedEditBefore->output,
+			$preparedUpdateAfter->getCanonicalParserOutput()
+		);
 	}
 
 	/**
@@ -2597,16 +2116,13 @@ more stuff
 	 * @covers WikiPage::getDerivedDataUpdater
 	 */
 	public function testGetDerivedDataUpdater() {
-		$this->hideDeprecated( 'WikiPage::getRevision' );
-		$this->hideDeprecated( 'Revision::__construct' );
-		$this->hideDeprecated( 'Revision::getRevisionRecord' );
 		$admin = $this->getTestSysop()->getUser();
 
 		/** @var object $page */
 		$page = $this->createPage( __METHOD__, __METHOD__ );
 		$page = TestingAccessWrapper::newFromObject( $page );
 
-		$revision = $page->getRevision()->getRevisionRecord();
+		$revision = $page->getRevisionRecord();
 		$user = $revision->getUser();
 
 		$slotsUpdate = new RevisionSlotsUpdate();
@@ -2663,11 +2179,13 @@ more stuff
 		PreparedEdit $edit, PreparedEdit $edit2, $message = ''
 	) {
 		// suppress differences caused by a clock tick between generating the two PreparedEdits
-		if ( abs( $edit->timestamp - $edit2->timestamp ) < 3 ) {
-			$edit2 = clone $edit2;
-			$edit2->timestamp = $edit->timestamp;
+		$editTimestamp = $edit->timestamp;
+		$edit2Timetamp = $edit2->timestamp;
+		if ( abs( $editTimestamp - $edit2Timetamp ) < 3 ) {
+			$edit2Timetamp = $editTimestamp;
 		}
 		$this->assertEquals( $edit, $edit2, $message );
+		$this->assertEquals( $editTimestamp, $edit2Timetamp, $message );
 	}
 
 	protected function assertPreparedEditNotEquals(
@@ -2707,10 +2225,10 @@ more stuff
 	}
 
 	/**
-	 * This is just to confirm that WikiPage::updateRevisionOn() calls
-	 * LinkCache::addGoodLinkObj() with the correct redirect value. Failing to
-	 * do so would apparently cause Echo to inappropriately notify on redirect
-	 * creation, and there was a test for that, but that's subtle.
+	 * This is just to confirm that WikiPage::updateRevisionOn() updates the
+	 * Title and LinkCache with the correct redirect value. Failing to do so
+	 * causes subtle test failures in extensions, such as Cognate (T283654)
+	 * and Echo (no task, but see code review of I12542fc899).
 	 *
 	 * @covers WikiPage
 	 */
@@ -2719,8 +2237,8 @@ more stuff
 		$title = Title::makeTitleSafe( NS_MAIN, 'A new redirect' );
 		$this->assertFalse( $title->isRedirect() );
 
-		$dbw = wfGetDB( DB_MASTER );
-		$store = MediaWikiServices::getInstance()->getRevisionStore();
+		$dbw = wfGetDB( DB_PRIMARY );
+		$store = $this->getServiceContainer()->getRevisionStore();
 		$page = $this->newPage( $title );
 		$page->insertOn( $dbw );
 
@@ -2736,7 +2254,9 @@ more stuff
 		$revision = $store->insertRevisionOn( $revision, $dbw );
 
 		$page->updateRevisionOn( $dbw, $revision );
-		// Don't use the title cache again, just use the LinkCache
+		// check the title cache
+		$this->assertTrue( $title->isRedirect() );
+		// check the link cache with a fresh title
 		$title = Title::makeTitleSafe( NS_MAIN, 'A new redirect' );
 		$this->assertTrue( $title->isRedirect() );
 	}

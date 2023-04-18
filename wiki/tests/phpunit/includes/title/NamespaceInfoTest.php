@@ -8,7 +8,8 @@
 use MediaWiki\Config\ServiceOptions;
 use MediaWiki\HookContainer\HookContainer;
 use MediaWiki\Linker\LinkTarget;
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
+use Wikimedia\ScopedCallback;
 
 class NamespaceInfoTest extends MediaWikiIntegrationTestCase {
 	use TestAllServiceOptionsUsed;
@@ -21,20 +22,14 @@ class NamespaceInfoTest extends MediaWikiIntegrationTestCase {
 	/** @var ScopedCallback */
 	private $scopedCallback;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
-
-		// Boo, there's still some global state in the class :(
-		global $wgHooks;
-		$hooks = $wgHooks;
-		unset( $hooks['CanonicalNamespaces'] );
-		$this->setMwGlobals( 'wgHooks', $hooks );
 
 		$this->scopedCallback =
 			ExtensionRegistry::getInstance()->setAttributeForTest( 'ExtensionNamespaces', [] );
 	}
 
-	protected function tearDown() : void {
+	protected function tearDown(): void {
 		$this->scopedCallback = null;
 
 		parent::tearDown();
@@ -66,10 +61,10 @@ class NamespaceInfoTest extends MediaWikiIntegrationTestCase {
 	 * @return HookContainer
 	 */
 	private function getHookContainer() {
-		return MediaWikiServices::getInstance()->getHookContainer();
+		return $this->getServiceContainer()->getHookContainer();
 	}
 
-	private function newObj( array $options = [] ) : NamespaceInfo {
+	private function newObj( array $options = [] ): NamespaceInfo {
 		return new NamespaceInfo(
 			new LoggedServiceOptions(
 				self::$serviceOptionsAccessLog,
@@ -1257,26 +1252,26 @@ class NamespaceInfoTest extends MediaWikiIntegrationTestCase {
 	 */
 	public function testGetRestrictionLevels( array $expected, $ns, array $groups = null ) {
 		$this->hideDeprecated( 'NamespaceInfo::getRestrictionLevels' );
-		$this->setMwGlobals( [
-			'wgGroupPermissions' => [
-				'*' => [ 'edit' => true ],
-				'autoconfirmed' => [ 'editsemiprotected' => true ],
-				'sysop' => [
-					'editsemiprotected' => true,
-					'editprotected' => true,
-				],
-				'privileged' => [ 'privileged' => true ],
+		$this->setGroupPermissions( [
+			'*' => [ 'edit' => true ],
+			'autoconfirmed' => [ 'editsemiprotected' => true ],
+			'sysop' => [
+				'editsemiprotected' => true,
+				'editprotected' => true,
 			],
-			'wgRevokePermissions' => [
+			'privileged' => [ 'privileged' => true ],
+		] );
+		$this->overrideConfigValues( [
+			MainConfigNames::RevokePermissions => [
 				'noeditsemiprotected' => [ 'editsemiprotected' => true ],
 			],
-			'wgNamespaceProtection' => [
+			MainConfigNames::NamespaceProtection => [
 				NS_MAIN => 'autoconfirmed',
 				NS_USER => 'sysop',
 				101 => [ 'editsemiprotected', 'privileged' ],
 			],
-			'wgRestrictionLevels' => [ '', 'autoconfirmed', 'sysop' ],
-			'wgAutopromote' => []
+			MainConfigNames::RestrictionLevels => [ '', 'autoconfirmed', 'sysop' ],
+			MainConfigNames::Autopromote => []
 		] );
 		$obj = $this->newObj();
 		$user = $groups === null ? null : $this->getTestUser( $groups )->getUser();

@@ -3,18 +3,19 @@
 namespace MediaWiki\Rest\Handler;
 
 use Config;
+use IBufferingStatsdDataFactory;
 use LogicException;
-use MediaWiki\Page\WikiPageFactory;
-use MediaWiki\Parser\ParserCacheFactory;
+use MediaWiki\Edit\ParsoidOutputStash;
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Page\PageLookup;
+use MediaWiki\Parser\Parsoid\ParsoidOutputAccess;
 use MediaWiki\Rest\LocalizedHttpException;
 use MediaWiki\Rest\Response;
 use MediaWiki\Rest\SimpleHandler;
 use MediaWiki\Rest\StringStream;
 use MediaWiki\Revision\RevisionLookup;
-use TitleFactory;
 use TitleFormatter;
 use Wikimedia\Assert\Assert;
-use Wikimedia\UUID\GlobalIdGenerator;
 
 /**
  * A handler that returns Parsoid HTML for the following routes:
@@ -35,31 +36,34 @@ class PageHTMLHandler extends SimpleHandler {
 		Config $config,
 		RevisionLookup $revisionLookup,
 		TitleFormatter $titleFormatter,
-		TitleFactory $titleFactory,
-		ParserCacheFactory $parserCacheFactory,
-		WikiPageFactory $wikiPageFactory,
-		GlobalIdGenerator $globalIdGenerator
+		PageLookup $pageLookup,
+		ParsoidOutputStash $parsoidOutputStash,
+		IBufferingStatsdDataFactory $statsDataFactory,
+		ParsoidOutputAccess $parsoidOutputAccess
 	) {
 		$this->contentHelper = new PageContentHelper(
 			$config,
 			$revisionLookup,
 			$titleFormatter,
-			$titleFactory
+			$pageLookup
 		);
 		$this->htmlHelper = new ParsoidHTMLHelper(
-			$parserCacheFactory->getParserCache( 'parsoid' ),
-			$parserCacheFactory->getRevisionOutputCache( 'parsoid' ),
-			$wikiPageFactory,
-			$globalIdGenerator
+			$parsoidOutputStash,
+			$statsDataFactory,
+			$parsoidOutputAccess
 		);
 	}
 
 	protected function postValidationSetup() {
-		$this->contentHelper->init( $this->getAuthority(), $this->getValidatedParams() );
+		// TODO: Once Authority supports rate limit (T310476), just inject the Authority.
+		$user = MediaWikiServices::getInstance()->getUserFactory()
+			->newFromUserIdentity( $this->getAuthority()->getUser() );
 
-		$title = $this->contentHelper->getTitle();
-		if ( $title ) {
-			$this->htmlHelper->init( $title );
+		$this->contentHelper->init( $user, $this->getValidatedParams() );
+
+		$page = $this->contentHelper->getPage();
+		if ( $page ) {
+			$this->htmlHelper->init( $page, $this->getValidatedParams(), $user );
 		}
 	}
 
@@ -70,26 +74,28 @@ class PageHTMLHandler extends SimpleHandler {
 	public function run(): Response {
 		$this->contentHelper->checkAccess();
 
-		$titleObj = $this->contentHelper->getTitle();
+		$page = $this->contentHelper->getPage();
 
-		// The call to $this->contentHelper->getTitle() should not return null if
+		// The call to $this->contentHelper->getPage() should not return null if
 		// $this->contentHelper->checkAccess() did not throw.
-		Assert::invariant( $titleObj !== null, 'Title should be known' );
+		Assert::invariant( $page !== null, 'Page should be known' );
+
+		$parserOutput = $this->htmlHelper->getHtml();
+		// Do not de-duplicate styles, Parsoid already does it in a slightly different way (T300325)
+		$parserOutputHtml = $parserOutput->getText( [ 'deduplicateStyles' => false ] );
 
 		$outputMode = $this->getOutputMode();
 		switch ( $outputMode ) {
 			case 'html':
-				$parserOutput = $this->htmlHelper->getHtml();
 				$response = $this->getResponseFactory()->create();
 				// TODO: need to respect content-type returned by Parsoid.
 				$response->setHeader( 'Content-Type', 'text/html' );
 				$this->contentHelper->setCacheControl( $response, $parserOutput->getCacheExpiry() );
-				$response->setBody( new StringStream( $parserOutput->getText() ) );
+				$response->setBody( new StringStream( $parserOutputHtml ) );
 				break;
 			case 'with_html':
-				$parserOutput = $this->htmlHelper->getHtml();
 				$body = $this->contentHelper->constructMetadata();
-				$body['html'] = $parserOutput->getText();
+				$body['html'] = $parserOutputHtml;
 				$response = $this->getResponseFactory()->createJson( $body );
 				$this->contentHelper->setCacheControl( $response, $parserOutput->getCacheExpiry() );
 				break;
@@ -110,7 +116,9 @@ class PageHTMLHandler extends SimpleHandler {
 		if ( !$this->contentHelper->isAccessible() ) {
 			return null;
 		}
-		return $this->htmlHelper->getETag();
+
+		// Vary eTag based on output mode
+		return $this->htmlHelper->getETag( $this->getOutputMode() );
 	}
 
 	/**
@@ -132,6 +140,9 @@ class PageHTMLHandler extends SimpleHandler {
 	}
 
 	public function getParamSettings(): array {
-		return $this->contentHelper->getParamSettings();
+		return array_merge(
+			$this->contentHelper->getParamSettings(),
+			$this->htmlHelper->getParamSettings()
+		);
 	}
 }

@@ -3,8 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
+ * @ingroup Languages
  *
  * @author Boivie
  * @author Cocu
@@ -42,7 +42,7 @@
  * @see https://nn.wikipedia.org/w/index.php?title=Brukar:Dittaeva/LanguageNn.php&action=history
  */
 
-$fallback = 'nb';
+$fallback = 'no, nb';
 
 $datePreferences = [
 	'default',

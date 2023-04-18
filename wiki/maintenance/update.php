@@ -57,6 +57,10 @@ class UpdateMediaWiki extends Maintenance {
 			'skip-external-dependencies',
 			'Skips checking whether external dependencies are up to date, mostly for developers'
 		);
+		$this->addOption(
+			'skip-config-validation',
+			'Skips checking whether the existing configuration is valid'
+		);
 	}
 
 	public function getDbType() {
@@ -93,7 +97,7 @@ class UpdateMediaWiki extends Maintenance {
 		}
 
 		$this->fileHandle = null;
-		if ( substr( $this->getOption( 'schema' ), 0, 2 ) === "--" ) {
+		if ( substr( $this->getOption( 'schema', '' ), 0, 2 ) === "--" ) {
 			$this->fatalError( "The --schema option requires a file as an argument.\n" );
 		} elseif ( $this->hasOption( 'schema' ) ) {
 			$file = $this->getOption( 'schema' );
@@ -102,6 +106,11 @@ class UpdateMediaWiki extends Maintenance {
 				$err = error_get_last();
 				$this->fatalError( "Problem opening the schema file for writing: $file\n\t{$err['message']}" );
 			}
+		}
+
+		// Check for warnings about settings, and abort if there are any.
+		if ( !$this->hasOption( 'skip-config-validation' ) ) {
+			$this->validateSettings();
 		}
 
 		// T206765: We need to load the installer i18n files as some of errors come installer/updater code
@@ -139,7 +148,7 @@ class UpdateMediaWiki extends Maintenance {
 
 		# Attempt to connect to the database as a privileged user
 		# This will vomit up an error if there are permissions problems
-		$db = $this->getDB( DB_MASTER );
+		$db = $this->getDB( DB_PRIMARY );
 
 		# Check to see whether the database server meets the minimum requirements
 		/** @var DatabaseInstaller $dbInstallerClass */
@@ -162,7 +171,7 @@ class UpdateMediaWiki extends Maintenance {
 
 		if ( !$this->hasOption( 'quick' ) ) {
 			$this->output( "Abort with control-c in the next five seconds "
-				. "(skip this countdown with --quick) ... " );
+				. "(skip this countdown with --quick) ..." );
 			$this->countDown( 5 );
 		}
 
@@ -180,13 +189,13 @@ class UpdateMediaWiki extends Maintenance {
 
 		$updater = DatabaseUpdater::newForDB( $db, $shared, $this );
 
-		// Avoid upgrading from versions older than 1.27
-		// Using an implicit marker (bot_passwords table didn't exist until 1.27)
+		// Avoid upgrading from versions older than 1.31
+		// Using an implicit marker (slots table didn't exist until 1.31)
 		// TODO: Use an explicit marker
 		// See T259771
-		if ( !$updater->tableExists( 'bot_passwords' ) ) {
+		if ( !$updater->tableExists( 'slots' ) ) {
 			$this->fatalError(
-				"Can not upgrade from versions older than 1.27, please upgrade to that version or later first."
+				"Can not upgrade from versions older than 1.31, please upgrade to that version or later first."
 			);
 		}
 
@@ -257,6 +266,45 @@ class UpdateMediaWiki extends Maintenance {
 		}
 
 		parent::validateParamsAndArgs();
+	}
+
+	private function formatWarnings( array $warnings ) {
+		$text = '';
+		foreach ( $warnings as $warning ) {
+			$warning = wordwrap( $warning, 75, "\n  " );
+			$text .= "* $warning\n";
+		}
+		return $text;
+	}
+
+	private function validateSettings() {
+		global $wgSettings;
+
+		$warnings = [];
+		if ( $wgSettings->getWarnings() ) {
+			$warnings = $wgSettings->getWarnings();
+		}
+
+		$status = $wgSettings->validate();
+		if ( !$status->isOk() ) {
+			foreach ( $status->getErrorsByType( 'error' ) as $msg ) {
+				$msg = wfMessage( $msg['message'], ...$msg['params'] );
+				$warnings[] = $msg->text();
+			}
+		}
+
+		$deprecations = $wgSettings->detectDeprecatedConfig();
+		foreach ( $deprecations as $key => $msg ) {
+			$warnings[] = "$key is deprecated: $msg";
+		}
+
+		if ( $warnings ) {
+			$this->fatalError( "Some of your configuration settings caused a warning:\n\n"
+				. $this->formatWarnings( $warnings ) . "\n"
+				. "Please correct the issue before running update.php again.\n"
+				. "If you know what you are doing, you can bypass this check\n"
+				. "using --skip-config-validation.\n" );
+		}
 	}
 }
 

@@ -42,16 +42,14 @@ class DeleteBatch extends Maintenance {
 	public function __construct() {
 		parent::__construct();
 		$this->addDescription( 'Deletes a batch of pages' );
-		$this->addOption( 'u', "User to perform deletion", false, true );
-		$this->addOption( 'r', "Reason to delete page", false, true );
-		$this->addOption( 'i', "Interval to sleep between deletions" );
+		$this->addOption( 'u', 'User to perform deletion', false, true );
+		$this->addOption( 'r', 'Reason to delete page', false, true );
+		$this->addOption( 'i', 'Interval to sleep (in seconds) between deletions' );
 		$this->addArg( 'listfile', 'File with titles to delete, separated by newlines. ' .
 			'If not given, stdin will be used.', false );
 	}
 
 	public function execute() {
-		global $wgUser;
-
 		# Change to current working directory
 		$oldCwd = getcwd();
 		chdir( $oldCwd );
@@ -69,7 +67,7 @@ class DeleteBatch extends Maintenance {
 		if ( !$user ) {
 			$this->fatalError( "Invalid username" );
 		}
-		$wgUser = $user;
+		StubGlobalUser::setUser( $user );
 
 		if ( $this->hasArg( 0 ) ) {
 			$file = fopen( $this->getArg( 0 ), 'r' );
@@ -109,7 +107,7 @@ class DeleteBatch extends Maintenance {
 					$title, [ 'ignoreRedirect' => true ]
 				);
 				if ( $img && $img->isLocal() && !$img->deleteFile( $reason, $user ) ) {
-					$this->output( " FAILED to delete associated file... " );
+					$this->output( " FAILED to delete associated file..." );
 				}
 			}
 			$page = $wikiPageFactory->newFromTitle( $title );

@@ -19,6 +19,8 @@
  * @author This, that and the other
  */
 
+use MediaWiki\MainConfigNames;
+
 /**
  * @covers NaiveImportTitleFactory
  *
@@ -28,12 +30,12 @@
  */
 class NaiveImportTitleFactoryTest extends MediaWikiIntegrationTestCase {
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
-		$this->setContentLang( 'en' );
-		$this->setMwGlobals( [
-			'wgExtraNamespaces' => [ 100 => 'Portal' ],
+		$this->overrideConfigValues( [
+			MainConfigNames::LanguageCode => 'en',
+			MainConfigNames::ExtraNamespaces => [ 100 => 'Portal' ],
 		] );
 	}
 

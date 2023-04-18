@@ -20,57 +20,58 @@
  * @file
  */
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\ResourceLoader\CodexModule;
+use MediaWiki\ResourceLoader\Context;
+use MediaWiki\ResourceLoader\FilePath;
+use MediaWiki\ResourceLoader\ForeignApiModule;
+use MediaWiki\ResourceLoader\LanguageDataModule;
+use MediaWiki\ResourceLoader\LessVarFileModule;
+use MediaWiki\ResourceLoader\Module;
+use MediaWiki\ResourceLoader\MwUrlModule;
+use MediaWiki\ResourceLoader\OOUIFileModule;
+use MediaWiki\ResourceLoader\OOUIIconPackModule;
+use MediaWiki\ResourceLoader\OOUIImageModule;
+use MediaWiki\ResourceLoader\ResourceLoader;
+use MediaWiki\ResourceLoader\SiteModule;
+use MediaWiki\ResourceLoader\SiteStylesModule;
+use MediaWiki\ResourceLoader\SkinModule;
+use MediaWiki\ResourceLoader\UserModule;
+use MediaWiki\ResourceLoader\UserOptionsModule;
+use MediaWiki\ResourceLoader\UserStylesModule;
+use MediaWiki\ResourceLoader\WikiModule;
 
 if ( !defined( 'MEDIAWIKI' ) ) {
 	die( 'Not an entry point.' );
 }
 
 global $wgResourceBasePath;
+global $wgBaseDirectory;
 
 return [
 	// Scripts managed by the local wiki (stored in the MediaWiki namespace)
-	'site' => [ 'class' => ResourceLoaderSiteModule::class ],
-	'site.styles' => [ 'class' => ResourceLoaderSiteStylesModule::class ],
+	'site' => [ 'class' => SiteModule::class ],
+	'site.styles' => [ 'class' => SiteStylesModule::class ],
 	'noscript' => [
 		'targets' => [ 'desktop', 'mobile' ],
-		'class' => ResourceLoaderWikiModule::class,
+		'class' => WikiModule::class,
 		'styles' => [ 'MediaWiki:Noscript.css' ],
-		'group' => 'noscript',
+		'group' => Module::GROUP_NOSCRIPT,
 	],
 	'filepage' => [
-		'class' => ResourceLoaderWikiModule::class,
+		'class' => WikiModule::class,
 		'styles' => [ 'MediaWiki:Filepage.css' ],
 	],
 
 	// Scripts managed by the current user (stored in their user space)
-	'user' => [ 'class' => ResourceLoaderUserModule::class ],
-	'user.styles' => [ 'class' => ResourceLoaderUserStylesModule::class ],
+	'user' => [ 'class' => UserModule::class ],
+	'user.styles' => [ 'class' => UserStylesModule::class ],
 
-	'user.defaults' => [ 'class' => ResourceLoaderUserDefaultsModule::class ],
-	'user.options' => [ 'class' => ResourceLoaderUserOptionsModule::class ],
+	'user.options' => [ 'class' => UserOptionsModule::class ],
 
-	'mediawiki.skinning.elements' => [
-		'deprecated' => 'Your default skin ResourceLoader class should use '
-			. 'ResourceLoaderSkinModule::class',
-		'class' => ResourceLoaderSkinModule::class,
-		'features' => [
-			'elements' => true,
-			'legacy' => true,
-		],
-	],
-	'mediawiki.skinning.content' => [
-		'deprecated' => 'Your default skin ResourceLoader class should use '
-			. 'ResourceLoaderSkinModule::class',
-		'class' => ResourceLoaderSkinModule::class,
-		'features' => [
-			'elements' => true,
-			'content' => true,
-			'legacy' => true,
-		],
-	],
 	'mediawiki.skinning.interface' => [
-		'class' => ResourceLoaderSkinModule::class,
+		'class' => SkinModule::class,
 		'features' => [
 			'elements' => true,
 			'content' => true,
@@ -81,7 +82,7 @@ return [
 	],
 	'jquery.makeCollapsible.styles' => [
 		'targets' => [ 'desktop', 'mobile' ],
-		'class' => ResourceLoaderLessVarFileModule::class,
+		'class' => LessVarFileModule::class,
 		'lessMessages' => [
 			'collapsible-collapse',
 			'collapsible-expand',
@@ -98,17 +99,11 @@ return [
 		'skinStyles' => [
 			'default' => [
 				'resources/src/mediawiki.skinning/content.parsoid.less',
-				'resources/src/mediawiki.skinning/content.media.less',
+				'resources/src/mediawiki.skinning/content.media-common.less',
+				'resources/src/mediawiki.skinning/content.media-screen.less',
 			],
 		],
 		'targets' => [ 'desktop', 'mobile' ],
-	],
-
-	'mediawiki.skinning.content.externallinks' => [
-		'deprecated' => 'Your default skin ResourceLoader class should use '
-			. 'the "content-links" feature in ResourceLoaderSkinModule::class',
-		'class' => ResourceLoaderSkinModule::class,
-		'features' => [ 'content-links' ],
 	],
 
 	/* Base modules */
@@ -116,40 +111,57 @@ return [
 	// These modules' dependencies MUST be dependency-free (having dependencies would cause recursion).
 
 	'jquery' => [
-		'scripts' => ( $GLOBALS['wgIncludejQueryMigrate'] ?
-			[
-				'resources/lib/jquery/jquery.js',
-				'resources/lib/jquery/jquery.migrate.js',
-			] : [
-				'resources/lib/jquery/jquery.js'
-			]
-		),
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'es6-promise' => [
-		'deprecated' => 'Use "es6-polyfills" instead.',
-		'dependencies' => [ 'es6-polyfills' ],
+		'scripts' => [
+			'resources/lib/jquery/jquery.js'
+		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'es6-polyfills' => [
-		'scripts' => 'resources/lib/promise-polyfill/promise-polyfill.js',
-		'skipFunction' => 'resources/src/skip-Promise.js',
+		'scripts' => [
+			'resources/lib/promise-polyfill/promise-polyfill.js',
+			'resources/src/es6-polyfills/array-find-polyfill.js',
+			'resources/src/es6-polyfills/array-findIndex-polyfill.js',
+			'resources/src/es6-polyfills/array-from-polyfill.js',
+			'resources/src/es6-polyfills/array-includes-polyfill.js',
+		],
+		'skipFunction' => 'resources/src/skip-es6-polyfills.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
+	'web2017-polyfills' => [
+		'scripts' => [
+			'resources/lib/intersection-observer/intersection-observer.js',
+			'resources/lib/fetch-polyfill/fetch.umd.js',
+			// The URL polyfill depends on the following in addition to the ES5 baseline
+			// https://github.com/Financial-Times/polyfill-library/blob/v3.110.1/polyfills/URL/config.toml#L10
+			// - ES6 Array.from (via es6-polyfills)
+			// - ES6 Symbol.iterator (no fill needed, used conditionally)
+			'resources/lib/url/URL.js',
+			'resources/lib/url/URL-toJSON.js',
+		],
+		'skipFunction' => 'resources/src/skip-web2017-polyfills.js',
+		'targets' => [ 'desktop', 'mobile' ],
+		'dependencies' => [ 'es6-polyfills' ]
+	],
 	'mediawiki.base' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.base",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.base",
 		'packageFiles' => [
 			// This MUST be kept in sync with maintenance/jsduck/eg-iframe.html
 			'mediawiki.base.js',
-			'mediawiki.errorLogger.js',
+			'log.js',
+			'errorLogger.js',
 
 			// (not this though)
-			[ 'name' => 'config.json', 'callback' => 'ResourceLoader::getSiteConfigSettings' ],
+			[ 'name' => 'config.json', 'callback' => [ ResourceLoader::class, 'getSiteConfigSettings' ] ],
 			[
-				'name' => 'legacy.wikibits.js',
-				'callback' => static function ( ResourceLoaderContext $context, Config $config ) {
-					return $config->get( 'IncludeLegacyJavaScript' ) ?
-						new ResourceLoaderFilePath( 'legacy.wikibits.js' ) : '';
+				'name' => 'user.json',
+				'callback' => static function ( Context $context ) {
+					$services = MediaWikiServices::getInstance();
+
+					return ResourceLoader::getUserDefaults(
+						$context,
+						$services->getHookContainer(),
+						$services->getUserOptionsLookup()
+					);
 				}
 			],
 		],
@@ -206,6 +218,7 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.hoverIntent' => [
+		'deprecated' => 'Will be removed soon, see T311194',
 		'scripts' => 'resources/lib/jquery.hoverIntent/jquery.hoverIntent.js',
 	],
 	'jquery.i18n' => [
@@ -243,14 +256,13 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.makeCollapsible' => [
-		'dependencies' => [ 'jquery.makeCollapsible.styles' ],
+		'dependencies' => [
+			'jquery.makeCollapsible.styles',
+			'mediawiki.util',
+		],
 		'scripts' => 'resources/src/jquery/jquery.makeCollapsible.js',
 		'styles' => 'resources/src/jquery/jquery.makeCollapsible.css',
 		'messages' => [ 'collapsible-expand', 'collapsible-collapse' ],
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'jquery.mw-jump' => [
-		'scripts' => 'resources/src/jquery/jquery.mw-jump.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.spinner' => [
@@ -261,10 +273,6 @@ return [
 	'jquery.spinner.styles' => [
 		'styles' => 'resources/src/jquery.spinner/spinner.less',
 		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'jquery.jStorage' => [
-		'deprecated' => 'Please use "mediawiki.storage" instead.',
-		'scripts' => 'resources/lib/jquery.jStorage/jstorage.js',
 	],
 	'jquery.suggestions' => [
 		'targets' => [ 'desktop', 'mobile' ],
@@ -537,7 +545,7 @@ return [
 			'tzm-latn' => 'resources/lib/moment/locale/tzm-latn.js',
 			'uk' => 'resources/lib/moment/locale/uk.js',
 			'ur' => 'resources/lib/moment/locale/ur.js',
-			'uz' => 'resources/lib/moment/locale/uz.js',
+			'uz' => 'resources/lib/moment/locale/uz-latn.js', # https://phabricator.wikimedia.org/T308123
 			'uz-latn' => 'resources/lib/moment/locale/uz-latn.js',
 			'vi' => 'resources/lib/moment/locale/vi.js',
 			'yo' => 'resources/lib/moment/locale/yo.js',
@@ -567,44 +575,79 @@ return [
 	'vue' => [
 		'packageFiles' => [
 			'resources/src/vue/index.js',
+			'resources/src/vue/errorLogger.js',
 			'resources/src/vue/i18n.js',
 			[
 				'name' => 'resources/lib/vue/vue.js',
-				'callback' => static function ( ResourceLoaderContext $context, Config $config ) {
+				'callback' => static function ( Context $context, Config $config ) {
+					$baseDir = $config->get( MainConfigNames::BaseDirectory );
 					// Use the development version if development mode is enabled, or if we're in debug mode
-					$file = $config->get( 'VueDevelopmentMode' ) || $context->getDebug() ?
-						'resources/lib/vue/vue.common.dev.js' :
-						'resources/lib/vue/vue.common.prod.js';
-					return new ResourceLoaderFilePath( $file );
+					$file = $config->get( MainConfigNames::VueDevelopmentMode ) || $context->getDebug() ?
+						'resources/lib/vue/vue.global.js' :
+						'resources/lib/vue/vue.global.prod.js';
+					// The file shipped by Vue does var Vue = ...;, but doesn't export it
+					// Add module.exports = Vue; programmatically
+					return file_get_contents( "$baseDir/$file" ) .
+						';module.exports=Vue;';
+				},
+				'versionCallback' => static function ( Context $context, Config $config ) {
+					$file = $config->get( MainConfigNames::VueDevelopmentMode ) || $context->getDebug() ?
+						'resources/lib/vue/vue.global.js' :
+						'resources/lib/vue/vue.global.prod.js';
+					return new FilePath( $file );
 				}
 			],
 
 		],
+		'es6' => true,
 		'targets' => [ 'desktop', 'mobile' ],
+	],
+
+	// Alias for 'vue', for backwards compatibility
+	'@vue/composition-api' => [
+		'packageFiles' => [
+			'resources/src/vue/composition-api.js'
+		],
+		'dependencies' => [
+			'vue'
+		],
+		'es6' => true,
+		'targets' => [ 'desktop', 'mobile' ]
 	],
 
 	'vuex' => [
 		'packageFiles' => [
-			'resources/src/vue/vuex.js',
 			[
 				'name' => 'resources/lib/vuex/vuex.js',
-				'callback' => static function ( ResourceLoaderContext $context, Config $config ) {
+				'callback' => static function ( Context $context, Config $config ) {
+					$baseDir = $config->get( MainConfigNames::BaseDirectory );
 					// Use the development version if development mode is enabled, or if we're in debug mode
-					$file = $config->get( 'VueDevelopmentMode' ) || $context->getDebug() ?
-						'resources/lib/vuex/vuex.js' :
-						'resources/lib/vuex/vuex.min.js';
-					return new ResourceLoaderFilePath( $file );
+					$file = $config->get( MainConfigNames::VueDevelopmentMode ) || $context->getDebug() ?
+						'resources/lib/vuex/vuex.global.js' :
+						'resources/lib/vuex/vuex.global.prod.js';
+					// The file shipped by Vuex does var Vuex = ...;, but doesn't export it
+					// Add module.exports = Vuex; programmatically, and import Vue
+					return "var Vue=require('vue');" .
+						file_get_contents( "$baseDir/$file" ) .
+						';module.exports=Vuex;';
+				},
+				'versionCallback' => static function ( Context $context, Config $config ) {
+					$file = $config->get( MainConfigNames::VueDevelopmentMode ) || $context->getDebug() ?
+						'resources/lib/vuex/vuex.global.js' :
+						'resources/lib/vuex/vuex.global.prod.js';
+					return new FilePath( $file );
 				}
-			]
+			],
 		],
 		'dependencies' => [
 			'vue',
-			'es6-promise',
 		],
+		'es6' => true,
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 
 	'wvui' => [
+		'deprecated' => 'Deprecated in 1.39. Use `@wikimedia/codex` instead.',
 		'packageFiles' => [
 			'resources/src/wvui/wvui.js',
 			'resources/lib/wvui/wvui.commonjs2.js',
@@ -613,9 +656,67 @@ return [
 			'resources/lib/wvui/wvui.css',
 		],
 		'dependencies' => [
+			'vue',
+			'@vue/composition-api',
+		],
+		'es6' => true,
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+
+	'wvui-search' => [
+		'deprecated' => 'Deprecated in 1.39. Use `@wikimedia/codex-search` instead.',
+		'packageFiles' => [
+			'resources/src/wvui/wvui-search.js',
+			'resources/lib/wvui/wvui-search.commonjs2.js',
+		],
+		'styles' => [
+			'resources/lib/wvui/wvui-search.css',
+		],
+		'dependencies' => [
 			'vue'
 		],
+		'es6' => true,
 		'targets' => [ 'desktop', 'mobile' ],
+	],
+
+	'@wikimedia/codex' => [
+		'class' => CodexModule::class,
+		'targets' => [ 'desktop', 'mobile' ],
+		'packageFiles' => [
+			'resources/src/codex/codex.js',
+			'resources/lib/codex/codex.umd.js',
+		],
+		'dirSpecificStyles' => [
+			// Special syntax supported by CodexModule
+			'ltr' => 'resources/lib/codex/codex.style.css',
+			'rtl' => 'resources/lib/codex/codex.style-rtl.css'
+		],
+		// Do not flip styles in RTL contexts, because we're already providing RTL-specific styles
+		'noflip' => true,
+		'dependencies' => [
+			'vue'
+		],
+		'es6' => true
+	],
+
+	'@wikimedia/codex-search' => [
+		'class' => CodexModule::class,
+		'targets' => [ 'desktop', 'mobile' ],
+		'packageFiles' => [
+			'resources/src/codex-search/codex-search.js',
+			'resources/lib/codex-search/codex-search.umd.js',
+		],
+		'dirSpecificStyles' => [
+			// Special syntax supported by CodexModule
+			'ltr' => 'resources/lib/codex-search/codex-search.style.css',
+			'rtl' => 'resources/lib/codex-search/codex-search.style-rtl.css'
+		],
+		// Do not flip styles in RTL contexts, because we're already providing RTL-specific styles
+		'noflip' => true,
+		'dependencies' => [
+			'vue'
+		],
+		'es6' => true
 	],
 
 	/* MediaWiki */
@@ -694,6 +795,12 @@ return [
 			'oojs-ui-core',
 		],
 	],
+	'mediawiki.diff' => [
+		'scripts' => [
+			'resources/src/mediawiki.diff.styles/diff.js',
+		],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
 	'mediawiki.diff.styles' => [
 		'styles' => [
 			'resources/src/mediawiki.diff.styles/diff.less',
@@ -704,13 +811,13 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.feedback' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.feedback",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.feedback",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.feedback",
 		'packageFiles' => [
 			'feedback.js',
 			'FeedbackDialog.js',
 		],
-		'styles' => 'feedback.css',
+		'styles' => 'feedback.less',
 		'dependencies' => [
 			'mediawiki.messagePoster',
 			'mediawiki.Title',
@@ -743,6 +850,7 @@ return [
 	],
 	'mediawiki.feedlink' => [
 		'styles' => 'resources/src/mediawiki.feedlink/feedlink.css',
+		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.filewarning' => [
 		'scripts' => 'resources/src/mediawiki.filewarning/filewarning.js',
@@ -754,7 +862,7 @@ return [
 	],
 	'mediawiki.ForeignApi' => [
 		'targets' => [ 'desktop', 'mobile' ],
-		'class' => ResourceLoaderForeignApiModule::class,
+		'class' => ForeignApiModule::class,
 		// Additional dependencies generated dynamically
 		'dependencies' => 'mediawiki.ForeignApi.core',
 	],
@@ -778,7 +886,7 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.hlist' => [
-		'class' => ResourceLoaderLessVarFileModule::class,
+		'class' => LessVarFileModule::class,
 		'lessMessages' => [
 			'colon-separator',
 			'parentheses-start',
@@ -799,7 +907,7 @@ return [
 			'resources/src/mediawiki.htmlform/autoinfuse.js',
 			'resources/src/mediawiki.htmlform/checkmatrix.js',
 			'resources/src/mediawiki.htmlform/cloner.js',
-			'resources/src/mediawiki.htmlform/hide-if.js',
+			'resources/src/mediawiki.htmlform/cond-state.js',
 			'resources/src/mediawiki.htmlform/multiselect.js',
 			'resources/src/mediawiki.htmlform/selectandother.js',
 			'resources/src/mediawiki.htmlform/selectorother.js',
@@ -829,7 +937,10 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.htmlform.ooui.styles' => [
-		'styles' => 'resources/src/mediawiki.htmlform.ooui.styles.less',
+		'styles' => [
+			'resources/src/mediawiki.collapsiblefieldsetlayout.styles.less',
+			'resources/src/mediawiki.htmlform.ooui.styles.less'
+		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.icon' => [
@@ -877,10 +988,23 @@ return [
 		'scripts' => 'resources/src/mediawiki.String.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
-	'mediawiki.pager.tablePager' => [
+	'mediawiki.pager.styles' => [
+		'targets' => [ 'desktop', 'mobile' ],
 		'styles' => [
-			'resources/src/mediawiki.pager.tablePager/TablePager.less',
-			'resources/src/mediawiki.pager.tablePager/DataTable.less',
+			'resources/src/mediawiki.pager.styles/TablePager.less',
+			'resources/src/mediawiki.pager.styles/DataTable.less',
+		],
+		'skinStyles' => [
+			'default' => [
+				'resources/src/mediawiki.pager.styles/IndexPager.less',
+			]
+		],
+	],
+	'mediawiki.pager.tablePager' => [
+		'deprecated' => 'Deprecated in 1.38. Use `mediawiki.pager.styles`',
+		'styles' => [
+			'resources/src/mediawiki.pager.styles/TablePager.less',
+			'resources/src/mediawiki.pager.styles/DataTable.less',
 		],
 	],
 	'mediawiki.pulsatingdot' => [
@@ -906,9 +1030,12 @@ return [
 	'mediawiki.storage' => [
 		'scripts' => 'resources/src/mediawiki.storage.js',
 		'targets' => [ 'desktop', 'mobile' ],
+		'dependencies' => [
+			'mediawiki.util',
+		],
 	],
 	'mediawiki.Title' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.Title",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.Title",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.Title",
 		'packageFiles' => [
 			'Title.js',
@@ -927,7 +1054,15 @@ return [
 		],
 	],
 	'mediawiki.ForeignUpload' => [
-		'scripts' => 'resources/src/mediawiki.ForeignUpload.js',
+		'localBasePath' => "$wgBaseDirectory/resources/src",
+		'remoteBasePath' => "$wgResourceBasePath/resources/src",
+		'packageFiles' => [
+			'mediawiki.ForeignUpload.js',
+			[
+				'name' => 'config.json',
+				'config' => [ MainConfigNames::ForeignUploadTargets, MainConfigNames::EnableUploads ],
+			],
+		],
 		'dependencies' => [
 			'mediawiki.ForeignApi',
 			'mediawiki.Upload',
@@ -938,20 +1073,6 @@ return [
 			'upload-dialog-disabled',
 			'upload-foreign-cant-upload',
 		]
-	],
-	'mediawiki.ForeignStructuredUpload' => [
-		'localBasePath' => "$IP/resources/src",
-		'remoteBasePath' => "$wgResourceBasePath/resources/src",
-		'packageFiles' => [
-			'mediawiki.ForeignStructuredUpload.js',
-			[ 'name' => 'config.json', 'config' => [ 'UploadDialog' ] ],
-		],
-		'dependencies' => [
-			'mediawiki.ForeignUpload',
-		],
-		'messages' => [
-			'upload-foreign-cant-load-config',
-		],
 	],
 	'mediawiki.Upload.Dialog' => [
 		'scripts' => [
@@ -971,10 +1092,16 @@ return [
 	],
 	'mediawiki.Upload.BookletLayout' => [
 		'scripts' => [
+			'resources/src/mediawiki.Upload.BookletLayout/mw.widgets.StashedFileWidget.js',
 			'resources/src/mediawiki.Upload.BookletLayout/BookletLayout.js',
 		],
 		'styles' => [
 			'resources/src/mediawiki.Upload.BookletLayout/BookletLayout.css',
+		],
+		'skinStyles' => [
+			'default' => [
+				'resources/src/mediawiki.Upload.BookletLayout/mw.widgets.StashedFileWidget.less',
+			],
 		],
 		'dependencies' => [
 			'oojs-ui-core',
@@ -984,10 +1111,10 @@ return [
 			'oojs-ui.styles.icons-editing-advanced',
 			'moment',
 			'mediawiki.Title',
+			'mediawiki.api',
 			'mediawiki.user',
 			'mediawiki.Upload',
 			'mediawiki.jqueryMsg',
-			'mediawiki.widgets.StashedFileWidget'
 		],
 		'messages' => [
 			'upload-form-label-infoform-title',
@@ -1014,9 +1141,16 @@ return [
 		],
 	],
 	'mediawiki.ForeignStructuredUpload.BookletLayout' => [
-		'scripts' => 'resources/src/mediawiki.ForeignStructuredUpload.BookletLayout/BookletLayout.js',
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.ForeignStructuredUpload.BookletLayout",
+		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.ForeignStructuredUpload.BookletLayout",
+		'packageFiles' => [
+			"index.js",
+			'ForeignStructuredUpload.js',
+			[ 'name' => 'config.json', 'config' => [ MainConfigNames::UploadDialog ] ],
+			"BookletLayout.js",
+		],
 		'dependencies' => [
-			'mediawiki.ForeignStructuredUpload',
+			'mediawiki.ForeignUpload',
 			'mediawiki.Upload.BookletLayout',
 			'mediawiki.widgets.CategoryMultiselectWidget',
 			'mediawiki.widgets.DateInputWidget',
@@ -1026,6 +1160,7 @@ return [
 			'mediawiki.libs.jpegmeta',
 		],
 		'messages' => [
+			'upload-foreign-cant-load-config',
 			'upload-form-label-own-work',
 			'upload-form-label-infoform-categories',
 			'upload-form-label-infoform-date',
@@ -1048,37 +1183,31 @@ return [
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
-	'mediawiki.toc.styles' => [
-		'deprecated' => 'Please use the `toc` feature on ResourceLoaderSkinModule',
-		'class' => ResourceLoaderSkinModule::class,
-		'features' => [ 'toc' ],
-		'targets' => [ 'desktop', 'mobile' ],
-	],
 	'mediawiki.Uri' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.Uri",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.Uri",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.Uri",
 		'packageFiles' => [
 			'Uri.js',
 			[ 'name' => 'loose.regexp.js',
-				'callback' => static function () {
-					global $IP;
-					return ResourceLoaderMwUrlModule::makeJsFromExtendedRegExp(
-						file_get_contents( "$IP/resources/src/mediawiki.Uri/loose.regexp" )
+				'callback' => static function ( Context $context, Config $config ) {
+					$baseDir = $config->get( MainConfigNames::BaseDirectory );
+					return MwUrlModule::makeJsFromExtendedRegExp(
+						file_get_contents( "$baseDir/resources/src/mediawiki.Uri/loose.regexp" )
 					);
 				},
 				'versionCallback' => static function () {
-					return new ResourceLoaderFilePath( 'loose.regexp' );
+					return new FilePath( 'loose.regexp' );
 				},
 			],
 			[ 'name' => 'strict.regexp.js',
-				'callback' => static function () {
-					global $IP;
-					return ResourceLoaderMwUrlModule::makeJsFromExtendedRegExp(
-						file_get_contents( "$IP/resources/src/mediawiki.Uri/strict.regexp" )
+				'callback' => static function ( Context $context, Config $config ) {
+					$baseDir = $config->get( MainConfigNames::BaseDirectory );
+					return MwUrlModule::makeJsFromExtendedRegExp(
+						file_get_contents( "$baseDir/resources/src/mediawiki.Uri/strict.regexp" )
 					);
 				},
 				'versionCallback' => static function () {
-					return new ResourceLoaderFilePath( 'strict.regexp' );
+					return new FilePath( 'strict.regexp' );
 				},
 			],
 		],
@@ -1104,25 +1233,23 @@ return [
 		]
 	],
 	'mediawiki.util' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.util",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.util",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.util",
 		'packageFiles' => [
 			'util.js',
 			'jquery.accessKeyLabel.js',
 			[ 'name' => 'config.json', 'config' => [
-				'FragmentMode',
-				'GenerateThumbnailOnParse',
-				'LoadScript',
+				MainConfigNames::FragmentMode,
+				MainConfigNames::GenerateThumbnailOnParse,
+				MainConfigNames::LoadScript,
 			] ],
+			[ 'name' => 'portletLinkOptions.json', 'callback' => [ Skin::class, 'getPortletLinkOptions' ] ],
 		],
 		'dependencies' => [
 			'jquery.client',
+			'web2017-polyfills',
 		],
 		'messages' => [ 'brackets', 'word-separator' ],
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.viewport' => [
-		'scripts' => 'resources/src/mediawiki.viewport.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.checkboxtoggle' => [
@@ -1134,16 +1261,16 @@ return [
 		'styles' => 'resources/src/mediawiki.checkboxtoggle.styles.css',
 	],
 	'mediawiki.cookie' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.cookie",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.cookie",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.cookie",
 		'packageFiles' => [
 			'index.js',
 			[ 'name' => 'config.json', 'config' => [
-				'prefix' => 'CookiePrefix',
-				'domain' => 'CookieDomain',
-				'path' => 'CookiePath',
-				'expires' => 'CookieExpiration',
-				'sameSiteLegacy' => 'UseSameSiteLegacyCookies',
+				'prefix' => MainConfigNames::CookiePrefix,
+				'domain' => MainConfigNames::CookieDomain,
+				'path' => MainConfigNames::CookiePath,
+				'expires' => MainConfigNames::CookieExpiration,
+				'sameSiteLegacy' => MainConfigNames::UseSameSiteLegacyCookies,
 			] ],
 		],
 		'dependencies' => 'jquery.cookie',
@@ -1158,7 +1285,11 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.visibleTimeout' => [
-		'scripts' => 'resources/src/mediawiki.visibleTimeout.js',
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.visibleTimeout",
+		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.visibleTimeout",
+		'packageFiles' => [
+			'visibleTimeout.js'
+		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 
@@ -1177,7 +1308,7 @@ return [
 	],
 	'mediawiki.action.edit' => [
 		'targets' => [ 'desktop', 'mobile' ],
-		'localBasePath' => "$IP/resources/src/mediawiki.action.edit",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.action.edit",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.action.edit",
 		'packageFiles' => [
 			'edit.js',
@@ -1234,35 +1365,21 @@ return [
 				},
 			]
 		],
-		'styles' => 'resources/src/mediawiki.action/mediawiki.action.edit.preview.css',
 		'dependencies' => [
-			'jquery.makeCollapsible',
 			'jquery.spinner',
-			'jquery.textSelection',
 			'mediawiki.api',
+			'mediawiki.diff',
 			'mediawiki.diff.styles',
-			'mediawiki.language',
-			'mediawiki.util',
-			'mediawiki.jqueryMsg',
 			'mediawiki.user',
-			'oojs-ui-core',
+			'mediawiki.page.preview',
 		],
 		'messages' => [
-			// Keep these message keys in sync with EditPage#setHeaders
 			'continue-editing',
-			'creating',
-			'editconflict',
-			'editing',
-			'editingcomment',
-			'editingsection',
-			'pagetitle',
+			'currentrev',
 			'otherlanguages',
-			'summary-preview',
-			'subject-preview',
-			'parentheses',
 			'preview',
 			'previewerrortext',
-			'templatesusedpreview',
+			'yourtext',
 		],
 	],
 	'mediawiki.action.history' => [
@@ -1278,11 +1395,11 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.action.protect' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.action",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.action",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.action",
 		'packageFiles' => [
 			'mediawiki.action.protect.js',
-			[ 'name' => 'config.json', 'config' => [ 'CascadingRestrictionLevels' ] ],
+			[ 'name' => 'config.json', 'config' => [ MainConfigNames::CascadingRestrictionLevels ] ],
 		],
 		'dependencies' => [
 			'oojs-ui-core',
@@ -1299,30 +1416,36 @@ return [
 		],
 		'dependencies' => 'mediawiki.action.view.filepage',
 	],
+
+	// @deprecated To be removed one week after If406ce2ae38eb165 is merged.
 	'mediawiki.action.view.categoryPage.styles' => [
-		'styles' => 'resources/src/mediawiki.action/mediawiki.action.view.categoryPage.less',
+		'styles' => 'resources/src/mediawiki.action.styles/categoryPage.less',
 		'targets' => [ 'desktop', 'mobile' ]
 	],
 	'mediawiki.action.view.postEdit' => [
-		'scripts' => 'resources/src/mediawiki.action/mediawiki.action.view.postEdit.js',
-		'styles' => 'resources/src/mediawiki.action/mediawiki.action.view.postEdit.less',
-		'skinStyles' => [
-			'monobook' => 'resources/src/mediawiki.action/mediawiki.action.view.postEdit.monobook.css',
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.action",
+		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.action",
+		'packageFiles' => [
+			'mediawiki.action.view.postEdit.js',
+			[ 'name' => 'config.json', 'config' => [ MainConfigNames::EditSubmitButtonLabelPublish ] ],
 		],
 		'dependencies' => [
 			'mediawiki.jqueryMsg',
-			'mediawiki.notification'
+			'mediawiki.notification',
+			'oojs-ui-core',
+			'oojs-ui.styles.icons-interactions',
 		],
 		'messages' => [
 			'postedit-confirmation-created',
 			'postedit-confirmation-restored',
 			'postedit-confirmation-saved',
 			'postedit-confirmation-published',
+			'postedit-temp-created-label',
+			'postedit-temp-created',
 		],
 	],
 	'mediawiki.action.view.redirect' => [
 		'scripts' => 'resources/src/mediawiki.action/mediawiki.action.view.redirect.js',
-		'dependencies' => 'jquery.client',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.action.view.redirectPage' => [
@@ -1338,11 +1461,6 @@ return [
 			'mediawiki.confirmCloseWindow',
 			'user.options',
 		],
-		'messages' => [
-			'editwarning-warning',
-			// editwarning-warning uses {{int:prefs-editing}}
-			'prefs-editing'
-		],
 	],
 	'mediawiki.action.view.filepage' => [
 		'styles' => [
@@ -1351,15 +1469,22 @@ return [
 			'resources/src/mediawiki.action/mediawiki.action.view.filepage.css',
 		],
 	],
+
+	// This bundles small stylesheets (<2KB) that:
+	// - .. are not loaded when viewing or editing content pages.
+	// - .. style the rendering of other wikipage actions and/or other namespaces.
 	'mediawiki.action.styles' => [
 		'targets' => [ 'desktop', 'mobile' ],
-		'styles' => 'resources/src/mediawiki.action/styles.less',
+		'styles' => [
+			'resources/src/mediawiki.action.styles/styles.less',
+			'resources/src/mediawiki.action.styles/categoryPage.less',
+		],
 	],
 
 	/* MediaWiki Language */
 
 	'mediawiki.language' => [
-		'class' => ResourceLoaderLanguageDataModule::class,
+		'class' => LanguageDataModule::class,
 		'scripts' => [
 			'resources/src/mediawiki.language/mediawiki.language.init.js',
 			'resources/src/mediawiki.language/mediawiki.language.js',
@@ -1405,12 +1530,12 @@ return [
 	],
 
 	'mediawiki.jqueryMsg' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.jqueryMsg",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.jqueryMsg",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.jqueryMsg",
 		'packageFiles' => [
 			'mediawiki.jqueryMsg.js',
 			[ 'name' => 'parserDefaults.json', 'callback' => static function (
-				ResourceLoaderContext $context, Config $config
+				Context $context, Config $config
 			) {
 				$tagData = Sanitizer::getRecognizedTagData();
 				$allowedHtmlElements = array_merge(
@@ -1422,7 +1547,7 @@ return [
 				);
 
 				$magicWords = [
-					'SITENAME' => $config->get( 'Sitename' ),
+					'SITENAME' => $config->get( MainConfigNames::Sitename ),
 				];
 				Hooks::runner()->onResourceLoaderJqueryMsgModuleMagicWords( $context, $magicWords );
 
@@ -1435,6 +1560,7 @@ return [
 		'dependencies' => [
 			'mediawiki.util',
 			'mediawiki.language',
+			'mediawiki.String',
 			'user.options',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
@@ -1452,11 +1578,11 @@ return [
 	],
 
 	'mediawiki.language.names' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.language",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.language",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.language",
 		'packageFiles' => [
 			'mediawiki.language.names.js',
-			[ 'name' => 'names.json', 'callback' => static function ( ResourceLoaderContext $context ) {
+			[ 'name' => 'names.json', 'callback' => static function ( Context $context ) {
 				return MediaWikiServices::getInstance()
 					->getLanguageNameUtils()
 					->getLanguageNames( $context->getLanguage(), 'all' );
@@ -1467,7 +1593,7 @@ return [
 	],
 
 	'mediawiki.language.specialCharacters' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.language",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.language",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.language",
 		'packageFiles' => [
 			'mediawiki.language.specialCharacters.js',
@@ -1497,6 +1623,7 @@ return [
 			'special-characters-group-lao',
 			'special-characters-group-khmer',
 			'special-characters-group-canadianaboriginal',
+			'special-characters-group-runes',
 			'special-characters-title-endash',
 			'special-characters-title-emdash',
 			'special-characters-title-minus'
@@ -1519,13 +1646,13 @@ return [
 		'scripts' => 'resources/src/mediawiki.page.gallery.js',
 		'dependencies' => [
 			'mediawiki.page.gallery.styles',
-			'jquery.throttle-debounce',
+			'mediawiki.util'
 		]
 	],
 	'mediawiki.page.gallery.styles' => [
 		'styles' => [
 			'resources/src/mediawiki.page.gallery.styles/gallery.less',
-			'resources/src/mediawiki.page.gallery.styles/print.css' => [ 'media' => 'print' ],
+			'resources/src/mediawiki.page.gallery.styles/print.less' => [ 'media' => 'print' ],
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -1545,14 +1672,14 @@ return [
 		]
 	],
 	'mediawiki.page.ready' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.page.ready",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.page.ready",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.page.ready",
 		'packageFiles' => [
 			'ready.js',
 			'checkboxShift.js',
 			'checkboxHack.js',
 			[ 'name' => 'config.json', 'callback' => static function (
-				ResourceLoaderContext $context,
+				Context $context,
 				Config $config
 			) {
 				$readyConfig = [
@@ -1576,12 +1703,12 @@ return [
 		]
 	],
 	'mediawiki.page.watch.ajax' => [
-		'localBasePath' => "$IP/resources/src",
+		'localBasePath' => "$wgBaseDirectory/resources/src",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src",
 		'targets' => [ 'desktop', 'mobile' ],
 		'packageFiles' => [
 			'mediawiki.page.watch.ajax.js',
-			[ 'name' => 'config.json', 'config' => [ 'WatchlistExpiry' ] ],
+			[ 'name' => 'config.json', 'config' => [ MainConfigNames::WatchlistExpiry ] ],
 		],
 		'dependencies' => [
 			'mediawiki.api',
@@ -1603,6 +1730,32 @@ return [
 			'removedwatchtext',
 			'removedwatchtext-talk',
 		],
+	],
+	'mediawiki.page.preview' => [
+		'localBasePath' => "$wgBaseDirectory/resources/src",
+		'remoteBasePath' => "$wgResourceBasePath/resources/src",
+		'targets' => [ 'desktop', 'mobile' ],
+		'packageFiles' => [
+			'mediawiki.page.preview.js',
+		],
+		'styles' => 'mediawiki.page.preview.css',
+		'dependencies' => [
+			'mediawiki.api',
+			'mediawiki.diff',
+			'mediawiki.diff.styles',
+			'mediawiki.jqueryMsg',
+			'mediawiki.language',
+			'mediawiki.util',
+			'jquery.makeCollapsible',
+			'jquery.textSelection',
+			'oojs-ui-core',
+		],
+		'messages' => [
+			'summary-preview',
+			'parentheses',
+			'templatesusedpreview',
+			'diff-empty',
+		]
 	],
 	'mediawiki.page.image.pagination' => [
 		'scripts' => 'resources/src/mediawiki.page.image.pagination.js',
@@ -1628,9 +1781,11 @@ return [
 			],
 		],
 	],
-	'mediawiki.rcfilters.filters.dm' => [
+	// TODO consider renaming to mediawiki.rcfilters.filters following merge of
+	// mediawiki.rcfilters.filters.dm into mediawiki.rcfilters.filters.ui, see T256836
+	'mediawiki.rcfilters.filters.ui' => [
 		'targets' => [ 'desktop', 'mobile' ],
-		'localBasePath' => "$IP/resources/src/mediawiki.rcfilters",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.rcfilters",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.rcfilters",
 		'packageFiles' => [
 			'mw.rcfilters.js',
@@ -1643,28 +1798,9 @@ return [
 			'dm/ItemModel.js',
 			'dm/SavedQueriesModel.js',
 			'dm/SavedQueryItemModel.js',
-			[ 'name' => 'config.json', 'config' => [ 'StructuredChangeFiltersLiveUpdatePollingRate' ] ],
-		],
-		'dependencies' => [
-			'mediawiki.String',
-			'oojs',
-			'mediawiki.api',
-			'mediawiki.jqueryMsg',
-			'mediawiki.Uri',
-			'mediawiki.user',
-			'user.options',
-		],
-		'messages' => [
-			'quotation-marks',
-			'rcfilters-filterlist-title',
-		],
-	],
-	'mediawiki.rcfilters.filters.ui' => [
-		'targets' => [ 'desktop', 'mobile' ],
-		'localBasePath' => "$IP/resources/src/mediawiki.rcfilters",
-		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.rcfilters",
-		'packageFiles' => [
-			'mw.rcfilters.init.js',
+			// TODO consider merging this with the config.json for the ui code
+			[ 'name' => 'dmConfig.json', 'config' =>
+				[ MainConfigNames::StructuredChangeFiltersLiveUpdatePollingRate ] ],
 			'HighlightColors.js',
 			'ui/CheckboxInputWidget.js',
 			'ui/FilterTagMultiselectWidget.js',
@@ -1698,8 +1834,8 @@ return [
 			'ui/RclToOrFromWidget.js',
 			'ui/WatchlistTopSectionWidget.js',
 			[ 'name' => 'config.json',
-				'versionCallback' => 'ChangesListSpecialPage::getRcFiltersConfigSummary',
-				'callback' => 'ChangesListSpecialPage::getRcFiltersConfigVars',
+				'versionCallback' => [ ChangesListSpecialPage::class, 'getRcFiltersConfigSummary' ],
+				'callback' => [ ChangesListSpecialPage::class, 'getRcFiltersConfigVars' ],
 			],
 		],
 		'styles' => [
@@ -1823,14 +1959,17 @@ return [
 			'quotation-marks',
 		],
 		'dependencies' => [
-			'oojs-ui-widgets',
 			'jquery.makeCollapsible',
+			'mediawiki.String',
+			'mediawiki.api',
 			'mediawiki.jqueryMsg',
 			'mediawiki.language',
+			'mediawiki.Uri',
 			'mediawiki.user',
 			'mediawiki.util',
 			'mediawiki.widgets',
-			'mediawiki.rcfilters.filters.dm',
+			'oojs',
+			'oojs-ui-widgets',
 			'oojs-ui.styles.icons-content',
 			'oojs-ui.styles.icons-moderation',
 			'oojs-ui.styles.icons-editing-core',
@@ -1838,11 +1977,12 @@ return [
 			'oojs-ui.styles.icons-interactions',
 			'oojs-ui.styles.icons-layout',
 			'oojs-ui.styles.icons-media',
-			'oojs-ui-windows.icons'
+			'oojs-ui-windows.icons',
+			'user.options',
 		],
 	],
 	'mediawiki.interface.helpers.styles' => [
-		'class' => ResourceLoaderLessVarFileModule::class,
+		'class' => LessVarFileModule::class,
 		'lessMessages' => [
 			'comma-separator',
 			'parentheses-start',
@@ -1872,14 +2012,16 @@ return [
 			'resources/src/mediawiki.special/upload.css',
 			'resources/src/mediawiki.special/userrights.css',
 			'resources/src/mediawiki.special/watchlist.css',
+			'resources/src/mediawiki.special/whatlinkshere.less',
 			'resources/src/mediawiki.special/block.less',
 			'resources/src/mediawiki.special/listFiles.less',
 			'resources/src/mediawiki.special/blocklist.less',
+			'resources/src/mediawiki.special/version.css',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.special.apisandbox' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.special.apisandbox",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.special.apisandbox",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.special.apisandbox",
 		'styles' => 'apisandbox.less',
 		'packageFiles' => [
@@ -1932,6 +2074,10 @@ return [
 			'paramvalidator-help-type-number-min',
 			'paramvalidator-help-type-number-max',
 			'paramvalidator-help-type-number-minmax',
+			'api-help-param-deprecated',
+			'api-help-param-deprecated-label',
+			'api-help-param-internal',
+			'api-help-param-internal-label',
 			'api-help-param-multi-separate',
 			'paramvalidator-help-multi-max',
 			'paramvalidator-help-type-string-maxbytes',
@@ -1948,6 +2094,8 @@ return [
 			'apisandbox-request-url-label',
 			'apisandbox-request-format-json-label',
 			'apisandbox-request-json-label',
+			'apisandbox-request-format-php-label',
+			'apisandbox-request-php-label',
 			'apisandbox-request-time',
 			'apisandbox-results-fixtoken',
 			'apisandbox-results-fixtoken-fail',
@@ -1967,12 +2115,12 @@ return [
 		],
 	],
 	'mediawiki.special.block' => [
-		'localBasePath' => "$IP/resources/src",
+		'localBasePath' => "$wgBaseDirectory/resources/src",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src",
 		'packageFiles' => [
 			'mediawiki.special.block.js',
 			[ 'name' => 'config.json', 'config' => [
-				'BlockAllowsUTEdit',
+				MainConfigNames::BlockAllowsUTEdit,
 			] ],
 		],
 		'dependencies' => [
@@ -1994,13 +2142,14 @@ return [
 	// - .. are never loaded when viewing or editing wiki pages.
 	// - .. are only used by logged-in users.
 	// - .. depend on oojs-ui-core.
-	// - .. contain UI intialisation code (e.g. no public module exports, because
+	// - .. contain UI initialisation code (e.g. no public module exports, because
 	//      requiring or depending on this bundle is awkward)
 	'mediawiki.misc-authed-ooui' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.misc-authed-ooui",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.misc-authed-ooui",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.misc-authed-ooui",
 		'scripts' => [
 			'special.changecredentials.js',
+			'special.import.js',
 			'special.movePage.js',
 			'special.mute.js',
 			'special.pageLanguage.js',
@@ -2010,7 +2159,7 @@ return [
 			'mediawiki.api', // special.changecredentials.js
 			'mediawiki.htmlform.ooui', // special.changecredentials.js
 			'mediawiki.widgets.visibleLengthLimit', // special.movePage.js, special.undelete.js
-			'mediawiki.widgets', // special.movePage.js, special.undelete.js
+			'mediawiki.widgets', // special.movePage.js, special.undelete.js, special.import.js
 			'oojs-ui-core', // special.pageLanguage.js
 		],
 		'targets' => [ 'desktop', 'mobile' ],
@@ -2019,9 +2168,9 @@ return [
 	// - .. are only used by logged-in users when a non-default preference was enabled.
 	// - .. may be loaded in the critical path for those users on page views.
 	// - .. do NOT depend on OOUI.
-	// - .. contain only UI intialisation code (e.g. no public exports)
+	// - .. contain only UI initialisation code (e.g. no public exports)
 	'mediawiki.misc-authed-pref' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.misc-authed-pref",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.misc-authed-pref",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.misc-authed-pref",
 		'scripts' => [
 			'rightClickEdit.js',
@@ -2036,9 +2185,9 @@ return [
 	// - .. are only loaded for a privileged subset of logged-in users.
 	// - .. may be loaded in the critical path on page views.
 	// - .. do NOT depend on OOUI or other "large" modules.
-	// - .. contain only UI intialisation code (e.g. no public exports)
+	// - .. contain only UI initialisation code (e.g. no public exports)
 	'mediawiki.misc-authed-curate' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.misc-authed-curate",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.misc-authed-curate",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.misc-authed-curate",
 		'targets' => [ 'desktop', 'mobile' ],
 		'scripts' => [
@@ -2078,7 +2227,10 @@ return [
 			'watchlist-expiry-hours-left',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
-		'dependencies' => [ 'mediawiki.special' ],
+		'dependencies' => [
+			'mediawiki.special',
+			'oojs-ui.styles.icons-interactions'
+		],
 	],
 	'mediawiki.special.changeslist.enhanced' => [
 		'styles' => 'resources/src/mediawiki.special.changeslist.enhanced.less',
@@ -2116,16 +2268,19 @@ return [
 			'tags-edit-chosen-no-results',
 		],
 	],
-	'mediawiki.special.import' => [
-		'scripts' => 'resources/src/mediawiki.special.import.js',
-		'dependencies' => [
-			'mediawiki.widgets'
-		]
-	],
 	'mediawiki.special.import.styles.ooui' => [
 		'styles' => 'resources/src/mediawiki.special.import.styles.ooui.less',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
+	'mediawiki.special.changecredentials' => [
+		'targets' => [ 'desktop', 'mobile' ],
+		'scripts' => [ 'resources/src/mediawiki.special.changecredentails.js' ],
+	],
+	'mediawiki.special.changeemail' => [
+		'targets' => [ 'desktop', 'mobile' ],
+		'scripts' => [ 'resources/src/mediawiki.special.changeemail.js' ],
+	],
+
 	'mediawiki.special.preferences.ooui' => [
 		'targets' => [ 'desktop', 'mobile' ],
 		'scripts' => [
@@ -2136,14 +2291,10 @@ return [
 			'resources/src/mediawiki.special.preferences.ooui/signature.js',
 			'resources/src/mediawiki.special.preferences.ooui/tabs.js',
 			'resources/src/mediawiki.special.preferences.ooui/timezone.js',
-			'resources/src/mediawiki.special.preferences.ooui/personalEmail.js',
 		],
 		'messages' => [
 			'prefs-tabs-navigation-hint',
 			'prefs-signature-highlight-error',
-			'prefswarning-warning',
-			'saveprefs',
-			'savedprefs',
 		],
 		'dependencies' => [
 			'mediawiki.language',
@@ -2159,13 +2310,6 @@ return [
 	'mediawiki.special.preferences.styles.ooui' => [
 		'targets' => [ 'desktop', 'mobile' ],
 		'styles' => 'resources/src/mediawiki.special.preferences.styles.ooui.less',
-	],
-	'mediawiki.special.recentchanges' => [
-		'dependencies' => [
-			'mediawiki.widgets'
-		],
-		'scripts' => 'resources/src/mediawiki.special.recentchanges.js',
-		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.special.revisionDelete' => [
 		'scripts' => 'resources/src/mediawiki.special.revisionDelete.js',
@@ -2201,7 +2345,7 @@ return [
 		'targets' => [ 'desktop', 'mobile' ]
 	],
 	'mediawiki.special.search.styles' => [
-		'styles' => 'resources/src/mediawiki.special.search.styles.css',
+		'styles' => 'resources/src/mediawiki.special.search.styles.less',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.special.unwatchedPages' => [
@@ -2233,9 +2377,6 @@ return [
 			'size-megabytes',
 			'size-gigabytes',
 			'largefileserver',
-			'editwarning-warning',
-			// editwarning-warning uses {{int:prefs-editing}}
-			'prefs-editing',
 		],
 		'dependencies' => [
 			'mediawiki.special',
@@ -2257,11 +2398,12 @@ return [
 	],
 	'mediawiki.special.userlogin.login.styles' => [
 		'styles' => [
-			'resources/src/mediawiki.special.userlogin.login.styles/login.css',
+			'resources/src/mediawiki.special.userlogin.login.styles/login.less',
 		],
 	],
 	'mediawiki.special.createaccount' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.special.createaccount",
+		'targets' => [ 'desktop', 'mobile' ],
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.special.createaccount",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.special.createaccount",
 		'packageFiles' => [
 			'signup.js',
@@ -2318,49 +2460,14 @@ return [
 			'user.options',
 		],
 	],
-	'mediawiki.special.version' => [
-		'styles' => 'resources/src/mediawiki.special.version.css',
-	],
 
 	/* MediaWiki Installer */
 
 	// Used in the web installer. Test it after modifying this definition!
-	'mediawiki.legacy.config' => [
-		'deprecated' => 'This module will be removed in 1.37. Use `mediawiki.skinning.interface`.',
-		// These files are not actually loaded via ResourceLoader, so dependencies etc. won't work.
-		'scripts' => 'mw-config/config.js',
-		'styles' => 'mw-config/config.css',
-	],
 
 	/* MediaWiki Legacy */
 
-	'mediawiki.legacy.commonPrint' => [
-		'deprecated' => 'Use ResourceLoaderSkinModule',
-		'styles' => [
-			'resources/src/mediawiki.skinning/commonPrint.less' => [ 'media' => 'print' ]
-		],
-	],
-	'mediawiki.legacy.protect' => [
-		'deprecated' => "Please use mediawiki.action.protect",
-		'localBasePath' => "$IP/resources/src/mediawiki.legacy",
-		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.legacy",
-		'packageFiles' => [
-			'protect.js',
-			[ 'name' => 'config.json', 'config' => [ 'CascadingRestrictionLevels' ] ],
-		],
-		'dependencies' => 'jquery.lengthLimit',
-		'messages' => [ 'protect-unchain-permissions' ]
-	],
 	// Used in the web installer. Test it after modifying this definition!
-	'mediawiki.legacy.shared' => [
-		'deprecated' => 'Your default skin ResourceLoader class should use '
-			. 'ResourceLoaderSkinModule::class',
-		'class' => ResourceLoaderSkinModule::class,
-		'features' => [
-			'legacy' => true,
-		],
-		'targets' => [ 'desktop', 'mobile' ],
-	],
 
 	/* MediaWiki UI */
 
@@ -2376,7 +2483,7 @@ return [
 	'mediawiki.ui.checkbox' => [
 		'skinStyles' => [
 			'default' => [
-				'resources/src/mediawiki.ui/components/checkbox.less',
+				'resources/src/mediawiki.ui.checkbox/checkbox.less',
 			],
 		],
 		'targets' => [ 'desktop', 'mobile' ],
@@ -2384,7 +2491,7 @@ return [
 	'mediawiki.ui.radio' => [
 		'skinStyles' => [
 			'default' => [
-				'resources/src/mediawiki.ui/components/radio.less',
+				'resources/src/mediawiki.ui.radio/radio.less',
 			],
 		],
 		'targets' => [ 'desktop', 'mobile' ],
@@ -2393,7 +2500,7 @@ return [
 	'mediawiki.ui.anchor' => [
 		'skinStyles' => [
 			'default' => [
-				'resources/src/mediawiki.ui/components/anchors.less',
+				'resources/src/mediawiki.ui.anchor/anchor.less',
 			],
 		],
 		'targets' => [ 'desktop', 'mobile' ],
@@ -2402,7 +2509,7 @@ return [
 	'mediawiki.ui.button' => [
 		'skinStyles' => [
 			'default' => [
-				'resources/src/mediawiki.ui/components/buttons.less',
+				'resources/src/mediawiki.ui.button/button.less',
 			],
 		],
 		'targets' => [ 'desktop', 'mobile' ],
@@ -2410,37 +2517,44 @@ return [
 	'mediawiki.ui.input' => [
 		'skinStyles' => [
 			'default' => [
-				'resources/src/mediawiki.ui/components/inputs.less',
+				'resources/src/mediawiki.ui.input/input.less',
 			],
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.ui.icon' => [
 		'skinStyles' => [
-			'default' => [
-				'resources/src/mediawiki.ui/components/icons.less',
-			],
+			'default' => 'resources/src/mediawiki.ui.icon/icons-2.less',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 
 	'mediawiki.widgets' => [
-		'scripts' => [
-			'resources/src/mediawiki.widgets/mw.widgets.NamespaceInputWidget.js',
-			'resources/src/mediawiki.widgets/mw.widgets.ComplexNamespaceInputWidget.js',
-			'resources/src/mediawiki.widgets/mw.widgets.CopyTextLayout.js',
-			'resources/src/mediawiki.widgets/mw.widgets.TitleWidget.js',
-			'resources/src/mediawiki.widgets/mw.widgets.TitleInputWidget.js',
-			'resources/src/mediawiki.widgets/mw.widgets.TitleSearchWidget.js',
-			'resources/src/mediawiki.widgets/mw.widgets.ComplexTitleInputWidget.js',
-			'resources/src/mediawiki.widgets/mw.widgets.TitleOptionWidget.js',
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.widgets",
+		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.widgets",
+		'packageFiles' => [
+			'index.js',
+			[ 'name' => 'data.json', 'callback' => static function ( MessageLocalizer $messageLocalizer ) {
+				$userLang = $messageLocalizer->msg( 'unused' )->getLanguage();
+				return [
+					'formattedNamespaces' => $userLang->getFormattedNamespaces(),
+				];
+			} ],
+			'mw.widgets.NamespaceInputWidget.js',
+			'mw.widgets.ComplexNamespaceInputWidget.js',
+			'mw.widgets.CopyTextLayout.js',
+			'mw.widgets.TitleWidget.js',
+			'mw.widgets.TitleInputWidget.js',
+			'mw.widgets.TitleSearchWidget.js',
+			'mw.widgets.ComplexTitleInputWidget.js',
+			'mw.widgets.TitleOptionWidget.js',
 		],
 		'styles' => [
-			'resources/src/mediawiki.widgets/mw.widgets.CopyTextLayout.css',
+			'mw.widgets.CopyTextLayout.css',
 		],
 		'skinStyles' => [
 			'default' => [
-				'resources/src/mediawiki.widgets/mw.widgets.TitleWidget.less',
+				'mw.widgets.TitleWidget.less',
 			],
 		],
 		'dependencies' => [
@@ -2448,6 +2562,8 @@ return [
 			'mediawiki.widgets.styles',
 			// TitleInputWidget
 			'oojs-ui.styles.icons-content',
+			// CopyTextLayout uses 'copy'
+			'oojs-ui.styles.icons-editing-advanced',
 			'mediawiki.Title',
 			'mediawiki.api',
 			'mediawiki.String',
@@ -2594,10 +2710,12 @@ return [
 			'period-pm',
 		],
 		'dependencies' => [
+			'jquery.client',
 			'mediawiki.util',
 			'oojs-ui-core',
 			'oojs-ui.styles.icons-moderation',
 			'oojs-ui.styles.icons-movement',
+			'oojs-ui.styles.icons-interactions',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -2692,6 +2810,7 @@ return [
 			'oojs-ui-widgets',
 			'mediawiki.ForeignApi',
 			'mediawiki.Title',
+			'mediawiki.user',
 			'mediawiki.util',
 		],
 		'messages' => [
@@ -2795,22 +2914,8 @@ return [
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
-	'mediawiki.widgets.StashedFileWidget' => [
-		'scripts' => [
-			'resources/src/mediawiki.widgets/mw.widgets.StashedFileWidget.js',
-		],
-		'skinStyles' => [
-			'default' => [
-				'resources/src/mediawiki.widgets/mw.widgets.StashedFileWidget.less',
-			],
-		],
-		'dependencies' => [
-			'mediawiki.api',
-			'oojs-ui-core',
-		],
-	],
 	'mediawiki.watchstar.widgets' => [
-		'localBasePath' => "$IP/resources/src/mediawiki.watchstar.widgets",
+		'localBasePath' => "$wgBaseDirectory/resources/src/mediawiki.watchstar.widgets",
 		'remoteBasePath' => "$wgResourceBasePath/resources/src/mediawiki.watchstar.widgets",
 		'packageFiles' => [
 			'WatchlistExpiryWidget.js',
@@ -2836,7 +2941,7 @@ return [
 	'mediawiki.deflate' => [
 		'packageFiles' => [
 			'resources/src/mediawiki.deflate/mw.deflate.js',
-			'resources/lib/pako/pako_deflate.js',
+			'resources/lib/pako/pako_deflate.es5.js',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -2844,7 +2949,7 @@ return [
 	/* OOjs */
 	'oojs' => [
 		'scripts' => [
-			'resources/lib/oojs/oojs.jquery.js',
+			'resources/lib/oojs/oojs.js',
 			'resources/src/oojs-global.js',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
@@ -2885,7 +2990,7 @@ return [
 
 	// The core JavaScript library.
 	'oojs-ui-core' => [
-		'class' => ResourceLoaderOOUIFileModule::class,
+		'class' => OOUIFileModule::class,
 		'scripts' => [
 			'resources/lib/ooui/oojs-ui-core.js',
 			'resources/src/ooui-local.js',
@@ -2913,7 +3018,7 @@ return [
 	],
 	// This contains only the styles required by core widgets.
 	'oojs-ui-core.styles' => [
-		'class' => ResourceLoaderOOUIFileModule::class,
+		'class' => OOUIFileModule::class,
 		'styles' => [
 			'resources/lib/ooui/wikimedia-ui-base.less', // Providing Wikimedia UI LESS variables to all
 		],
@@ -2921,7 +3026,7 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'oojs-ui-core.icons' => [
-		'class' => ResourceLoaderOOUIIconPackModule::class,
+		'class' => OOUIIconPackModule::class,
 		'icons' => [
 			'add', 'alert', 'infoFilled', 'error', 'check', 'close', 'info', 'search', 'subtract'
 		],
@@ -2929,7 +3034,7 @@ return [
 	],
 	// Additional widgets and layouts module.
 	'oojs-ui-widgets' => [
-		'class' => ResourceLoaderOOUIFileModule::class,
+		'class' => OOUIFileModule::class,
 		'scripts' => 'resources/lib/ooui/oojs-ui-widgets.js',
 		'themeStyles' => 'widgets',
 		'dependencies' => [
@@ -2948,19 +3053,19 @@ return [
 	// they depend on the internal structure of OOUI widgets, which can change at any time. If you
 	// find that you need to load this module, you're probably doing something wrong or very hacky.
 	'oojs-ui-widgets.styles' => [
-		'class' => ResourceLoaderOOUIFileModule::class,
+		'class' => OOUIFileModule::class,
 		'themeStyles' => 'widgets',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'oojs-ui-widgets.icons' => [
-		'class' => ResourceLoaderOOUIIconPackModule::class,
+		'class' => OOUIIconPackModule::class,
 		// Do not repeat icons already used in 'oojs-ui-core.icons'
 		'icons' => [ 'attachment', 'collapse', 'expand', 'trash', 'upload' ],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	// Toolbar and tools module.
 	'oojs-ui-toolbars' => [
-		'class' => ResourceLoaderOOUIFileModule::class,
+		'class' => OOUIFileModule::class,
 		'scripts' => 'resources/lib/ooui/oojs-ui-toolbars.js',
 		'themeStyles' => 'toolbars',
 		'dependencies' => [
@@ -2975,14 +3080,14 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'oojs-ui-toolbars.icons' => [
-		'class' => ResourceLoaderOOUIIconPackModule::class,
+		'class' => OOUIIconPackModule::class,
 		// Do not repeat icons already used in 'oojs-ui-core.icons': 'check'
 		'icons' => [ 'collapse', 'expand' ],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	// Windows and dialogs module.
 	'oojs-ui-windows' => [
-		'class' => ResourceLoaderOOUIFileModule::class,
+		'class' => OOUIFileModule::class,
 		'scripts' => 'resources/lib/ooui/oojs-ui-windows.js',
 		'themeStyles' => 'windows',
 		'dependencies' => [
@@ -3000,78 +3105,78 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'oojs-ui-windows.icons' => [
-		'class' => ResourceLoaderOOUIIconPackModule::class,
+		'class' => OOUIIconPackModule::class,
 		// Do not repeat icons already used in 'oojs-ui-core.icons': 'close'
 		'icons' => [ 'previous' ],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 
 	'oojs-ui.styles.indicators' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'indicators',
 	],
 	'oojs-ui.styles.icons-accessibility' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-accessibility',
 	],
 	'oojs-ui.styles.icons-alerts' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-alerts',
 	],
 	'oojs-ui.styles.icons-content' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-content',
 	],
 	'oojs-ui.styles.icons-editing-advanced' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-editing-advanced',
 	],
 	'oojs-ui.styles.icons-editing-citation' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-editing-citation',
 	],
 	'oojs-ui.styles.icons-editing-core' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-editing-core',
 	],
 	'oojs-ui.styles.icons-editing-list' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-editing-list',
 	],
 	'oojs-ui.styles.icons-editing-styling' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-editing-styling',
 	],
 	'oojs-ui.styles.icons-interactions' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-interactions',
 	],
 	'oojs-ui.styles.icons-layout' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-layout',
 	],
 	'oojs-ui.styles.icons-location' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-location',
 	],
 	'oojs-ui.styles.icons-media' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-media',
 	],
 	'oojs-ui.styles.icons-moderation' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-moderation',
 	],
 	'oojs-ui.styles.icons-movement' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-movement',
 	],
 	'oojs-ui.styles.icons-user' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-user',
 	],
 	'oojs-ui.styles.icons-wikimedia' => [
-		'class' => ResourceLoaderOOUIImageModule::class,
+		'class' => OOUIImageModule::class,
 		'themeImages' => 'icons-wikimedia',
 	],
 ];

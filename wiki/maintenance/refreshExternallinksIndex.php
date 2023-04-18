@@ -47,11 +47,11 @@ class RefreshExternallinksIndex extends LoggedUpdateMaintenance {
 	}
 
 	protected function updateSkippedMessage() {
-		return 'externallinks table indexes up to date';
+		return 'externallinks table indexes up to date.';
 	}
 
 	protected function doDBUpdates() {
-		$dbw = $this->getDB( DB_MASTER );
+		$dbw = $this->getDB( DB_PRIMARY );
 		if ( !$dbw->tableExists( 'externallinks', __METHOD__ ) ) {
 			$this->error( "externallinks table does not exist" );
 			return false;

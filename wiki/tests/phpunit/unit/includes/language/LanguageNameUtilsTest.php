@@ -3,6 +3,7 @@
 use MediaWiki\Config\ServiceOptions;
 use MediaWiki\HookContainer\HookContainer;
 use MediaWiki\Languages\LanguageNameUtils;
+use MediaWiki\MainConfigNames;
 
 class LanguageNameUtilsTest extends MediaWikiUnitTestCase {
 	use LanguageNameUtilsTestTrait;
@@ -19,7 +20,7 @@ class LanguageNameUtilsTest extends MediaWikiUnitTestCase {
 	 * @param array $optionsArray
 	 * @return LanguageNameUtils
 	 */
-	private function newObj( array $optionsArray = [] ) : LanguageNameUtils {
+	private function newObj( array $optionsArray = [] ): LanguageNameUtils {
 		// TODO Why is hookContainer unset here sometimes?
 		$this->hookContainer = $this->hookContainer ?? $this->createHookContainer();
 		return new LanguageNameUtils(
@@ -27,9 +28,9 @@ class LanguageNameUtilsTest extends MediaWikiUnitTestCase {
 				LanguageNameUtils::CONSTRUCTOR_OPTIONS,
 				$optionsArray,
 				[
-					'ExtraLanguageNames' => [],
-					'LanguageCode' => 'en',
-					'UsePigLatinVariant' => false,
+					MainConfigNames::ExtraLanguageNames => [],
+					MainConfigNames::LanguageCode => 'en',
+					MainConfigNames::UsePigLatinVariant => false,
 				]
 			),
 			$this->hookContainer

@@ -19,14 +19,15 @@ class LocalisationCacheTest extends MediaWikiIntegrationTestCase {
 	protected function getMockLocalisationCache( $hooks = [] ) {
 		global $IP;
 
-		$mockLangNameUtils = $this->createMock( LanguageNameUtils::class );
-		$mockLangNameUtils->method( 'isValidBuiltInCode' )->will( $this->returnCallback(
+		$mockLangNameUtils = $this->createNoOpMock( LanguageNameUtils::class,
+			[ 'isValidBuiltInCode', 'isSupportedLanguage', 'getMessagesFileName' ] );
+		$mockLangNameUtils->method( 'isValidBuiltInCode' )->willReturnCallback(
 			static function ( $code ) {
 				// Copy-paste, but it's only one line
 				return (bool)preg_match( '/^[a-z0-9-]{2,}$/', $code );
 			}
-		) );
-		$mockLangNameUtils->method( 'isSupportedLanguage' )->will( $this->returnCallback(
+		);
+		$mockLangNameUtils->method( 'isSupportedLanguage' )->willReturnCallback(
 			static function ( $code ) {
 				return in_array( $code, [
 					'ar',
@@ -38,17 +39,14 @@ class LocalisationCacheTest extends MediaWikiIntegrationTestCase {
 					'ru',
 				] );
 			}
-		) );
-		$mockLangNameUtils->method( 'getMessagesFileName' )->will( $this->returnCallback(
+		);
+		$mockLangNameUtils->method( 'getMessagesFileName' )->willReturnCallback(
 			static function ( $code ) {
 				global $IP;
 				$code = str_replace( '-', '_', ucfirst( $code ) );
 				return "$IP/languages/messages/Messages$code.php";
 			}
-		) );
-		$mockLangNameUtils->expects( $this->never() )->method( $this->anythingBut(
-			'isValidBuiltInCode', 'isSupportedLanguage', 'getMessagesFileName'
-		) );
+		);
 
 		$hookContainer = $this->createHookContainer( $hooks );
 
@@ -66,12 +64,10 @@ class LocalisationCacheTest extends MediaWikiIntegrationTestCase {
 				$mockLangNameUtils,
 				$hookContainer
 			] )
-			->setMethods( [ 'getMessagesDirs' ] )
+			->onlyMethods( [ 'getMessagesDirs' ] )
 			->getMock();
-		$lc->expects( $this->any() )->method( 'getMessagesDirs' )
-			->will( $this->returnValue(
-				[ "$IP/tests/phpunit/data/localisationcache" ]
-			) );
+		$lc->method( 'getMessagesDirs' )
+			->willReturn( [ "$IP/tests/phpunit/data/localisationcache" ] );
 
 		return $lc;
 	}

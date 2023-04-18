@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\Wt2Html\TT;
 
-use stdClass;
+use Wikimedia\Parsoid\NodeData\DataParsoid;
 use Wikimedia\Parsoid\Tokens\EndTagTk;
 use Wikimedia\Parsoid\Tokens\EOFTk;
 use Wikimedia\Parsoid\Tokens\NlTk;
@@ -12,7 +12,6 @@ use Wikimedia\Parsoid\Tokens\TagTk;
 use Wikimedia\Parsoid\Tokens\Token;
 use Wikimedia\Parsoid\Utils\PHPUtils;
 use Wikimedia\Parsoid\Utils\TokenUtils;
-use Wikimedia\Parsoid\Utils\Utils;
 use Wikimedia\Parsoid\Wt2Html\TokenTransformManager;
 
 /**
@@ -53,8 +52,6 @@ class ListHandler extends TokenHandler {
 	}
 
 	/**
-	 * Class constructor
-	 *
 	 * @param TokenTransformManager $manager manager environment
 	 * @param array $options options
 	 */
@@ -83,16 +80,16 @@ class ListHandler extends TokenHandler {
 	/**
 	 * @inheritDoc
 	 */
-	public function onTag( Token $token ) {
-		return $token->getName() === 'listItem' ? $this->onListItem( $token ) : $token;
+	public function onTag( Token $token ): ?TokenHandlerResult {
+		return $token->getName() === 'listItem' ? $this->onListItem( $token ) : null;
 	}
 
 	/**
 	 * @inheritDoc
 	 */
-	public function onAny( $token ): array {
-		$this->env->log( 'trace/list', $this->manager->pipelineId,
-			'ANY:', function () use ( $token ) {
+	public function onAny( $token ): ?TokenHandlerResult {
+		$this->env->log( 'trace/list', $this->pipelineId,
+			'ANY:', static function () use ( $token ) {
 				return PHPUtils::jsonEncode( $token );
 			} );
 		$tokens = null;
@@ -113,8 +110,8 @@ class ListHandler extends TokenHandler {
 				$this->nestedTableCount++;
 			}
 
-			$this->env->log( 'trace/list', $this->manager->pipelineId, 'RET: ', $token );
-			return [ 'tokens' => [ $token ] ];
+			$this->env->log( 'trace/list', $this->pipelineId, 'RET: ', $token );
+			return null;
 		}
 
 		// Keep track of open tags per list frame in order to prevent colons
@@ -133,19 +130,19 @@ class ListHandler extends TokenHandler {
 				// close all open lists and pop a frame
 				$ret = $this->closeLists( $token );
 				$this->currListFrame = array_pop( $this->listFrames );
-				return [ 'tokens' => $ret ];
+				return new TokenHandlerResult( $ret );
 			} elseif ( self::generateImpliedEndTags( $token->getName() ) ) {
 				if ( $this->currListFrame->numOpenBlockTags === 0 ) {
 					// Unbalanced closing block tag in a list context ==> close all previous lists
-					return [ 'tokens' => $this->closeLists( $token ) ];
+					return new TokenHandlerResult( $this->closeLists( $token ) );
 				} else {
 					$this->currListFrame->numOpenBlockTags--;
 					if ( $this->currListFrame->atEOL ) {
 						// Non-list item in newline context ==> close all previous lists
-						return [ 'tokens' => $this->closeLists( $token ) ];
+						return new TokenHandlerResult( $this->closeLists( $token ) );
 					} else {
-						$this->env->log( 'trace/list', $this->manager->pipelineId, 'RET: ', $token );
-						return [ 'tokens' => [ $token ] ];
+						$this->env->log( 'trace/list', $this->pipelineId, 'RET: ', $token );
+						return null;
 					}
 				}
 			}
@@ -163,10 +160,10 @@ class ListHandler extends TokenHandler {
 					$this->currListFrame->nlTk = null;
 				}
 				$this->currListFrame->solTokens[] = $token;
-				return [ 'tokens' => [] ];
+				return new TokenHandlerResult( [] );
 			} else {
 				// Non-list item in newline context ==> close all previous lists
-				return [ 'tokens' => $this->closeLists( $token ) ];
+				return new TokenHandlerResult( $this->closeLists( $token ) );
 			}
 		}
 
@@ -177,7 +174,7 @@ class ListHandler extends TokenHandler {
 			// the text line-by-line. At nltk, any open tags will cease having
 			// an effect.
 			$this->currListFrame->numOpenTags = 0;
-			return [ 'tokens' => [] ];
+			return new TokenHandlerResult( [] );
 		}
 
 		if ( $token instanceof TagTk ) {
@@ -187,21 +184,21 @@ class ListHandler extends TokenHandler {
 			} elseif ( self::generateImpliedEndTags( $token->getName() ) ) {
 				$this->currListFrame->numOpenBlockTags++;
 			}
-			$this->env->log( 'trace/list', $this->manager->pipelineId, 'RET: ', $token );
-			return [ 'tokens' => [ $token ] ];
+			$this->env->log( 'trace/list', $this->pipelineId, 'RET: ', $token );
+			return null;
 		}
 
 		// Nothing else left to do
-		$this->env->log( 'trace/list', $this->manager->pipelineId, 'RET: ', $token );
-		return [ 'tokens' => [ $token ] ];
+		$this->env->log( 'trace/list', $this->pipelineId, 'RET: ', $token );
+		return null;
 	}
 
 	/**
 	 * @inheritDoc
 	 */
-	public function onEnd( EOFTk $token ): array {
-		$this->env->log( 'trace/list', $this->manager->pipelineId,
-			'END:', function () use ( $token ) { return PHPUtils::jsonEncode( $token );
+	public function onEnd( EOFTk $token ): ?TokenHandlerResult {
+		$this->env->log( 'trace/list', $this->pipelineId,
+			'END:', static function () use ( $token ) { return PHPUtils::jsonEncode( $token );
 			} );
 
 		$this->listFrames = [];
@@ -212,13 +209,12 @@ class ListHandler extends TokenHandler {
 		}
 		$toks = $this->closeLists( $token );
 		$this->reset();
-		return [ 'tokens' => $toks ];
+		return new TokenHandlerResult( $toks );
 	}
 
 	/**
 	 * Handle close list processing
 	 *
-	 * FIXME: Check if string can come through here
 	 * @param Token|string $token
 	 * @return array
 	 */
@@ -227,7 +223,7 @@ class ListHandler extends TokenHandler {
 		$tokens = $this->popTags( count( $this->currListFrame->bstack ) );
 
 		// purge all stashed sol-tokens
-		$tokens = array_merge( $tokens, $this->currListFrame->solTokens );
+		PHPUtils::pushArray( $tokens, $this->currListFrame->solTokens );
 		if ( $this->currListFrame->nlTk ) {
 			$tokens[] = $this->currListFrame->nlTk;
 		}
@@ -240,8 +236,8 @@ class ListHandler extends TokenHandler {
 
 		$this->resetCurrListFrame();
 
-		$this->env->log( 'trace/list', $this->manager->pipelineId, '----closing all lists----' );
-		$this->env->log( 'trace/list', $this->manager->pipelineId, 'RET: ', $tokens );
+		$this->env->log( 'trace/list', $this->pipelineId, '----closing all lists----' );
+		$this->env->log( 'trace/list', $this->pipelineId, 'RET: ', $tokens );
 
 		return $tokens;
 	}
@@ -250,9 +246,9 @@ class ListHandler extends TokenHandler {
 	 * Handle a list item
 	 *
 	 * @param Token $token
-	 * @return array
+	 * @return TokenHandlerResult|null
 	 */
-	private function onListItem( Token $token ): array {
+	private function onListItem( Token $token ): ?TokenHandlerResult {
 		if ( $token instanceof TagTk ) {
 			$this->onAnyEnabled = true;
 			if ( $this->currListFrame ) {
@@ -262,8 +258,8 @@ class ListHandler extends TokenHandler {
 				if ( PHPUtils::lastItem( $bullets ) === ':'
 					&& $this->currListFrame->numOpenTags > 0
 				) {
-					$this->env->log( 'trace/list', $this->manager->pipelineId, 'RET: ', ':' );
-					return [ 'tokens' => [ ':' ] ];
+					$this->env->log( 'trace/list', $this->pipelineId, 'RET: ', ':' );
+					return new TokenHandlerResult( [ ':' ] );
 				}
 			} else {
 				$this->currListFrame = new ListFrame;
@@ -271,11 +267,11 @@ class ListHandler extends TokenHandler {
 			// convert listItem to list and list item tokens
 			$res = $this->doListItem( $this->currListFrame->bstack, $token->getAttribute( 'bullets' ),
 				$token );
-			return [ 'tokens' => $res, 'skipOnAny' => true ];
+			return new TokenHandlerResult( $res );
 		}
 
-		$this->env->log( 'trace/list', $this->manager->pipelineId, 'RET: ', $token );
-		return [ 'tokens' => [ $token ] ];
+		$this->env->log( 'trace/list', $this->pipelineId, 'RET: ', $token );
+		return null;
 	}
 
 	/**
@@ -300,11 +296,11 @@ class ListHandler extends TokenHandler {
 	 * Push a list
 	 *
 	 * @param array $container
-	 * @param stdClass $dp1
-	 * @param stdClass $dp2
+	 * @param DataParsoid $dp1
+	 * @param DataParsoid $dp2
 	 * @return array
 	 */
-	private function pushList( array $container, stdClass $dp1, stdClass $dp2 ): array {
+	private function pushList( array $container, DataParsoid $dp1, DataParsoid $dp2 ): array {
 		$this->currListFrame->endtags[] = new EndTagTk( $container['list'] );
 		$this->currListFrame->endtags[] = new EndTagTk( $container['item'] );
 
@@ -361,16 +357,16 @@ class ListHandler extends TokenHandler {
 	 * @return array
 	 */
 	private function doListItem( array $bs, array $bn, Token $token ): array {
-		$this->env->log( 'trace/list', $this->manager->pipelineId,
-			'BEGIN:', function () use ( $token ) { return PHPUtils::jsonEncode( $token );
+		$this->env->log( 'trace/list', $this->pipelineId,
+			'BEGIN:', static function () use ( $token ) { return PHPUtils::jsonEncode( $token );
 			} );
 
 		$prefixLen = $this->commonPrefixLength( $bs, $bn );
 		$prefix = array_slice( $bn, 0, $prefixLen/*CHECK THIS*/ );
 		$dp = $token->dataAttribs;
 
-		$makeDP = function ( $k, $j ) use ( $dp ) {
-			$newDP = Utils::clone( $dp );
+		$makeDP = static function ( $k, $j ) use ( $dp ) {
+			$newDP = $dp->clone();
 			$tsr = $dp->tsr ?? null;
 			if ( $tsr ) {
 				$newDP->tsr = new SourceRange(
@@ -386,12 +382,12 @@ class ListHandler extends TokenHandler {
 		$itemToken = null;
 
 		// emit close tag tokens for closed lists
-		$this->env->log( 'trace/list', $this->manager->pipelineId, function () use ( $bs, $bn ) {
+		$this->env->log( 'trace/list', $this->pipelineId, static function () use ( $bs, $bn ) {
 			return '    bs: ' . PHPUtils::jsonEncode( $bs ) . '; bn: ' . PHPUtils::jsonEncode( $bn );
 		} );
 
 		if ( count( $prefix ) === count( $bs ) && count( $bn ) === count( $bs ) ) {
-			$this->env->log( 'trace/list', $this->manager->pipelineId, '    -> no nesting change' );
+			$this->env->log( 'trace/list', $this->pipelineId, '    -> no nesting change' );
 
 			// same list item types and same nesting level
 			$itemToken = array_pop( $this->currListFrame->endtags );
@@ -436,21 +432,26 @@ class ListHandler extends TokenHandler {
 					// stx='row' is only set for single-line dt-dd lists (see tokenizer)
 					// In this scenario, the dd token we are building a token for has no prefix
 					// Ex: ;a:b, *;a:b, #**;a:b, etc. Compare with *;a\n*:b, #**;a\n#**:b
-					$this->env->log( 'trace/list', $this->manager->pipelineId,
+					$this->env->log( 'trace/list', $this->pipelineId,
 						'    -> single-line dt->dd transition' );
 					$newTag = new TagTk( $newName, [], $makeDP( 0, 1 ) );
 				} else {
-					$this->env->log( 'trace/list', $this->manager->pipelineId, '    -> other dt/dd transition' );
+					$this->env->log( 'trace/list', $this->pipelineId, '    -> other dt/dd transition' );
 					$newTag = new TagTk( $newName, [], $makeDP( 0, $prefixLen + 1 ) );
 				}
 
-				$tokens = array_merge( $tokens, [ $endTag, $this->currListFrame->nlTk ?: '', $newTag ] );
+				$tokens[] = $endTag;
+				$tokens[] = $this->currListFrame->nlTk ?: '';
+				$tokens[] = $newTag;
 
 				$prefixCorrection = 1;
 			} else {
-				$this->env->log( 'trace/list', $this->manager->pipelineId, '    -> reduced nesting' );
-				$tokens = array_merge( $tokens, $this->popTags( count( $bs ) - $prefixLen ) );
-				$tokens = array_merge( $this->currListFrame->solTokens, $tokens );
+				$this->env->log( 'trace/list', $this->pipelineId, '    -> reduced nesting' );
+				$tokens = array_merge(
+					$this->currListFrame->solTokens,
+					$tokens,
+					$this->popTags( count( $bs ) - $prefixLen )
+				);
 				if ( $this->currListFrame->nlTk ) {
 					$tokens[] = $this->currListFrame->nlTk;
 				}
@@ -499,20 +500,20 @@ class ListHandler extends TokenHandler {
 				$listDP = null;
 				$listItemDP = null;
 				if ( $i === $prefixLen ) {
-					$this->env->log( 'trace/list', $this->manager->pipelineId,
+					$this->env->log( 'trace/list', $this->pipelineId,
 						'    -> increased nesting: first'
 					);
 					$listDP = $makeDP( 0, 0 );
 					$listItemDP = $makeDP( 0, $i + 1 );
 				} else {
-					$this->env->log( 'trace/list', $this->manager->pipelineId,
+					$this->env->log( 'trace/list', $this->pipelineId,
 						'    -> increased nesting: 2nd and higher'
 					);
 					$listDP = $makeDP( $i, $i );
 					$listItemDP = $makeDP( $i, $i + 1 );
 				}
 
-				$tokens = array_merge( $tokens, $this->pushList(
+				PHPUtils::pushArray( $tokens, $this->pushList(
 					self::$bullet_chars_map[$bn[$i]], $listDP, $listItemDP
 				) );
 			}
@@ -524,8 +525,8 @@ class ListHandler extends TokenHandler {
 		$this->currListFrame->nlTk = null;
 		$this->currListFrame->atEOL = false;
 
-		$this->env->log( 'trace/list', $this->manager->pipelineId,
-			'RET:', function () use ( $res ) { return PHPUtils::jsonEncode( $res );
+		$this->env->log( 'trace/list', $this->pipelineId,
+			'RET:', static function () use ( $res ) { return PHPUtils::jsonEncode( $res );
 			} );
 		return $res;
 	}

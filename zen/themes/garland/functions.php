@@ -39,7 +39,7 @@ if (!OFFSET_PATH) {
 	}
 
 	require_once(SERVERPATH . '/' . THEMEFOLDER . '/garland/' . $personality . '/functions.php');
-	$_oneImagePage = $handler->onePage();
+	$_zp_one_image_page = $handler->onePage();
 	$_zp_page_check = 'my_checkPageValidity';
 }
 
@@ -109,7 +109,7 @@ function footer() {
 					break;
 				case 'news.php':
 					if (is_NewsCategory()) {
-						printRSSLink('Category', '', 'RSS', '', true, null, '', NULL, $_zp_current_category->getTitlelink());
+						printRSSLink('Category', '', 'RSS', '', true, null, '', NULL, $_zp_current_category->getName());
 					} else {
 						printRSSLink('News', '', 'RSS', '');
 					}
@@ -138,11 +138,11 @@ function footer() {
 			$prev = ' | ';
 		}
 		?>
-		<?php @call_user_func('printUserLogin_out', $prev); ?>
+		<?php callUserFunction('printUserLogin_out', $prev); ?>
 		<br />
-		<?php @call_user_func('mobileTheme::controlLink'); ?>
+		<?php callUserFunction('mobileTheme::controlLink'); ?>
 		<br />
-		<?php @call_user_func('printLanguageSelector'); ?>
+		<?php callUserFunction('printLanguageSelector'); ?>
 		<?php printCopyrightNotice('', '<br>'); ?>
 		<?php printZenphotoLink(); ?>
 	</div>
@@ -162,7 +162,7 @@ function commonNewsLoop($paged) {
 			<div class="newsarticlecredit">
 				<span class="newsarticlecredit-left">
 					<?php
-					$count = @call_user_func('getCommentCount');
+					$count = callUserFunction('getCommentCount');
 					$cat = getNewsCategories();
 					printNewsDate();
 					if ($count > 0) {

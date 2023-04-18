@@ -74,7 +74,7 @@ if (!defined('WEBPATH'))
 									<?php printCodeblock(1); ?>
 									<div id="image_container">
 										<?php
-										if (isImagePhoto()) {
+										if ($_zp_current_image->isPhoto()) {
 											$fullimage = getFullImageURL();
 										} else {
 											$fullimage = NULL;
@@ -93,11 +93,11 @@ if (!defined('WEBPATH'))
 										?>
 									</div>
 									<?php
-									@call_user_func('printOpenStreetMap');
+									callUserFunction('openStreetMap::printOpenStreetMap');
 									If (function_exists('printAddToFavorites'))
 										printAddToFavorites($_zp_current_image);
-									@call_user_func('printRating');
-									@call_user_func('printCommentForm');
+									callUserFunction('printRating');
+									callUserFunction('printCommentForm');
 									printCodeblock(2);
 									footer();
 									?>

@@ -3,8 +3,10 @@
 		"authors": [
 			"Ajam",
 			"Amire80",
+			"Beginneruser",
 			"Ebraminio",
 			"Huji",
+			"Jeeputer",
 			"Meisam",
 			"Reza1615",
 			"ZxxZxxZ"
@@ -369,6 +371,7 @@
 	"exif-firstphotodate": "تاریخ اولین عکس",
 	"exif-lastphotodate": "تاریخ آخرین عکس",
 	"exif-projectiontype": "نوع نمایش",
+	"exif-projectiontype-equirectangular": "مستطیلی",
 	"exif-usepanoramaviewer": "استفاده از نمایشگر پانوراما",
 	"exif-usepanoramaviewer-true": "بله",
 	"exif-usepanoramaviewer-false": "خیر",

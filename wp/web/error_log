@@ -25,3 +25,6 @@ Stack trace:
 #4 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-load.php(55): require_once('/home/sexthera/...')
 #5 /home/sexthera/public_html/muizenmesh.co.za/wp/web/wp/wp-blog-header.php(13): require_once('/home/sexthera/...')
 #6 /home/sexthera/public_html/muizenmesh.co.za/wp/web/index.php(6): requi in /home/sexthera/public_html/muizenmesh.co.za/wp/vendor/vlucas/phpdotenv/src/Validator.php on line 175
+[08-Apr-2023 13:00:17 UTC] PHP Parse error:  Unmatched '}' in /home/sexthera/public_html/muizenmesh.co.za/wp/web/app/themes/skt-ecology/functions.php on line 290
+[08-Apr-2023 13:16:32 UTC] PHP Parse error:  syntax error, unexpected token "<" in /home/sexthera/public_html/muizenmesh.co.za/wp/web/app/themes/skt-ecology-child/functions.php on line 79
+[08-Apr-2023 14:52:42 UTC] PHP Parse error:  syntax error, unexpected token "*", expecting end of file in /home/sexthera/public_html/muizenmesh.co.za/wp/web/app/themes/skt-ecology-child/functions.php on line 86

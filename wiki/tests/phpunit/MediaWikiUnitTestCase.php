@@ -20,9 +20,10 @@
  */
 
 use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\Logger\NullSpi;
 use PHPUnit\Framework\Exception;
 use PHPUnit\Framework\TestCase;
-use Wikimedia\ObjectFactory;
+use Wikimedia\ObjectFactory\ObjectFactory;
 
 /**
  * Base class for unit tests.
@@ -30,7 +31,7 @@ use Wikimedia\ObjectFactory;
  * Extend this class if you are testing classes which use dependency injection and do not access
  * global functions, variables, services or a storage backend.
  *
- * @stable for subclassing
+ * @stable to extend
  * @since 1.34
  */
 abstract class MediaWikiUnitTestCase extends TestCase {
@@ -60,18 +61,20 @@ abstract class MediaWikiUnitTestCase extends TestCase {
 			'wgDevelopmentWarnings',
 			// Dependency of wfParseUrl()
 			'wgUrlProtocols',
+			// For LegacyLogger, injected by DevelopmentSettings.php
+			'wgDebugLogFile',
+			'wgDebugLogGroups',
 		];
 	}
 
 	/**
-	 * @stable for overriding
+	 * The annotation causes this to be called immediately before setUpBeforeClass()
+	 * @beforeClass
 	 */
-	public static function setUpBeforeClass() : void {
-		parent::setUpBeforeClass();
-
+	final public static function mediaWikiSetUpBeforeClass(): void {
 		$reflection = new ReflectionClass( static::class );
 		$dirSeparator = DIRECTORY_SEPARATOR;
-		if ( stripos( $reflection->getFileName(), "${dirSeparator}unit${dirSeparator}" ) === false ) {
+		if ( stripos( $reflection->getFileName(), "{$dirSeparator}unit{$dirSeparator}" ) === false ) {
 			self::fail( 'This unit test needs to be in "tests/phpunit/unit"!' );
 		}
 
@@ -106,6 +109,10 @@ abstract class MediaWikiUnitTestCase extends TestCase {
 	 */
 	protected function runTest() {
 		try {
+			// Don't let LoggerFactory::getProvider() access globals or other things we don't want.
+			LoggerFactory::registerProvider( ObjectFactory::getObjectFromSpec( [
+				'class' => NullSpi::class
+			] ) );
 			return parent::runTest();
 		} catch ( ConfigException $exception ) {
 			throw new Exception(
@@ -115,17 +122,13 @@ abstract class MediaWikiUnitTestCase extends TestCase {
 				$exception
 			);
 		}
-
-		// Don't let LoggerFactory::getProvider() access globals or other things we don't want.
-		LoggerFactory::registerProvider( ObjectFactory::getObjectFromSpec( [
-			'class' => \MediaWiki\Logger\NullSpi::class
-		] ) );
 	}
 
 	/**
-	 * @stable for overriding
+	 * The annotation causes this to be called immediately after tearDown()
+	 * @after
 	 */
-	protected function tearDown() : void {
+	final protected function mediaWikiTearDown(): void {
 		// Quick reset between tests
 		foreach ( $GLOBALS as $key => $_ ) {
 			if ( $key !== 'GLOBALS' && !array_key_exists( $key, self::$unitGlobals ) ) {
@@ -135,14 +138,13 @@ abstract class MediaWikiUnitTestCase extends TestCase {
 		foreach ( self::$unitGlobals as $key => $value ) {
 			$GLOBALS[ $key ] = $value;
 		}
-
-		parent::tearDown();
 	}
 
 	/**
-	 * @stable for overriding
+	 * The annotation causes this to be called immediately after tearDownAfterClass()
+	 * @afterClass
 	 */
-	public static function tearDownAfterClass() : void {
+	final public static function mediaWikiTearDownAfterClass(): void {
 		// Remove globals created by the test
 		foreach ( $GLOBALS as $key => $_ ) {
 			if ( $key !== 'GLOBALS' && !array_key_exists( $key, self::$originalGlobals ) ) {
@@ -153,8 +155,6 @@ abstract class MediaWikiUnitTestCase extends TestCase {
 		foreach ( self::$originalGlobals as $key => &$value ) {
 			$GLOBALS[ $key ] =& $value;
 		}
-
-		parent::tearDownAfterClass();
 	}
 
 }

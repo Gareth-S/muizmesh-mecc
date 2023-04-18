@@ -3,9 +3,9 @@ declare( strict_types = 1 );
 
 namespace Wikimedia\Parsoid\Wt2Html;
 
-use DOMDocument;
 use Wikimedia\Assert\Assert;
 use Wikimedia\Parsoid\Config\Env;
+use Wikimedia\Parsoid\DOM\Document;
 use Wikimedia\Parsoid\Tokens\SourceRange;
 use Wikimedia\Parsoid\Utils\PHPUtils;
 
@@ -122,12 +122,12 @@ class ParserPipeline {
 	 * in case that first stage is the source of input chunks we are processing
 	 * in the rest of the pipeline)
 	 *
-	 * @param array|string|DOMDocument $input wikitext string or array of tokens or DOMDocument
+	 * @param array|string|Document $input wikitext string or array of tokens or Document
 	 * @param array $opts
 	 *  - sol (bool) Whether tokens should be processed in start-of-line context.
 	 *  - chunky (bool) Whether we are processing the input chunkily.
 	 *                  If so, the first stage will be skipped
-	 * @return array|DOMDocument
+	 * @return array|Document
 	 */
 	public function parse( $input, array $opts ) {
 		$profile = $this->env->profiling() ? $this->env->pushNewProfile() : null;
@@ -165,7 +165,9 @@ class ParserPipeline {
 	 *
 	 * @param string $input Input wikitext
 	 * @param array $opts
-	 * @return DOMDocument|array final DOM or array of token chnks
+	 *  - atTopLevel: (bool) Whether we are processing the top-level document
+	 *  - sol: (bool) Whether input should be processed in start-of-line context
+	 * @return Document|array final DOM or array of token chnks
 	 */
 	public function parseChunkily( string $input, array $opts ) {
 		$profile = $this->env->profiling() ? $this->env->pushNewProfile() : null;
@@ -217,10 +219,10 @@ class ParserPipeline {
 			$srcText = $initialState['srcText'] ?? null;
 			if ( isset( $tplArgs['title'] ) ) {
 				$title = $tplArgs['title'];
-				$args = $tplArgs['attribs'];
+				$args = $tplArgs['attribs']; // KV[]
 			} else {
 				$title = $frame->getTitle();
-				$args = $frame->getArgs()->args;
+				$args = $frame->getArgs()->args; // KV[]
 			}
 			$frame = $frame->newChild( $title, $args, $srcText );
 		}

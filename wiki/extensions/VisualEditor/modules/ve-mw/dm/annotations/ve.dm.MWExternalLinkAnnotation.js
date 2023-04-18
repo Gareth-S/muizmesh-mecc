@@ -35,9 +35,10 @@ OO.inheritClass( ve.dm.MWExternalLinkAnnotation, ve.dm.LinkAnnotation );
 
 ve.dm.MWExternalLinkAnnotation.static.name = 'link/mwExternal';
 
+ve.dm.MWExternalLinkAnnotation.static.allowedRdfaTypes = null;
+
 ve.dm.MWExternalLinkAnnotation.static.toDataElement = function ( domElements, converter ) {
-	var dataElement, annotation,
-		domElement = domElements[ 0 ],
+	var domElement = domElements[ 0 ],
 		type = domElement.getAttribute( 'rel' ) || domElement.getAttribute( 'typeof' ) || domElement.getAttribute( 'property' ) || '',
 		types = type.trim().split( /\s+/ );
 
@@ -46,7 +47,7 @@ ve.dm.MWExternalLinkAnnotation.static.toDataElement = function ( domElements, co
 		// ...when pasting: auto-convert it to the correct type (internal/external/span)
 		if ( converter.isFromClipboard() ) {
 			if ( domElement.hasAttribute( 'href' ) ) {
-				annotation = ve.ui.MWLinkAction.static.getLinkAnnotation( domElement.getAttribute( 'href' ), converter.getHtmlDocument() );
+				var annotation = ve.ui.MWLinkAction.static.getLinkAnnotation( domElement.getAttribute( 'href' ), converter.getHtmlDocument() );
 				return annotation.element;
 			} else {
 				// Convert href-less links to a plain span, which will get stripped by sanitization
@@ -59,7 +60,7 @@ ve.dm.MWExternalLinkAnnotation.static.toDataElement = function ( domElements, co
 	}
 
 	// Parent method
-	dataElement = ve.dm.MWExternalLinkAnnotation.super.static.toDataElement.apply( this, arguments );
+	var dataElement = ve.dm.MWExternalLinkAnnotation.super.static.toDataElement.apply( this, arguments );
 
 	dataElement.attributes.rel = type;
 	return dataElement;
@@ -74,6 +75,7 @@ ve.dm.MWExternalLinkAnnotation.static.toDomElements = function ( dataElement, do
 		domElements[ 0 ].setAttribute( 'class', 'external' );
 	}
 
+	// we just created that link so the 'rel' attribute should be safe
 	domElements[ 0 ].setAttribute( 'rel', dataElement.attributes.rel || 'mw:ExtLink' );
 	return domElements;
 };

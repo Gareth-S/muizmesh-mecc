@@ -13,7 +13,7 @@ class InterwikiLookupAdapterTest extends \MediaWikiUnitTestCase {
 	 */
 	private $interwikiLookup;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->interwikiLookup = new InterwikiLookupAdapter(
@@ -94,13 +94,10 @@ class InterwikiLookupAdapterTest extends \MediaWikiUnitTestCase {
 	}
 
 	private function getSiteLookup( SiteList $sites ) {
-		$siteLookup = $this->getMockBuilder( SiteLookup::class )
-			->disableOriginalConstructor()
-			->getMock();
+		$siteLookup = $this->createMock( SiteLookup::class );
 
-		$siteLookup->expects( $this->any() )
-			->method( 'getSites' )
-			->will( $this->returnValue( $sites ) );
+		$siteLookup->method( 'getSites' )
+			->willReturn( $sites );
 
 		return $siteLookup;
 	}

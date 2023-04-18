@@ -20,7 +20,7 @@
  * @since 1.35
  */
 
-namespace Vector\FeatureManagement;
+namespace MediaWiki\Skins\Vector\FeatureManagement;
 
 /**
  * NOTE: This API hasn't settled. It may change at any time without warning. Please don't bind to
@@ -28,7 +28,7 @@ namespace Vector\FeatureManagement;
  *
  * @unstable
  *
- * @package Vector\FeatureManagement
+ * @package MediaWiki\Skins\Vector\FeatureManagement
  * @internal
  */
 interface Requirement {
@@ -37,11 +37,11 @@ interface Requirement {
 	 * Gets the name of the requirement.
 	 * @return string
 	 */
-	public function getName() : string;
+	public function getName(): string;
 
 	/**
 	 * Gets whether the requirement is met.
 	 * @return bool
 	 */
-	public function isMet() : bool;
+	public function isMet(): bool;
 }

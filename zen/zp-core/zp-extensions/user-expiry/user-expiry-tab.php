@@ -31,7 +31,7 @@ if (isset($_GET['action'])) {
 	if ($action == 'expiry') {
 		foreach ($_POST as $key => $action) {
 			if (strpos($key, 'r_') === 0) {
-				$userobj = Zenphoto_Authority::getAnAdmin(array('`id`=' => str_replace('r_', '', postIndexDecode($key))));
+				$userobj = Authority::getAnAdmin(array('`id`=' => str_replace('r_', '', postIndexDecode($key))));
 				if ($userobj) {
 					switch ($action) {
 						case 'delete':
@@ -136,11 +136,14 @@ echo '</head>' . "\n";
 								$checked_delete = $checked_disable = $checked_renew = $dup = '';
 								$expires = strtotime($user['date']) + $subscription;
 								$expires_display = date('Y-m-d', $expires);
-								$loggedin = $user['loggedin'];
-								if (empty($loggedin)) {
-									$loggedin = gettext('never');
+								if (isset($user['loggedin'])) {
+									if (empty($user['loggedin'])) {
+										$loggedin = gettext('never');
+									} else {
+										$loggedin = date('Y-m-d', strtotime($user['loggedin']));
+									}
 								} else {
-									$loggedin = date('Y-m-d', strtotime($loggedin));
+									$loggedin = gettext('never');
 								}
 								if ($subscription) {
 									if ($expires < $now) {

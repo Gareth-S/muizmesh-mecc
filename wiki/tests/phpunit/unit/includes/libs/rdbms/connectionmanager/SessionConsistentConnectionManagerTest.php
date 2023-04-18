@@ -2,7 +2,6 @@
 
 namespace Wikimedia\Tests\Rdbms;
 
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\LoadBalancer;
@@ -14,29 +13,15 @@ use Wikimedia\Rdbms\SessionConsistentConnectionManager;
  * @author Daniel Kinzler
  */
 class SessionConsistentConnectionManagerTest extends TestCase {
-	/**
-	 * @return IDatabase|MockObject
-	 */
-	private function getIDatabaseMock() {
-		return $this->getMockBuilder( IDatabase::class )
-			->getMock();
-	}
-
-	/**
-	 * @return LoadBalancer|MockObject
-	 */
-	private function getLoadBalancerMock() {
-		return $this->createMock( LoadBalancer::class );
-	}
 
 	public function testGetReadConnection() {
-		$database = $this->getIDatabaseMock();
-		$lb = $this->getLoadBalancerMock();
+		$database = $this->createMock( IDatabase::class );
+		$lb = $this->createMock( LoadBalancer::class );
 
 		$lb->expects( $this->once() )
 			->method( 'getConnection' )
 			->with( DB_REPLICA )
-			->will( $this->returnValue( $database ) );
+			->willReturn( $database );
 
 		$manager = new SessionConsistentConnectionManager( $lb );
 		$actual = $manager->getReadConnection();
@@ -45,13 +30,13 @@ class SessionConsistentConnectionManagerTest extends TestCase {
 	}
 
 	public function testGetReadConnectionReturnsWriteDbOnForceMaster() {
-		$database = $this->getIDatabaseMock();
-		$lb = $this->getLoadBalancerMock();
+		$database = $this->createMock( IDatabase::class );
+		$lb = $this->createMock( LoadBalancer::class );
 
 		$lb->expects( $this->once() )
 			->method( 'getConnection' )
-			->with( DB_MASTER )
-			->will( $this->returnValue( $database ) );
+			->with( DB_PRIMARY )
+			->willReturn( $database );
 
 		$manager = new SessionConsistentConnectionManager( $lb );
 		$manager->prepareForUpdates();
@@ -61,13 +46,13 @@ class SessionConsistentConnectionManagerTest extends TestCase {
 	}
 
 	public function testGetWriteConnection() {
-		$database = $this->getIDatabaseMock();
-		$lb = $this->getLoadBalancerMock();
+		$database = $this->createMock( IDatabase::class );
+		$lb = $this->createMock( LoadBalancer::class );
 
 		$lb->expects( $this->once() )
 			->method( 'getConnection' )
-			->with( DB_MASTER )
-			->will( $this->returnValue( $database ) );
+			->with( DB_PRIMARY )
+			->willReturn( $database );
 
 		$manager = new SessionConsistentConnectionManager( $lb );
 		$actual = $manager->getWriteConnection();
@@ -76,13 +61,13 @@ class SessionConsistentConnectionManagerTest extends TestCase {
 	}
 
 	public function testForceMaster() {
-		$database = $this->getIDatabaseMock();
-		$lb = $this->getLoadBalancerMock();
+		$database = $this->createMock( IDatabase::class );
+		$lb = $this->createMock( LoadBalancer::class );
 
 		$lb->expects( $this->once() )
 			->method( 'getConnection' )
-			->with( DB_MASTER )
-			->will( $this->returnValue( $database ) );
+			->with( DB_PRIMARY )
+			->willReturn( $database );
 
 		$manager = new SessionConsistentConnectionManager( $lb );
 		$manager->prepareForUpdates();
@@ -90,13 +75,13 @@ class SessionConsistentConnectionManagerTest extends TestCase {
 	}
 
 	public function testReleaseConnection() {
-		$database = $this->getIDatabaseMock();
-		$lb = $this->getLoadBalancerMock();
+		$database = $this->createMock( IDatabase::class );
+		$lb = $this->createMock( LoadBalancer::class );
 
 		$lb->expects( $this->once() )
 			->method( 'reuseConnection' )
 			->with( $database )
-			->will( $this->returnValue( null ) );
+			->willReturn( null );
 
 		$manager = new SessionConsistentConnectionManager( $lb );
 		$manager->releaseConnection( $database );

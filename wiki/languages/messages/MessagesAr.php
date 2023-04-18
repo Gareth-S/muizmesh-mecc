@@ -3,9 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
- *
+ * @ingroup Languages
  */
 
 $fallback8bitEncoding = 'windows-1256';
@@ -340,6 +339,7 @@ $specialPageAliases = [
 	'CreateAccount'             => [ 'إنشاء_حساب' ],
 	'Deadendpages'              => [ 'صفحات_نهاية_مسدودة' ],
 	'DeletedContributions'      => [ 'مساهمات_محذوفة' ],
+	'DeletePage'                => [ 'حذف_الصفحة', 'حذف' ],
 	'Diff'                      => [ 'فرق' ],
 	'DoubleRedirects'           => [ 'تحويلات_مزدوجة' ],
 	'EditPage'                  => [ 'عدل_الصفحة', 'عدل' ],
@@ -401,6 +401,7 @@ $specialPageAliases = [
 	'Prefixindex'               => [ 'فهرس_بادئة' ],
 	'Protectedpages'            => [ 'صفحات_محمية' ],
 	'Protectedtitles'           => [ 'عناوين_محمية' ],
+	'ProtectPage'               => [ 'حماية_الصفحة', 'حماية' ],
 	'Purge'                     => [ 'إفراغ_الكاش' ],
 	'RandomInCategory'          => [ 'عشوائي_في_تصنيف' ],
 	'Randompage'                => [ 'عشوائي', 'صفحة_عشوائية' ],
@@ -469,5 +470,6 @@ $arabicCombiningDiacritics =
 
 $linkTrail = '/^([a-zء-ي' . $arabicCombiningDiacritics . ']+)(.*)$/sDu';
 $linkPrefixCharset = 'a-zA-Zء-ي' . $arabicCombiningDiacritics;
+unset( $arabicCombiningDiacritics );
 
 $digitGroupingPattern = "#,##0.###";

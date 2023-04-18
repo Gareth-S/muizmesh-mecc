@@ -3,9 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
- *
+ * @ingroup Languages
  */
 
 $fallback = 'ru';
@@ -329,3 +328,5 @@ $dateFormats = [
 	'ISO 8601 date' => 'xnY-xnm-xnd',
 	'ISO 8601 both' => 'xnY-xnm-xnd"T"xnH:xni:xns',
 ];
+
+$linkTrail = '/^([a-zабвгдеёжзийклмнопрстуфхцчшщъыьэюяӀ]+)(.*)$/sDu';

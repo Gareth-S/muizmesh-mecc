@@ -3,9 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
- *
+ * @ingroup Languages
  */
 
 $fallback = 'ru';
@@ -135,3 +134,5 @@ $specialPageAliases = [
 	'Whatlinkshere'             => [ 'Ссылкаби_гьанире' ],
 	'Withoutinterwiki'          => [ 'Интервики_гьечІого' ],
 ];
+
+$linkTrail = '/^([a-zабвгдеёжзийклмнопрстуфхцчшщъыьэюяӀ]+)(.*)$/sDu';

@@ -1,0 +1,27 @@
+{
+	"@metadata": {
+		"authors": [
+			"Ahmed-Najib-Biabani-Ibrahimkhel",
+			"Amjad Khan"
+		]
+	},
+	"maps_map": "نخشه",
+	"maps-others": "نور",
+	"maps-layer-property": "ځانتيا",
+	"maps-layer-value": "ارزښت",
+	"maps-layer-errors": "تېروتنې",
+	"maps-abb-north": "سهـ",
+	"maps-abb-east": "خ",
+	"maps-abb-south": "سو",
+	"maps-abb-west": "ل",
+	"mapeditor-none-text": "هېڅ",
+	"mapeditor-done-button": "ترسره شو",
+	"mapeditor-remove-button": "غورځول",
+	"mapeditor-link-title-switcher-link-text": "تړنه",
+	"mapeditor-form-field-title": "سرليک",
+	"mapeditor-form-field-text": "متن",
+	"mapeditor-form-field-link": "تړنه",
+	"mapeditor-form-field-group": "ډله",
+	"mapeditor-form-field-image": "انځور",
+	"semanticmaps-forminput-locations": "استوګنځي"
+}

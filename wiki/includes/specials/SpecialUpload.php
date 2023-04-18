@@ -22,8 +22,10 @@
  * @ingroup Upload
  */
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\User\UserOptionsLookup;
+use MediaWiki\Watchlist\WatchlistManager;
 
 /**
  * Form for handling uploads and special page.
@@ -42,15 +44,20 @@ class SpecialUpload extends SpecialPage {
 	/** @var NamespaceInfo */
 	private $nsInfo;
 
+	/** @var WatchlistManager */
+	private $watchlistManager;
+
 	/**
 	 * @param RepoGroup|null $repoGroup
 	 * @param UserOptionsLookup|null $userOptionsLookup
 	 * @param NamespaceInfo|null $nsInfo
+	 * @param WatchlistManager|null $watchlistManager
 	 */
 	public function __construct(
 		RepoGroup $repoGroup = null,
 		UserOptionsLookup $userOptionsLookup = null,
-		NamespaceInfo $nsInfo = null
+		NamespaceInfo $nsInfo = null,
+		WatchlistManager $watchlistManager = null
 	) {
 		parent::__construct( 'Upload', 'upload' );
 		// This class is extended and therefor fallback to global state - T265300
@@ -59,6 +66,7 @@ class SpecialUpload extends SpecialPage {
 		$this->localRepo = $repoGroup->getLocalRepo();
 		$this->userOptionsLookup = $userOptionsLookup ?? $services->getUserOptionsLookup();
 		$this->nsInfo = $nsInfo ?? $services->getNamespaceInfo();
+		$this->watchlistManager = $watchlistManager ?? $services->getWatchlistManager();
 	}
 
 	public function doesWrites() {
@@ -201,6 +209,7 @@ class SpecialUpload extends SpecialPage {
 		# Check blocks
 		if ( $user->isBlockedFromUpload() ) {
 			throw new UserBlockedError(
+				// @phan-suppress-next-line PhanTypeMismatchArgumentNullable Block is checked and not null
 				$user->getBlock(),
 				$user,
 				$this->getLanguage(),
@@ -273,14 +282,12 @@ class SpecialUpload extends SpecialPage {
 	 * Get an UploadForm instance with title and text properly set.
 	 *
 	 * @param string $message HTML string to add to the form
-	 * @param string $sessionKey Session key in case this is a stashed upload
+	 * @param string|null $sessionKey Session key in case this is a stashed upload
 	 * @param bool $hideIgnoreWarning Whether to hide "ignore warning" check box
 	 * @return UploadForm
 	 */
 	protected function getUploadForm( $message = '', $sessionKey = '', $hideIgnoreWarning = false ) {
 		# Initialize form
-		$context = new DerivativeContext( $this->getContext() );
-		$context->setTitle( $this->getPageTitle() ); // Remove subpage
 		$form = new UploadForm(
 			[
 				'watch' => $this->getWatchCheck(),
@@ -294,12 +301,13 @@ class SpecialUpload extends SpecialPage {
 				'textaftersummary' => $this->uploadFormTextAfterSummary,
 				'destfile' => $this->mDesiredDestName,
 			],
-			$context,
+			$this->getContext(),
 			$this->getLinkRenderer(),
 			$this->localRepo,
 			$this->getContentLanguage(),
 			$this->nsInfo
 		);
+		$form->setTitle( $this->getPageTitle() ); // Remove subpage
 
 		# Check the token, but only if necessary
 		if (
@@ -342,7 +350,7 @@ class SpecialUpload extends SpecialPage {
 	}
 
 	/**
-	 * Shows the "view X deleted revivions link""
+	 * Shows the "view X deleted revisions link""
 	 */
 	protected function showViewDeletedLinks() {
 		$title = Title::makeTitleSafe( NS_FILE, $this->mDesiredDestName );
@@ -374,7 +382,7 @@ class SpecialUpload extends SpecialPage {
 	 *
 	 * Note: only errors that can be handled by changing the name or
 	 * description should be redirected here. It should be assumed that the
-	 * file itself is sane and has passed UploadBase::verifyFile. This
+	 * file itself is sensible and has passed UploadBase::verifyFile. This
 	 * essentially means that UploadBase::VERIFICATION_ERROR and
 	 * UploadBase::EMPTY_FILE should not be passed here.
 	 *
@@ -389,8 +397,8 @@ class SpecialUpload extends SpecialPage {
 			$sessionKey = null;
 			$uploadWarning = 'upload-tryagain-nostash';
 		}
-		$message = '<h2>' . $this->msg( 'uploaderror' )->escaped() . "</h2>\n" .
-			'<div class="error">' . $message . "</div>\n";
+		$message = '<h2>' . $this->msg( 'uploaderror' )->escaped() . '</h2>' .
+			Html::errorBox( $message );
 
 		$form = $this->getUploadForm( $message, $sessionKey );
 		$form->setSubmitText( $this->msg( $uploadWarning )->escaped() );
@@ -488,7 +496,7 @@ class SpecialUpload extends SpecialPage {
 		$warningHtml .= $this->msg( $uploadWarning )->parseAsBlock();
 
 		$form = $this->getUploadForm( $warningHtml, $sessionKey, /* $hideIgnoreWarning */ true );
-		$form->setSubmitText( $this->msg( 'upload-tryagain' )->text() );
+		$form->setSubmitTextMsg( 'upload-tryagain' );
 		$form->addButton( [
 			'name' => 'wpUploadIgnoreWarning',
 			'value' => $this->msg( 'ignorewarning' )->text()
@@ -510,8 +518,8 @@ class SpecialUpload extends SpecialPage {
 	 * @param string $message HTML string
 	 */
 	protected function showUploadError( $message ) {
-		$message = '<h2>' . $this->msg( 'uploadwarning' )->escaped() . "</h2>\n" .
-			'<div class="error">' . $message . "</div>\n";
+		$message = '<h2>' . $this->msg( 'uploadwarning' )->escaped() . '</h2>' .
+			Html::errorBox( $message );
 		$this->showUploadForm( $this->getUploadForm( $message ) );
 	}
 
@@ -644,7 +652,7 @@ class SpecialUpload extends SpecialPage {
 		}
 
 		$msg = [];
-		$forceUIMsgAsContentMsg = (array)$config->get( 'ForceUIMsgAsContentMsg' );
+		$forceUIMsgAsContentMsg = (array)$config->get( MainConfigNames::ForceUIMsgAsContentMsg );
 		/* These messages are transcluded into the actual text of the description page.
 		 * Thus, forcing them as content messages makes the upload to produce an int: template
 		 * instead of hardcoding it there in the uploader language.
@@ -669,7 +677,7 @@ class SpecialUpload extends SpecialPage {
 			$pageText = $headerText . "\n" . $pageText;
 		}
 
-		if ( $config->get( 'UseCopyrightUpload' ) ) {
+		if ( $config->get( MainConfigNames::UseCopyrightUpload ) ) {
 			$pageText .= '== ' . $msg['filestatus'] . " ==\n" . $copyStatus . "\n";
 			$pageText .= $licenseText;
 			$pageText .= '== ' . $msg['filesource'] . " ==\n" . $source;
@@ -703,7 +711,8 @@ class SpecialUpload extends SpecialPage {
 		}
 
 		$desiredTitleObj = Title::makeTitleSafe( NS_FILE, $this->mDesiredDestName );
-		if ( $desiredTitleObj instanceof Title && $user->isWatched( $desiredTitleObj ) ) {
+		if ( $desiredTitleObj instanceof Title &&
+			$this->watchlistManager->isWatched( $user, $desiredTitleObj ) ) {
 			// Already watched, don't change that
 			return true;
 		}
@@ -760,7 +769,8 @@ class SpecialUpload extends SpecialPage {
 				} else {
 					$msg->params( $details['finalExt'] );
 				}
-				$extensions = array_unique( $this->getConfig()->get( 'FileExtensions' ) );
+				$extensions =
+					array_unique( $this->getConfig()->get( MainConfigNames::FileExtensions ) );
 				$msg->params( $this->getLanguage()->commaList( $extensions ),
 					count( $extensions ) );
 
@@ -859,7 +869,7 @@ class SpecialUpload extends SpecialPage {
 			$warnMsg = wfMessage( 'filename-bad-prefix', $exists['prefix'] );
 		}
 
-		return $warnMsg ? $warnMsg->title( $file->getTitle() )->parse() : '';
+		return $warnMsg ? $warnMsg->page( $file->getTitle() )->parse() : '';
 	}
 
 	/**

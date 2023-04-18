@@ -39,7 +39,7 @@ abstract class HookRunnerTestBase extends MediaWikiUnitTestCase {
 				}
 			);
 			$this->assertCount( 1, $interfacesWithMethod,
-				"Exactly one hook interface must have method {$method->getName()}" );
+				'Exactly one hook interface must have method ' . $method->getName() );
 		}
 	}
 
@@ -110,6 +110,9 @@ abstract class HookRunnerTestBase extends MediaWikiUnitTestCase {
 		}
 		if ( $paramType->getName() === 'bool' ) {
 			return false;
+		}
+		if ( $paramType->getName() === 'int' ) {
+			return 42;
 		}
 		return $this->createNoOpMock( $paramType->getName() );
 	}

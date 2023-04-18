@@ -12,23 +12,27 @@ if ( mw.config.get( 'wgBreakFrames' ) ) {
 }
 
 mw.hook( 'wikipage.content' ).add( function ( $content ) {
-	var $sortable, $collapsible,
-		dependencies = [];
+	var modules = [];
+
+	var $collapsible;
 	if ( config.collapsible ) {
 		$collapsible = $content.find( '.mw-collapsible' );
 		if ( $collapsible.length ) {
-			dependencies.push( 'jquery.makeCollapsible' );
+			modules.push( 'jquery.makeCollapsible' );
 		}
 	}
+
+	var $sortable;
 	if ( config.sortable ) {
 		$sortable = $content.find( 'table.sortable' );
 		if ( $sortable.length ) {
-			dependencies.push( 'jquery.tablesorter' );
+			modules.push( 'jquery.tablesorter' );
 		}
 	}
-	if ( dependencies.length ) {
+
+	if ( modules.length ) {
 		// Both modules are preloaded by Skin::getDefaultModules()
-		mw.loader.using( dependencies ).then( function () {
+		mw.loader.using( modules ).then( function () {
 			// For tables that are both sortable and collapsible,
 			// it must be made sortable first and collapsible second.
 			// This is because jquery.tablesorter stumbles on the
@@ -47,30 +51,65 @@ mw.hook( 'wikipage.content' ).add( function ( $content ) {
 
 // Handle elements outside the wikipage content
 $( function () {
-	var $nodes;
+	/**
+	 * There is a bug on iPad and maybe other browsers where if initial-scale is not set
+	 * the page cannot be zoomed. If the initial-scale is set on the server side, this will result
+	 * in an unwanted zoom on mobile devices. To avoid this we check innerWidth and set the initial-scale
+	 * on the client where needed. The width must be synced with the value in Skin::initPage.
+	 * More information on this bug in [[phab:T311795]].
+	 * @ignore
+	 */
+	function fixViewportForTabletDevices() {
+		var $viewport = $( 'meta[name=viewport]' );
+		var content = $viewport.attr( 'content' );
+		var scale = window.outerWidth / window.innerWidth;
+		// This adjustment is limited to tablet devices. It must be a non-zero value to work.
+		// (these values correspond to @width-breakpoint-tablet and @width-breakpoint-desktop
+		if ( window.innerWidth >= 720 && window.innerWidth <= 1000 && content.indexOf( 'initial-scale' ) === -1 ) {
+			// Note: If the value is 1 the font-size adjust feature will not work on iPad
+			$viewport.attr( 'content', 'width=1000,initial-scale=' + scale );
+		}
+	}
 
 	// Add accesskey hints to the tooltips
 	$( '[accesskey]' ).updateTooltipAccessKeys();
 
-	/**
-	 * Fired when wiki content is being added to the DOM
-	 *
-	 * It is encouraged to fire it before the main DOM is changed (when $content
-	 * is still detached).  However, this order is not defined either way, so you
-	 * should only rely on $content itself.
-	 *
-	 * This includes the ready event on a page load (including post-edit loads)
-	 * and when content has been previewed with LivePreview.
-	 *
-	 * @event wikipage_content
-	 * @member mw.hook
-	 * @param {jQuery} $content The most appropriate element containing the content,
-	 *   such as #mw-content-text (regular content root) or #wikiPreview (live preview
-	 *   root)
-	 */
-	mw.hook( 'wikipage.content' ).fire( $( '#mw-content-text' ) );
+	var node = document.querySelector( '.mw-indicators' );
+	if ( node && node.children.length ) {
+		/**
+		 * Fired when indicators are being added to the DOM
+		 *
+		 * @event wikipage_indicators
+		 * @member mw.hook
+		 * @param {jQuery} $content jQuery object with the elements of the indicators
+		 */
+		mw.hook( 'wikipage.indicators' ).fire( $( node.children ) );
+	}
 
-	$nodes = $( '.catlinks[data-mw="interface"]' );
+	var $content = $( '#mw-content-text' );
+	// Avoid unusable events, and the errors they cause, for custom skins that
+	// do not display any content (T259577).
+	if ( $content.length ) {
+		/**
+		 * Fired when wiki content is being added to the DOM
+		 *
+		 * It is encouraged to fire it before the main DOM is changed (when $content
+		 * is still detached).  However, this order is not defined either way, so you
+		 * should only rely on $content itself.
+		 *
+		 * This includes the ready event on a page load (including post-edit loads)
+		 * and when content has been previewed with LivePreview.
+		 *
+		 * @event wikipage_content
+		 * @member mw.hook
+		 * @param {jQuery} $content The most appropriate element containing the content,
+		 *   such as #mw-content-text (regular content root) or #wikiPreview (live preview
+		 *   root)
+		 */
+		mw.hook( 'wikipage.content' ).fire( $content );
+	}
+
+	var $nodes = $( '.catlinks[data-mw="interface"]' );
 	if ( $nodes.length ) {
 		/**
 		 * Fired when categories are being added to the DOM
@@ -112,12 +151,12 @@ $( function () {
 
 	// Turn logout to a POST action
 	$( config.selectorLogoutLink ).on( 'click', function ( e ) {
-		var api = new mw.Api(),
-			url = this.href;
 		mw.notify(
 			mw.message( 'logging-out-notify' ),
 			{ tag: 'logout', autoHide: false }
 		);
+		var api = new mw.Api();
+		var url = this.href;
 		api.postWithToken( 'csrf', {
 			action: 'logout'
 		} ).then(
@@ -133,6 +172,7 @@ $( function () {
 		);
 		e.preventDefault();
 	} );
+	fixViewportForTabletDevices();
 } );
 
 /**

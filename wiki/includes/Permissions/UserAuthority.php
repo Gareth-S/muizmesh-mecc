@@ -21,6 +21,7 @@
 namespace MediaWiki\Permissions;
 
 use InvalidArgumentException;
+use MediaWiki\Block\Block;
 use MediaWiki\Linker\LinkTarget;
 use MediaWiki\Page\PageIdentity;
 use MediaWiki\User\UserIdentity;
@@ -49,9 +50,16 @@ class UserAuthority implements Authority {
 	private $permissionManager;
 
 	/**
-	 * @var UserIdentity
+	 * @var User
 	 */
 	private $actor;
+
+	/**
+	 * Local cache for user block information. False is used to indicate that there is no block,
+	 * while null indicates that we don't know and have to check.
+	 * @var Block|false|null
+	 */
+	private $userBlock = null;
 
 	/**
 	 * @param User $user
@@ -163,7 +171,7 @@ class UserAuthority implements Authority {
 		PageIdentity $target,
 		PermissionStatus $status = null
 	): bool {
-		// Note that we do not use RIGOR_SECURE to avoid hitting the master
+		// Note that we do not use RIGOR_SECURE to avoid hitting the primary
 		// database for read operations. RIGOR_FULL performs the same checks,
 		// but is subject to replication lag.
 		return $this->internalCan(
@@ -190,7 +198,7 @@ class UserAuthority implements Authority {
 	): bool {
 		// Any side-effects can be added here.
 
-		// Note that we do not use RIGOR_SECURE to avoid hitting the master
+		// Note that we do not use RIGOR_SECURE to avoid hitting the primary
 		// database for read operations. RIGOR_FULL performs the same checks,
 		// but is subject to replication lag.
 		return $this->internalCan(
@@ -255,7 +263,20 @@ class UserAuthority implements Authority {
 			);
 
 			foreach ( $errors as $err ) {
-				$status->fatal( ...$err );
+				$status->fatal( wfMessage( ...$err ) );
+
+				// HACK: Detect whether the permission was denied because the user is blocked.
+				//       A similar hack exists in ApiBase::$blockMsgMap.
+				//       When permission checking logic is moved out of PermissionManager,
+				//       we can record the block info directly when first checking the block,
+				//       rather than doing that here.
+				if ( strpos( $err[0], 'blockedtext' ) !== false ) {
+					$block = $this->getBlock();
+
+					if ( $block ) {
+						$status->setBlock( $block );
+					}
+				}
 			}
 
 			return $status->isOK();
@@ -270,4 +291,37 @@ class UserAuthority implements Authority {
 		}
 	}
 
+	/**
+	 * Returns any user block affecting the Authority.
+	 *
+	 * @param int $freshness
+	 *
+	 * @return ?Block
+	 * @since 1.37
+	 *
+	 */
+	public function getBlock( int $freshness = self::READ_NORMAL ): ?Block {
+		// Cache block info, so we don't have to fetch it again unnecessarily.
+		if ( $this->userBlock === null || $freshness === self::READ_LATEST ) {
+			$this->userBlock = $this->actor->getBlock( $freshness );
+
+			// if we got null back, remember this as "false"
+			$this->userBlock = $this->userBlock ?: false;
+		}
+
+		// if we remembered "false", return null
+		return $this->userBlock ?: null;
+	}
+
+	public function isRegistered(): bool {
+		return $this->actor->isRegistered();
+	}
+
+	public function isTemp(): bool {
+		return $this->actor->isTemp();
+	}
+
+	public function isNamed(): bool {
+		return $this->actor->isNamed();
+	}
 }

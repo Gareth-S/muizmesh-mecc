@@ -1,10 +1,10 @@
 <?php
-/** Kazakh (Latin script) (qazaqşa (latın)‎)
+/** Kazakh (Latin script) (qazaqşa (latın))
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
+ * @ingroup Languages
  *
  * @author AlefZet
  * @author Atabek
@@ -12,7 +12,7 @@
  * @author Urhixidur
  */
 
-$fallback = 'kk-cyrl';
+$fallback = 'kk, kk-cyrl';
 
 $separatorTransformTable = [
 	',' => "\u{00A0}",

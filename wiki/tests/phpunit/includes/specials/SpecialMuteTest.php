@@ -1,5 +1,6 @@
 <?php
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\User\UserOptionsManager;
 
 /**
@@ -11,13 +12,11 @@ class SpecialMuteTest extends SpecialPageTestBase {
 	/** @var UserOptionsManager */
 	private $userOptionsManager;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->userOptionsManager = $this->getServiceContainer()->getUserOptionsManager();
-		$this->setMwGlobals( [
-			'wgEnableUserEmailBlacklist' => true
-		] );
+		$this->overrideConfigValue( MainConfigNames::EnableUserEmailMuteList, true );
 	}
 
 	/**
@@ -25,8 +24,9 @@ class SpecialMuteTest extends SpecialPageTestBase {
 	 */
 	protected function newSpecialPage() {
 		return new SpecialMute(
+			$this->getServiceContainer()->getCentralIdLookupFactory()->getLookup( 'local' ),
 			$this->userOptionsManager,
-			$this->getServiceContainer()->getUserFactory()
+			$this->getServiceContainer()->getUserIdentityLookup()
 		);
 	}
 
@@ -51,9 +51,7 @@ class SpecialMuteTest extends SpecialPageTestBase {
 			null
 		);
 
-		$this->setMwGlobals( [
-			'wgEnableUserEmailBlacklist' => false
-		] );
+		$this->overrideConfigValue( MainConfigNames::EnableUserEmailMuteList, false );
 
 		$user = $this->getTestUser()->getUser();
 		$this->expectException( ErrorPageError::class );
@@ -75,10 +73,6 @@ class SpecialMuteTest extends SpecialPageTestBase {
 	 * @covers SpecialMute::execute
 	 */
 	public function testMuteAddsUserToEmailBlacklist() {
-		$this->setMwGlobals( [
-			'wgCentralIdLookupProvider' => 'local',
-		] );
-
 		$targetUser = $this->getTestUser()->getUser();
 
 		$loggedInUser = $this->getMutableTestUser()->getUser();
@@ -102,10 +96,6 @@ class SpecialMuteTest extends SpecialPageTestBase {
 	 * @covers SpecialMute::execute
 	 */
 	public function testUnmuteRemovesUserFromEmailBlacklist() {
-		$this->setMwGlobals( [
-			'wgCentralIdLookupProvider' => 'local',
-		] );
-
 		$targetUser = $this->getTestUser()->getUser();
 
 		$loggedInUser = $this->getMutableTestUser()->getUser();

@@ -21,6 +21,8 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\MainConfigNames;
+
 /**
  * Special page designed for running background tasks (internal use only)
  *
@@ -68,7 +70,7 @@ class SpecialRunJobs extends UnlistedSpecialPage {
 		// Validate request parameters
 		$optional = [ 'maxjobs' => 0, 'maxtime' => 30, 'type' => false,
 			'async' => true, 'stats' => false ];
-		$required = array_flip( [ 'title', 'tasks', 'signature', 'sigexpiry' ] );
+		$required = array_fill_keys( [ 'title', 'tasks', 'signature', 'sigexpiry' ], true );
 		$params = array_intersect_key( $this->getRequest()->getValues(), $required + $optional );
 		$missing = array_diff_key( $required, $params );
 		if ( count( $missing ) ) {
@@ -81,7 +83,8 @@ class SpecialRunJobs extends UnlistedSpecialPage {
 		// Validate request signature
 		$squery = $params;
 		unset( $squery['signature'] );
-		$correctSignature = self::getQuerySignature( $squery, $this->getConfig()->get( 'SecretKey' ) );
+		$correctSignature = self::getQuerySignature( $squery,
+			$this->getConfig()->get( MainConfigNames::SecretKey ) );
 		$providedSignature = $params['signature'];
 		$verified = is_string( $providedSignature )
 			&& hash_equals( $correctSignature, $providedSignature );

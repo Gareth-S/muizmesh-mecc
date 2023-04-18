@@ -19,8 +19,10 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\MainConfigNames;
 use MediaWiki\Preferences\MultiUsernameFilter;
-use MediaWiki\User\UserFactory;
+use MediaWiki\User\UserIdentity;
+use MediaWiki\User\UserIdentityLookup;
 use MediaWiki\User\UserOptionsManager;
 
 /**
@@ -33,7 +35,7 @@ class SpecialMute extends FormSpecialPage {
 
 	private const PAGE_NAME = 'Mute';
 
-	/** @var User|null */
+	/** @var UserIdentity|null */
 	private $target;
 
 	/** @var int */
@@ -45,21 +47,23 @@ class SpecialMute extends FormSpecialPage {
 	/** @var UserOptionsManager */
 	private $userOptionsManager;
 
-	/** @var UserFactory */
-	private $userFactory;
+	/** @var UserIdentityLookup */
+	private $userIdentityLookup;
 
 	/**
+	 * @param CentralIdLookup $centralIdLookup
 	 * @param UserOptionsManager $userOptionsManager
-	 * @param UserFactory $userFactory
+	 * @param UserIdentityLookup $userIdentityLookup
 	 */
 	public function __construct(
+		CentralIdLookup $centralIdLookup,
 		UserOptionsManager $userOptionsManager,
-		UserFactory $userFactory
+		UserIdentityLookup $userIdentityLookup
 	) {
 		parent::__construct( self::PAGE_NAME, '', false );
-		$this->centralIdLookup = CentralIdLookup::factory();
+		$this->centralIdLookup = $centralIdLookup;
 		$this->userOptionsManager = $userOptionsManager;
-		$this->userFactory = $userFactory;
+		$this->userIdentityLookup = $userIdentityLookup;
 	}
 
 	/**
@@ -134,9 +138,9 @@ class SpecialMute extends FormSpecialPage {
 	}
 
 	/**
-	 * @return User|null $target
+	 * @return UserIdentity|null
 	 */
-	public function getTarget(): ?User {
+	private function getTarget(): ?UserIdentity {
 		return $this->target;
 	}
 
@@ -181,9 +185,10 @@ class SpecialMute extends FormSpecialPage {
 	 * @inheritDoc
 	 */
 	protected function getForm() {
+		$target = $this->getTarget();
 		$form = parent::getForm();
 		$form->setId( 'mw-specialmute-form' );
-		$form->setHeaderText( $this->msg( 'specialmute-header', $this->target )->parse() );
+		$form->setHeaderText( $this->msg( 'specialmute-header', $target ? $target->getName() : '' )->parse() );
 		$form->setSubmitTextMsg( 'specialmute-submit' );
 		$form->setSubmitID( 'save' );
 
@@ -197,8 +202,8 @@ class SpecialMute extends FormSpecialPage {
 		$config = $this->getConfig();
 		$fields = [];
 		if (
-			$config->get( 'EnableUserEmailBlacklist' ) &&
-			$config->get( 'EnableUserEmail' ) &&
+			$config->get( MainConfigNames::EnableUserEmailMuteList ) &&
+			$config->get( MainConfigNames::EnableUserEmail ) &&
 			$this->getUser()->getEmailAuthenticationTimestamp()
 		) {
 			$fields['email-blacklist'] = [
@@ -211,7 +216,9 @@ class SpecialMute extends FormSpecialPage {
 			];
 		}
 
-		$this->getHookRunner()->onSpecialMuteModifyFormFields( $this->getTarget(), $this->getUser(), $fields );
+		$target = $this->getTarget();
+		$legacyUser = $target ? User::newFromIdentity( $target ) : null;
+		$this->getHookRunner()->onSpecialMuteModifyFormFields( $legacyUser, $this->getUser(), $fields );
 
 		if ( count( $fields ) == 0 ) {
 			throw new ErrorPageError( 'specialmute', 'specialmute-error-no-options' );
@@ -226,9 +233,9 @@ class SpecialMute extends FormSpecialPage {
 	private function loadTarget( $username ) {
 		$target = null;
 		if ( $username !== null ) {
-			$target = $this->userFactory->newFromName( $username );
+			$target = $this->userIdentityLookup->getUserIdentityByName( $username );
 		}
-		if ( !$target || !$target->getId() ) {
+		if ( !$target || !$target->isRegistered() ) {
 			throw new ErrorPageError( 'specialmute', 'specialmute-error-invalid-user' );
 		} else {
 			$this->target = $target;
@@ -243,17 +250,6 @@ class SpecialMute extends FormSpecialPage {
 	public function isTargetMuted( $userOption ) {
 		$muteList = $this->getMuteList( $userOption );
 		return in_array( $this->targetCentralId, $muteList, true );
-	}
-
-	/**
-	 * @deprecated since 1.35, use isTargetMuted
-	 *
-	 * @param string $userOption
-	 * @return bool
-	 */
-	public function isTargetBlacklisted( $userOption ) {
-		wfDeprecated( __METHOD__, '1.35' );
-		return $this->isTargetMuted( $userOption );
 	}
 
 	/**

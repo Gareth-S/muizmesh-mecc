@@ -22,12 +22,16 @@
 use MediaWiki\BadFileLookup;
 use MediaWiki\Config\ServiceOptions;
 use MediaWiki\HookContainer\HookContainer;
+use MediaWiki\Http\HttpRequestFactory;
 use MediaWiki\Languages\LanguageConverterFactory;
 use MediaWiki\Linker\LinkRendererFactory;
+use MediaWiki\Preferences\SignatureValidatorFactory;
 use MediaWiki\SpecialPage\SpecialPageFactory;
 use MediaWiki\Tidy\TidyDriverBase;
 use MediaWiki\User\UserFactory;
+use MediaWiki\User\UserNameUtils;
 use MediaWiki\User\UserOptionsLookup;
+use MediaWiki\Utils\UrlUtils;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -43,8 +47,8 @@ class ParserFactory {
 	/** @var Language */
 	private $contLang;
 
-	/** @var string */
-	private $urlProtocols;
+	/** @var UrlUtils */
+	private $urlUtils;
 
 	/** @var SpecialPageFactory */
 	private $specialPageFactory;
@@ -70,6 +74,21 @@ class ParserFactory {
 	/** @var UserFactory */
 	private $userFactory;
 
+	/** @var TitleFormatter */
+	private $titleFormatter;
+
+	/** @var HttpRequestFactory */
+	private $httpRequestFactory;
+
+	/** @var TrackingCategories */
+	private $trackingCategories;
+
+	/** @var SignatureValidatorFactory */
+	private $signatureValidatorFactory;
+
+	/** @var UserNameUtils */
+	private $userNameUtils;
+
 	/**
 	 * Track calls to Parser constructor to aid in deprecation of direct
 	 * Parser invocation.  This is temporary: it will be removed once the
@@ -89,11 +108,14 @@ class ParserFactory {
 	/** @var WANObjectCache */
 	private $wanCache;
 
+	/** @var Parser|null */
+	private $mainInstance;
+
 	/**
 	 * @param ServiceOptions $svcOptions
 	 * @param MagicWordFactory $magicWordFactory
 	 * @param Language $contLang Content language
-	 * @param string $urlProtocols As returned from wfUrlProtocols()
+	 * @param UrlUtils $urlUtils
 	 * @param SpecialPageFactory $spFactory
 	 * @param LinkRendererFactory $linkRendererFactory
 	 * @param NamespaceInfo $nsInfo
@@ -105,6 +127,11 @@ class ParserFactory {
 	 * @param WANObjectCache $wanCache
 	 * @param UserOptionsLookup $userOptionsLookup
 	 * @param UserFactory $userFactory
+	 * @param TitleFormatter $titleFormatter
+	 * @param HttpRequestFactory $httpRequestFactory
+	 * @param TrackingCategories $trackingCategories
+	 * @param SignatureValidatorFactory $signatureValidatorFactory
+	 * @param UserNameUtils $userNameUtils
 	 * @since 1.32
 	 * @internal
 	 */
@@ -112,7 +139,7 @@ class ParserFactory {
 		ServiceOptions $svcOptions,
 		MagicWordFactory $magicWordFactory,
 		Language $contLang,
-		string $urlProtocols,
+		UrlUtils $urlUtils,
 		SpecialPageFactory $spFactory,
 		LinkRendererFactory $linkRendererFactory,
 		NamespaceInfo $nsInfo,
@@ -123,7 +150,12 @@ class ParserFactory {
 		TidyDriverBase $tidy,
 		WANObjectCache $wanCache,
 		UserOptionsLookup $userOptionsLookup,
-		UserFactory $userFactory
+		UserFactory $userFactory,
+		TitleFormatter $titleFormatter,
+		HttpRequestFactory $httpRequestFactory,
+		TrackingCategories $trackingCategories,
+		SignatureValidatorFactory $signatureValidatorFactory,
+		UserNameUtils $userNameUtils
 	) {
 		$svcOptions->assertRequiredOptions( Parser::CONSTRUCTOR_OPTIONS );
 
@@ -132,7 +164,7 @@ class ParserFactory {
 		$this->svcOptions = $svcOptions;
 		$this->magicWordFactory = $magicWordFactory;
 		$this->contLang = $contLang;
-		$this->urlProtocols = $urlProtocols;
+		$this->urlUtils = $urlUtils;
 		$this->specialPageFactory = $spFactory;
 		$this->linkRendererFactory = $linkRendererFactory;
 		$this->nsInfo = $nsInfo;
@@ -144,6 +176,11 @@ class ParserFactory {
 		$this->wanCache = $wanCache;
 		$this->userOptionsLookup = $userOptionsLookup;
 		$this->userFactory = $userFactory;
+		$this->titleFormatter = $titleFormatter;
+		$this->httpRequestFactory = $httpRequestFactory;
+		$this->trackingCategories = $trackingCategories;
+		$this->signatureValidatorFactory = $signatureValidatorFactory;
+		$this->userNameUtils = $userNameUtils;
 	}
 
 	/**
@@ -152,7 +189,7 @@ class ParserFactory {
 	 * @return Parser
 	 * @since 1.32
 	 */
-	public function create() : Parser {
+	public function create(): Parser {
 		self::$inParserFactory++;
 		try {
 			return new Parser(
@@ -160,7 +197,7 @@ class ParserFactory {
 				$this->magicWordFactory,
 				$this->contLang,
 				$this,
-				$this->urlProtocols,
+				$this->urlUtils,
 				$this->specialPageFactory,
 				$this->linkRendererFactory,
 				$this->nsInfo,
@@ -171,10 +208,45 @@ class ParserFactory {
 				$this->tidy,
 				$this->wanCache,
 				$this->userOptionsLookup,
-				$this->userFactory
+				$this->userFactory,
+				$this->titleFormatter,
+				$this->httpRequestFactory,
+				$this->trackingCategories,
+				$this->signatureValidatorFactory,
+				$this->userNameUtils
 			);
 		} finally {
 			self::$inParserFactory--;
 		}
 	}
+
+	/**
+	 * Get the main shared instance. This is unsafe when the caller is not in
+	 * a top-level context, because re-entering the parser will throw an
+	 * exception.
+	 *
+	 * @since 1.39
+	 * @return Parser
+	 */
+	public function getMainInstance() {
+		if ( $this->mainInstance === null ) {
+			$this->mainInstance = $this->create();
+		}
+		return $this->mainInstance;
+	}
+
+	/**
+	 * Get the main shared instance, or if it is locked, get a new instance
+	 *
+	 * @since 1.39
+	 * @return Parser
+	 */
+	public function getInstance() {
+		$instance = $this->getMainInstance();
+		if ( $instance->isLocked() ) {
+			$instance = $this->create();
+		}
+		return $instance;
+	}
+
 }

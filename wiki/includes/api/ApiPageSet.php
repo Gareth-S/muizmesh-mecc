@@ -20,7 +20,15 @@
  * @file
  */
 
+use MediaWiki\Api\Validator\SubmoduleDef;
+use MediaWiki\Cache\LinkBatchFactory;
+use MediaWiki\Linker\LinkTarget;
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Page\PageIdentity;
+use MediaWiki\Page\PageReference;
+use MediaWiki\Page\WikiPageFactory;
+use MediaWiki\SpecialPage\SpecialPageFactory;
 use Wikimedia\ParamValidator\ParamValidator;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\IResultWrapper;
@@ -46,45 +54,134 @@ class ApiPageSet extends ApiBase {
 	 */
 	private const DISABLE_GENERATORS = 1;
 
+	/** @var ApiBase used for getDb() call */
 	private $mDbSource;
-	private $mParams = [];
+
+	/** @var array */
+	private $mParams;
+
+	/** @var bool */
 	private $mResolveRedirects;
+
+	/** @var bool */
 	private $mConvertTitles;
+
+	/** @var bool */
 	private $mAllowGenerator;
 
-	private $mAllPages = []; // [ns][dbkey] => page_id or negative when missing
+	/** @var int[][] [ns][dbkey] => page_id or negative when missing */
+	private $mAllPages = [];
+
+	/** @var Title[] */
 	private $mTitles = [];
-	private $mGoodAndMissingPages = []; // [ns][dbkey] => page_id or negative when missing
-	private $mGoodPages = []; // [ns][dbkey] => page_id
+
+	/** @var int[][] [ns][dbkey] => page_id or negative when missing */
+	private $mGoodAndMissingPages = [];
+
+	/** @var int[][] [ns][dbkey] => page_id */
+	private $mGoodPages = [];
+
+	/** @var Title[] */
 	private $mGoodTitles = [];
-	private $mMissingPages = []; // [ns][dbkey] => fake page_id
+
+	/** @var int[][] [ns][dbkey] => fake page_id */
+	private $mMissingPages = [];
+
+	/** @var Title[] */
 	private $mMissingTitles = [];
-	/** @var array [fake_page_id] => [ 'title' => $title, 'invalidreason' => $reason ] */
+
+	/** @var array[] [fake_page_id] => [ 'title' => $title, 'invalidreason' => $reason ] */
 	private $mInvalidTitles = [];
+
+	/** @var int[] */
 	private $mMissingPageIDs = [];
+
+	/** @var Title[] */
 	private $mRedirectTitles = [];
+
+	/** @var Title[] */
 	private $mSpecialTitles = [];
-	private $mAllSpecials = []; // separate from mAllPages to avoid breaking getAllTitlesByNamespace()
+
+	/** @var int[][] separate from mAllPages to avoid breaking getAllTitlesByNamespace() */
+	private $mAllSpecials = [];
+
+	/** @var string[] */
 	private $mNormalizedTitles = [];
+
+	/** @var string[] */
 	private $mInterwikiTitles = [];
+
 	/** @var Title[] */
 	private $mPendingRedirectIDs = [];
-	private $mPendingRedirectSpecialPages = []; // [dbkey] => [ Title $from, Title $to ]
+
+	/** @var Title[][] [dbkey] => [ Title $from, Title $to ] */
+	private $mPendingRedirectSpecialPages = [];
+
+	/** @var Title[] */
 	private $mResolvedRedirectTitles = [];
+
+	/** @var string[] */
 	private $mConvertedTitles = [];
+
+	/** @var int[] Array of revID (int) => pageID (int) */
 	private $mGoodRevIDs = [];
+
+	/** @var int[] Array of revID (int) => pageID (int) */
 	private $mLiveRevIDs = [];
+
+	/** @var int[] Array of revID (int) => pageID (int) */
 	private $mDeletedRevIDs = [];
+
+	/** @var int[] */
 	private $mMissingRevIDs = [];
-	private $mGeneratorData = []; // [ns][dbkey] => data array
+
+	/** @var array[][] [ns][dbkey] => data array */
+	private $mGeneratorData = [];
+
+	/** @var int */
 	private $mFakePageId = -1;
+
+	/** @var string */
 	private $mCacheMode = 'public';
+
 	/** @var array */
 	private $mRequestedPageFields = [];
+
 	/** @var int */
-	private $mDefaultNamespace = NS_MAIN;
+	private $mDefaultNamespace;
+
 	/** @var callable|null */
 	private $mRedirectMergePolicy;
+
+	/** @var string[]|null see getGenerators() */
+	private static $generators = null;
+
+	/** @var Language */
+	private $contentLanguage;
+
+	/** @var LinkCache */
+	private $linkCache;
+
+	/** @var NamespaceInfo */
+	private $namespaceInfo;
+
+	/** @var GenderCache */
+	private $genderCache;
+
+	/** @var LinkBatchFactory */
+	private $linkBatchFactory;
+
+	/** @var TitleFactory */
+	private $titleFactory;
+
+	/** @var ILanguageConverter */
+	private $languageConverter;
+
+	/** @var SpecialPageFactory */
+	private $specialPageFactory;
+
+	/** @var WikiPageFactory */
+	private $wikiPageFactory;
 
 	/**
 	 * Add all items from $values into the result
@@ -126,6 +223,19 @@ class ApiPageSet extends ApiBase {
 		$this->mParams = $this->extractRequestParams();
 		$this->mResolveRedirects = $this->mParams['redirects'];
 		$this->mConvertTitles = $this->mParams['converttitles'];
+
+		// Needs service injection - T283314
+		$services = MediaWikiServices::getInstance();
+		$this->contentLanguage = $services->getContentLanguage();
+		$this->linkCache = $services->getLinkCache();
+		$this->namespaceInfo = $services->getNamespaceInfo();
+		$this->genderCache = $services->getGenderCache();
+		$this->linkBatchFactory = $services->getLinkBatchFactory();
+		$this->titleFactory = $services->getTitleFactory();
+		$this->languageConverter = $services->getLanguageConverterFactory()
+			->getLanguageConverter( $this->contentLanguage );
+		$this->specialPageFactory = $services->getSpecialPageFactory();
+		$this->wikiPageFactory = $services->getWikiPageFactory();
 	}
 
 	/**
@@ -165,6 +275,7 @@ class ApiPageSet extends ApiBase {
 			}
 			// Create a temporary pageset to store generator's output,
 			// add any additional fields generator may need, and execute pageset to populate titles/pageids
+			// @phan-suppress-next-line PhanTypeMismatchArgumentNullable T240141
 			$tmpPageSet = new ApiPageSet( $dbSource, self::DISABLE_GENERATORS );
 			$generator->setGeneratorMode( $tmpPageSet );
 			$this->mCacheMode = $generator->getCacheMode( $generator->extractRequestParams() );
@@ -178,6 +289,7 @@ class ApiPageSet extends ApiBase {
 			if ( !$isDryRun ) {
 				$generator->executeGenerator( $this );
 
+				// @phan-suppress-next-line PhanTypeMismatchArgumentNullable T240141
 				$this->getHookRunner()->onAPIQueryGeneratorAfterExecute( $generator, $this );
 			} else {
 				// Prevent warnings from being reported on these parameters
@@ -283,7 +395,7 @@ class ApiPageSet extends ApiBase {
 	/**
 	 * Request an additional field from the page table.
 	 * Must be called before execute()
-	 * @param string $fieldName Field name
+	 * @param string $fieldName
 	 */
 	public function requestField( $fieldName ) {
 		$this->mRequestedPageFields[$fieldName] = null;
@@ -292,7 +404,7 @@ class ApiPageSet extends ApiBase {
 	/**
 	 * Get the value of a custom field previously requested through
 	 * requestField()
-	 * @param string $fieldName Field name
+	 * @param string $fieldName
 	 * @return mixed Field value
 	 */
 	public function getCustomField( $fieldName ) {
@@ -320,7 +432,7 @@ class ApiPageSet extends ApiBase {
 
 		$pageFlds['page_content_model'] = null;
 
-		if ( $this->getConfig()->get( 'PageLanguageUseDB' ) ) {
+		if ( $this->getConfig()->get( MainConfigNames::PageLanguageUseDB ) ) {
 			$pageFlds['page_lang'] = null;
 		}
 
@@ -344,10 +456,26 @@ class ApiPageSet extends ApiBase {
 	}
 
 	/**
-	 * All Title objects provided.
+	 * All existing and missing pages including redirects.
+	 * Does not include special pages, interwiki links, and invalid titles.
+	 * If redirects are resolved, both the redirect and the target will be included here.
+	 *
+	 * @deprecated since 1.37, use getPages() instead.
 	 * @return Title[]
 	 */
 	public function getTitles() {
+		return $this->mTitles;
+	}
+
+	/**
+	 * All existing and missing pages including redirects.
+	 * Does not include special pages, interwiki links, and invalid titles.
+	 * If redirects are resolved, both the redirect and the target will be included here.
+	 *
+	 * @since 1.37
+	 * @return PageIdentity[]
+	 */
+	public function getPages(): array {
 		return $this->mTitles;
 	}
 
@@ -368,10 +496,22 @@ class ApiPageSet extends ApiBase {
 	}
 
 	/**
-	 * Title objects that were found in the database.
+	 * Title objects that were found in the database, including redirects.
+	 * If redirects are resolved, this will include existing redirect targets.
+	 * @deprecated since 1.37, use getGoodPages() instead.
 	 * @return Title[] Array page_id (int) => Title (obj)
 	 */
 	public function getGoodTitles() {
+		return $this->mGoodTitles;
+	}
+
+	/**
+	 * Pages that were found in the database, including redirects.
+	 * If redirects are resolved, this will include existing redirect targets.
+	 * @since 1.37
+	 * @return PageIdentity[] Array page_id (int) => PageIdentity (obj)
+	 */
+	public function getGoodPages(): array {
 		return $this->mGoodTitles;
 	}
 
@@ -394,10 +534,23 @@ class ApiPageSet extends ApiBase {
 
 	/**
 	 * Title objects that were NOT found in the database.
-	 * The array's index will be negative for each item
+	 * The array's index will be negative for each item.
+	 * If redirects are resolved, this will include missing redirect targets.
+	 * @deprecated since 1.37, use getMissingPages instead.
 	 * @return Title[]
 	 */
 	public function getMissingTitles() {
+		return $this->mMissingTitles;
+	}
+
+	/**
+	 * Pages that were NOT found in the database.
+	 * The array's index will be negative for each item.
+	 * If redirects are resolved, this will include missing redirect targets.
+	 * @since 1.37
+	 * @return PageIdentity[]
+	 */
+	public function getMissingPages(): array {
 		return $this->mMissingTitles;
 	}
 
@@ -411,9 +564,19 @@ class ApiPageSet extends ApiBase {
 
 	/**
 	 * Title objects for good and missing titles.
+	 * @deprecated since 1.37, use getGoodAndMissingPages() instead.
 	 * @return Title[]
 	 */
 	public function getGoodAndMissingTitles() {
+		return $this->mGoodTitles + $this->mMissingTitles;
+	}
+
+	/**
+	 * Pages for good and missing titles.
+	 * @since 1.37
+	 * @return PageIdentity[]
+	 */
+	public function getGoodAndMissingPages(): array {
 		return $this->mGoodTitles + $this->mMissingTitles;
 	}
 
@@ -436,10 +599,21 @@ class ApiPageSet extends ApiBase {
 
 	/**
 	 * Get a list of redirect resolutions - maps a title to its redirect
-	 * target, as an array of output-ready arrays
+	 * target.
+	 * @deprecated since 1.37, use getRedirectTargets instead.
 	 * @return Title[]
 	 */
 	public function getRedirectTitles() {
+		return $this->mRedirectTitles;
+	}
+
+	/**
+	 * Get a list of redirect resolutions - maps a title to its redirect
+	 * target.
+	 * @since 1.37
+	 * @return LinkTarget[]
+	 */
+	public function getRedirectTargets(): array {
 		return $this->mRedirectTitles;
 	}
 
@@ -499,9 +673,8 @@ class ApiPageSet extends ApiBase {
 	 */
 	public function getNormalizedTitlesAsResult( $result = null ) {
 		$values = [];
-		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
 		foreach ( $this->getNormalizedTitles() as $rawTitleStr => $titleStr ) {
-			$encode = $contLang->normalize( $rawTitleStr ) !== $rawTitleStr;
+			$encode = $this->contentLanguage->normalize( $rawTitleStr ) !== $rawTitleStr;
 			$values[] = [
 				'fromencoded' => $encode,
 				'from' => $encode ? rawurlencode( $rawTitleStr ) : $rawTitleStr,
@@ -571,7 +744,7 @@ class ApiPageSet extends ApiBase {
 				'iw' => $interwikiStr,
 			];
 			if ( $iwUrl ) {
-				$title = Title::newFromText( $rawTitleStr );
+				$title = $this->titleFactory->newFromText( $rawTitleStr );
 				$item['url'] = $title->getFullURL( '', false, PROTO_CURRENT );
 			}
 			$values[] = $item;
@@ -685,7 +858,8 @@ class ApiPageSet extends ApiBase {
 		$values = [];
 		foreach ( $this->getMissingRevisionIDs() as $revid ) {
 			$values[$revid] = [
-				'revid' => $revid
+				'revid' => $revid,
+				'missing' => true,
 			];
 		}
 		if ( !empty( $values ) && $result ) {
@@ -697,9 +871,19 @@ class ApiPageSet extends ApiBase {
 
 	/**
 	 * Get the list of titles with negative namespace
+	 * @deprecated since 1.37, use getSpecialPages() instead.
 	 * @return Title[]
 	 */
 	public function getSpecialTitles() {
+		return $this->mSpecialTitles;
+	}
+
+	/**
+	 * Get the list of pages with negative namespace
+	 * @since 1.37
+	 * @return PageReference[]
+	 */
+	public function getSpecialPages(): array {
 		return $this->mSpecialTitles;
 	}
 
@@ -712,8 +896,8 @@ class ApiPageSet extends ApiBase {
 	}
 
 	/**
-	 * Populate this PageSet from a list of Titles
-	 * @param array $titles Array of Title objects
+	 * Populate this PageSet
+	 * @param string[]|LinkTarget[]|PageReference[] $titles
 	 */
 	public function populateFromTitles( $titles ) {
 		$this->initFromTitles( $titles );
@@ -754,10 +938,9 @@ class ApiPageSet extends ApiBase {
 	 */
 	public function processDbRow( $row ) {
 		// Store Title object in various data structures
-		$title = Title::newFromRow( $row );
+		$title = $this->titleFactory->newFromRow( $row );
 
-		$linkCache = MediaWikiServices::getInstance()->getLinkCache();
-		$linkCache->addGoodLinkObjFromRow( $title, $row );
+		$this->linkCache->addGoodLinkObjFromRow( $title, $row );
 
 		$pageId = (int)$row->page_id;
 		$this->mAllPages[$row->page_namespace][$row->page_title] = $pageId;
@@ -790,7 +973,7 @@ class ApiPageSet extends ApiBase {
 	 * #5 Substitute the original LinkBatch object with the new list
 	 * #6 Repeat from step #1
 	 *
-	 * @param array $titles Array of Title objects or strings
+	 * @param string[]|LinkTarget[]|PageReference[] $titles
 	 */
 	private function initFromTitles( $titles ) {
 		// Get validated and normalized title objects
@@ -802,11 +985,14 @@ class ApiPageSet extends ApiBase {
 		}
 
 		$db = $this->getDB();
-		$set = $linkBatch->constructSet( 'page', $db );
 
 		// Get pageIDs data from the `page` table
-		$res = $db->select( 'page', $this->getPageTableFields(), $set,
-			__METHOD__ );
+		$res = $db->newSelectQueryBuilder()
+			->select( $this->getPageTableFields() )
+			->from( 'page' )
+			->where( $linkBatch->constructSet( 'page', $db ) )
+			->caller( __METHOD__ )
+			->fetchResultSet();
 
 		// Hack: get the ns:titles stored in [ ns => [ titles ] ] format
 		$this->initFromQueryResult( $res, $linkBatch->data, true ); // process Titles
@@ -826,7 +1012,7 @@ class ApiPageSet extends ApiBase {
 		}
 
 		$pageids = array_map( 'intval', $pageids ); // paranoia
-		$remaining = array_flip( $pageids );
+		$remaining = array_fill_keys( $pageids, true );
 
 		if ( $filterIds ) {
 			$pageids = $this->filterIDs( [ [ 'page', 'page_id' ] ], $pageids );
@@ -834,14 +1020,15 @@ class ApiPageSet extends ApiBase {
 
 		$res = null;
 		if ( !empty( $pageids ) ) {
-			$set = [
-				'page_id' => $pageids
-			];
 			$db = $this->getDB();
 
 			// Get pageIDs data from the `page` table
-			$res = $db->select( 'page', $this->getPageTableFields(), $set,
-				__METHOD__ );
+			$res = $db->newSelectQueryBuilder()
+				->select( $this->getPageTableFields() )
+				->from( 'page' )
+				->where( [ 'page_id' => $pageids ] )
+				->caller( __METHOD__ )
+				->fetchResultSet();
 		}
 
 		$this->initFromQueryResult( $res, $remaining, false ); // process PageIDs
@@ -853,7 +1040,7 @@ class ApiPageSet extends ApiBase {
 	/**
 	 * Iterate through the result of the query on 'page' table,
 	 * and for each row create and store title object and save any extra fields requested.
-	 * @param IResultWrapper $res DB Query result
+	 * @param IResultWrapper|null $res DB Query result
 	 * @param array|null &$remaining Array of either pageID or ns/title elements (optional).
 	 *        If given, any missing items will go to $mMissingPageIDs and $mMissingTitles
 	 * @param bool|null $processTitles Must be provided together with $remaining.
@@ -865,15 +1052,13 @@ class ApiPageSet extends ApiBase {
 			ApiBase::dieDebug( __METHOD__, 'Missing $processTitles parameter when $remaining is provided' );
 		}
 
-		$nsInfo = MediaWikiServices::getInstance()->getNamespaceInfo();
-
 		$usernames = [];
 		if ( $res ) {
 			foreach ( $res as $row ) {
 				$pageId = (int)$row->page_id;
 
 				// Remove found page from the list of remaining items
-				if ( isset( $remaining ) ) {
+				if ( $remaining ) {
 					if ( $processTitles ) {
 						unset( $remaining[$row->page_namespace][$row->page_title] );
 					} else {
@@ -885,21 +1070,20 @@ class ApiPageSet extends ApiBase {
 				$this->processDbRow( $row );
 
 				// Need gender information
-				if ( $nsInfo->hasGenderDistinction( $row->page_namespace ) ) {
+				if ( $this->namespaceInfo->hasGenderDistinction( $row->page_namespace ) ) {
 					$usernames[] = $row->page_title;
 				}
 			}
 		}
 
-		if ( isset( $remaining ) ) {
+		if ( $remaining ) {
 			// Any items left in the $remaining list are added as missing
 			if ( $processTitles ) {
 				// The remaining titles in $remaining are non-existent pages
-				$linkCache = MediaWikiServices::getInstance()->getLinkCache();
 				foreach ( $remaining as $ns => $dbkeys ) {
 					foreach ( array_keys( $dbkeys ) as $dbkey ) {
-						$title = Title::makeTitle( $ns, $dbkey );
-						$linkCache->addBadLinkObj( $title );
+						$title = $this->titleFactory->makeTitle( $ns, $dbkey );
+						$this->linkCache->addBadLinkObj( $title );
 						$this->mAllPages[$ns][$dbkey] = $this->mFakePageId;
 						$this->mMissingPages[$ns][$dbkey] = $this->mFakePageId;
 						$this->mGoodAndMissingPages[$ns][$dbkey] = $this->mFakePageId;
@@ -908,7 +1092,7 @@ class ApiPageSet extends ApiBase {
 						$this->mTitles[] = $title;
 
 						// need gender information
-						if ( $nsInfo->hasGenderDistinction( $ns ) ) {
+						if ( $this->namespaceInfo->hasGenderDistinction( $ns ) ) {
 							$usernames[] = $dbkey;
 						}
 					}
@@ -924,8 +1108,7 @@ class ApiPageSet extends ApiBase {
 		}
 
 		// Get gender information
-		$genderCache = MediaWikiServices::getInstance()->getGenderCache();
-		$genderCache->doQuery( $usernames, __METHOD__ );
+		$this->genderCache->doQuery( $usernames, __METHOD__ );
 	}
 
 	/**
@@ -941,18 +1124,22 @@ class ApiPageSet extends ApiBase {
 		$revids = array_map( 'intval', $revids ); // paranoia
 		$db = $this->getDB();
 		$pageids = [];
-		$remaining = array_flip( $revids );
+		$remaining = array_fill_keys( $revids, true );
 
 		$revids = $this->filterIDs( [ [ 'revision', 'rev_id' ], [ 'archive', 'ar_rev_id' ] ], $revids );
-		$goodRemaining = array_flip( $revids );
+		$goodRemaining = array_fill_keys( $revids, true );
 
 		if ( $revids ) {
-			$tables = [ 'revision', 'page' ];
 			$fields = [ 'rev_id', 'rev_page' ];
-			$where = [ 'rev_id' => $revids, 'rev_page = page_id' ];
 
 			// Get pageIDs data from the `page` table
-			$res = $db->select( $tables, $fields, $where, __METHOD__ );
+			$res = $db->newSelectQueryBuilder()
+				->select( $fields )
+				->from( 'page' )
+				->where( [ 'rev_id' => $revids ] )
+				->join( 'revision', null, [ 'rev_page = page_id' ] )
+				->caller( __METHOD__ )
+				->fetchResultSet();
 			foreach ( $res as $row ) {
 				$revid = (int)$row->rev_id;
 				$pageid = (int)$row->rev_page;
@@ -972,15 +1159,18 @@ class ApiPageSet extends ApiBase {
 		// ar_page_id because deleted revisions are tied by title, not page_id.
 		if ( $goodRemaining &&
 			$this->getAuthority()->isAllowed( 'deletedhistory' ) ) {
-			$tables = [ 'archive' ];
-			$fields = [ 'ar_rev_id', 'ar_namespace', 'ar_title' ];
-			$where = [ 'ar_rev_id' => array_keys( $goodRemaining ) ];
 
-			$res = $db->select( $tables, $fields, $where, __METHOD__ );
+			$res = $db->newSelectQueryBuilder()
+				->select( [ 'ar_rev_id', 'ar_namespace', 'ar_title' ] )
+				->from( 'archive' )
+				->where( [ 'ar_rev_id' => array_keys( $goodRemaining ) ] )
+				->caller( __METHOD__ )
+				->fetchResultSet();
+
 			$titles = [];
 			foreach ( $res as $row ) {
 				$revid = (int)$row->ar_rev_id;
-				$titles[$revid] = Title::makeTitle( $row->ar_namespace, $row->ar_title );
+				$titles[$revid] = $this->titleFactory->makeTitle( $row->ar_namespace, $row->ar_title );
 				unset( $remaining[$revid] );
 			}
 
@@ -994,7 +1184,7 @@ class ApiPageSet extends ApiBase {
 				if ( !isset( $this->mAllPages[$ns][$dbkey] ) &&
 					isset( $this->mConvertedTitles[$title->getPrefixedText()] )
 				) {
-					$title = Title::newFromText( $this->mConvertedTitles[$title->getPrefixedText()] );
+					$title = $this->titleFactory->newFromText( $this->mConvertedTitles[$title->getPrefixedText()] );
 					$ns = $title->getNamespace();
 					$dbkey = $title->getDBkey();
 				}
@@ -1019,14 +1209,13 @@ class ApiPageSet extends ApiBase {
 	private function resolvePendingRedirects() {
 		if ( $this->mResolveRedirects ) {
 			$db = $this->getDB();
-			$pageFlds = $this->getPageTableFields();
 
 			// Repeat until all redirects have been resolved
 			// The infinite loop is prevented by keeping all known pages in $this->mAllPages
 			while ( $this->mPendingRedirectIDs || $this->mPendingRedirectSpecialPages ) {
 				// Resolve redirects by querying the pagelinks table, and repeat the process
 				// Create a new linkBatch object for the next pass
-				$linkBatch = $this->getRedirectTargets();
+				$linkBatch = $this->loadRedirectTargets();
 
 				if ( $linkBatch->isEmpty() ) {
 					break;
@@ -1038,7 +1227,12 @@ class ApiPageSet extends ApiBase {
 				}
 
 				// Get pageIDs data from the `page` table
-				$res = $db->select( 'page', $pageFlds, $set, __METHOD__ );
+				$res = $db->newSelectQueryBuilder()
+					->select( $this->getPageTableFields() )
+					->from( 'page' )
+					->where( $set )
+					->caller( __METHOD__ )
+					->fetchResultSet();
 
 				// Hack: get the ns:titles stored in [ns => array(titles)] format
 				$this->initFromQueryResult( $res, $linkBatch->data, true );
@@ -1053,30 +1247,32 @@ class ApiPageSet extends ApiBase {
 	 * have one.
 	 * @return LinkBatch
 	 */
-	private function getRedirectTargets() {
+	private function loadRedirectTargets() {
 		$titlesToResolve = [];
 		$db = $this->getDB();
 
 		if ( $this->mPendingRedirectIDs ) {
-			$res = $db->select(
-				'redirect',
-				[
+			$res = $db->newSelectQueryBuilder()
+				->select( [
 					'rd_from',
 					'rd_namespace',
 					'rd_fragment',
 					'rd_interwiki',
 					'rd_title'
-				], [ 'rd_from' => array_keys( $this->mPendingRedirectIDs ) ],
-					__METHOD__
-				);
+				] )
+				->from( 'redirect' )
+				->where( [ 'rd_from' => array_keys( $this->mPendingRedirectIDs ) ] )
+				->caller( __METHOD__ )
+				->fetchResultSet();
+
 			foreach ( $res as $row ) {
 				$rdfrom = (int)$row->rd_from;
 				$from = $this->mPendingRedirectIDs[$rdfrom]->getPrefixedText();
-				$to = Title::makeTitle(
+				$to = $this->titleFactory->makeTitle(
 					$row->rd_namespace,
 					$row->rd_title,
-					$row->rd_fragment,
-					$row->rd_interwiki
+					$row->rd_fragment ?? '',
+					$row->rd_interwiki ?? ''
 				);
 				$this->mResolvedRedirectTitles[$from] = $this->mPendingRedirectIDs[$rdfrom];
 				unset( $this->mPendingRedirectIDs[$rdfrom] );
@@ -1092,7 +1288,7 @@ class ApiPageSet extends ApiBase {
 				// We found pages that aren't in the redirect table
 				// Add them
 				foreach ( $this->mPendingRedirectIDs as $id => $title ) {
-					$page = WikiPage::factory( $title );
+					$page = $this->wikiPageFactory->newFromTitle( $title );
 					$rt = $page->insertRedirect();
 					if ( !$rt ) {
 						// What the hell. Let's just ignore this
@@ -1112,7 +1308,7 @@ class ApiPageSet extends ApiBase {
 		}
 
 		if ( $this->mPendingRedirectSpecialPages ) {
-			foreach ( $this->mPendingRedirectSpecialPages as $key => list( $from, $to ) ) {
+			foreach ( $this->mPendingRedirectSpecialPages as [ $from, $to ] ) {
 				/** @var Title $from */
 				$fromKey = $from->getPrefixedText();
 				$this->mResolvedRedirectTitles[$fromKey] = $from;
@@ -1156,23 +1352,19 @@ class ApiPageSet extends ApiBase {
 	 * This method validates access rights for the title,
 	 * and appends normalization values to the output.
 	 *
-	 * @param array $titles Array of Title objects or strings
+	 * @param string[]|LinkTarget[]|PageReference[] $titles
 	 * @return LinkBatch
 	 */
 	private function processTitlesArray( $titles ) {
-		$services = MediaWikiServices::getInstance();
-		$linkBatchFactory = $services->getLinkBatchFactory();
-		$linkBatch = $linkBatchFactory->newLinkBatch();
-		$languageConverter = $services
-			->getLanguageConverterFactory()
-			->getLanguageConverter( $services->getContentLanguage() );
+		$linkBatch = $this->linkBatchFactory->newLinkBatch();
 
+		/** @var Title[] $titleObjects */
 		$titleObjects = [];
 		foreach ( $titles as $index => $title ) {
 			if ( is_string( $title ) ) {
 				try {
 					/** @var Title $titleObj */
-					$titleObj = Title::newFromTextThrow( $title, $this->mDefaultNamespace );
+					$titleObj = $this->titleFactory->newFromTextThrow( $title, $this->mDefaultNamespace );
 				} catch ( MalformedTitleException $ex ) {
 					// Handle invalid titles gracefully
 					if ( !isset( $this->mAllPages[0][$title] ) ) {
@@ -1185,16 +1377,17 @@ class ApiPageSet extends ApiBase {
 					}
 					continue; // There's nothing else we can do
 				}
+			} elseif ( $title instanceof LinkTarget ) {
+				$titleObj = $this->titleFactory->castFromLinkTarget( $title );
 			} else {
-				$titleObj = $title;
+				$titleObj = $this->titleFactory->castFromPageReference( $title );
 			}
 
 			$titleObjects[$index] = $titleObj;
 		}
 
 		// Get gender information
-		$genderCache = $services->getGenderCache();
-		$genderCache->doTitlesArray( $titleObjects, __METHOD__ );
+		$this->genderCache->doTitlesArray( $titleObjects, __METHOD__ );
 
 		foreach ( $titleObjects as $index => $titleObj ) {
 			$title = is_string( $titles[$index] ) ? $titles[$index] : false;
@@ -1207,13 +1400,14 @@ class ApiPageSet extends ApiBase {
 				// Variants checking
 				if (
 					$this->mConvertTitles
-					&& $languageConverter->hasVariants()
+					&& $this->languageConverter->hasVariants()
 					&& !$titleObj->exists()
 				) {
-					// Language::findVariantLink will modify titleText and titleObj into
-					// the canonical variant if possible
+					// ILanguageConverter::findVariantLink will modify titleText and
+					// titleObj into the canonical variant if possible
 					$titleText = $title !== false ? $title : $titleObj->getPrefixedText();
-					$languageConverter->findVariantLink( $titleText, $titleObj );
+					// @phan-suppress-next-line PhanTypeMismatchArgumentNullable castFrom does not return null here
+					$this->languageConverter->findVariantLink( $titleText, $titleObj );
 					$titleWasConverted = $unconvertedTitle !== $titleObj->getPrefixedText();
 				}
 
@@ -1226,8 +1420,7 @@ class ApiPageSet extends ApiBase {
 						$this->mAllSpecials[$ns][$dbkey] = $this->mFakePageId;
 						$target = null;
 						if ( $ns === NS_SPECIAL && $this->mResolveRedirects ) {
-							$spFactory = $services->getSpecialPageFactory();
-							$special = $spFactory->getPage( $dbkey );
+							$special = $this->specialPageFactory->getPage( $dbkey );
 							if ( $special instanceof RedirectSpecialArticle ) {
 								// Only RedirectSpecialArticle is intended to redirect to an article, other kinds of
 								// RedirectSpecialPage are probably applying weird URL parameters we don't want to
@@ -1236,7 +1429,7 @@ class ApiPageSet extends ApiBase {
 								$context->setTitle( $titleObj );
 								$context->setRequest( new FauxRequest );
 								$special->setContext( $context );
-								list( /* $alias */, $subpage ) = $spFactory->resolveAlias( $dbkey );
+								list( /* $alias */, $subpage ) = $this->specialPageFactory->resolveAlias( $dbkey );
 								$target = $special->getRedirect( $subpage );
 							}
 						}
@@ -1249,6 +1442,7 @@ class ApiPageSet extends ApiBase {
 					}
 				} else {
 					// Regular page
+					// @phan-suppress-next-line PhanTypeMismatchArgumentNullable castFrom does not return null here
 					$linkBatch->addObj( $titleObj );
 				}
 			}
@@ -1284,10 +1478,10 @@ class ApiPageSet extends ApiBase {
 	 * specified, since in the case of multiple redirects we can't know which
 	 * source's data to use on the target.
 	 *
-	 * @param Title $title
+	 * @param PageReference|LinkTarget $title
 	 * @param array $data
 	 */
-	public function setGeneratorData( Title $title, array $data ) {
+	public function setGeneratorData( $title, array $data ) {
 		$ns = $title->getNamespace();
 		$dbkey = $title->getDBkey();
 		$this->mGeneratorData[$ns][$dbkey] = $data;
@@ -1454,32 +1648,32 @@ class ApiPageSet extends ApiBase {
 	public function getAllowedParams( $flags = 0 ) {
 		$result = [
 			'titles' => [
-				ApiBase::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_ISMULTI => true,
 				ApiBase::PARAM_HELP_MSG => 'api-pageset-param-titles',
 			],
 			'pageids' => [
-				ApiBase::PARAM_TYPE => 'integer',
-				ApiBase::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_TYPE => 'integer',
+				ParamValidator::PARAM_ISMULTI => true,
 				ApiBase::PARAM_HELP_MSG => 'api-pageset-param-pageids',
 			],
 			'revids' => [
-				ApiBase::PARAM_TYPE => 'integer',
-				ApiBase::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_TYPE => 'integer',
+				ParamValidator::PARAM_ISMULTI => true,
 				ApiBase::PARAM_HELP_MSG => 'api-pageset-param-revids',
 			],
 			'generator' => [
-				ApiBase::PARAM_TYPE => null,
+				ParamValidator::PARAM_TYPE => null,
 				ApiBase::PARAM_HELP_MSG => 'api-pageset-param-generator',
-				ApiBase::PARAM_SUBMODULE_PARAM_PREFIX => 'g',
+				SubmoduleDef::PARAM_SUBMODULE_PARAM_PREFIX => 'g',
 			],
 			'redirects' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => $this->mAllowGenerator
 					? 'api-pageset-param-redirects-generator'
 					: 'api-pageset-param-redirects-nogenerator',
 			],
 			'converttitles' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => [
 					'api-pageset-param-converttitles',
 					[ Message::listParam( LanguageConverter::$languagesWithVariants, 'text' ) ],
@@ -1490,8 +1684,8 @@ class ApiPageSet extends ApiBase {
 		if ( !$this->mAllowGenerator ) {
 			unset( $result['generator'] );
 		} elseif ( $flags & ApiBase::GET_VALUES_FOR_HELP ) {
-			$result['generator'][ApiBase::PARAM_TYPE] = 'submodule';
-			$result['generator'][ApiBase::PARAM_SUBMODULE_MAP] = $this->getGenerators();
+			$result['generator'][ParamValidator::PARAM_TYPE] = 'submodule';
+			$result['generator'][SubmoduleDef::PARAM_SUBMODULE_MAP] = $this->getGenerators();
 		}
 
 		return $result;
@@ -1514,11 +1708,9 @@ class ApiPageSet extends ApiBase {
 		}
 	}
 
-	private static $generators = null;
-
 	/**
 	 * Get an array of all available generators
-	 * @return array
+	 * @return string[]
 	 */
 	private function getGenerators() {
 		if ( self::$generators === null ) {

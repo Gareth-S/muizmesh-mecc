@@ -18,7 +18,7 @@
  * @file
  */
 
-namespace Wikimedia;
+namespace Wikimedia\ObjectFactory;
 
 use Closure;
 use InvalidArgumentException;
@@ -100,10 +100,10 @@ class ObjectFactory {
 	 * passed to the constructor passed as `$options['serviceContainer']`.
 	 *
 	 * @phan-template T
-	 * @codingStandardsIgnoreStart
-	 * @phan-param class-string<T>|callable(mixed ...$args):T|array{class?:class-string<T>,factory?:callable(mixed ...$args):T,args?:array,services?:array<string|null>,calls?:string[],closure_expansion?:bool,spec_is_arg?:bool} $spec
+	 * @phpcs:disable Generic.Files.LineLength
+	 * @phan-param class-string<T>|callable(mixed ...$args):T|array{class?:class-string<T>,factory?:callable(mixed ...$args):T,args?:array,services?:array<string|null>,optional_services?:array<string|null>,calls?:string[],closure_expansion?:bool,spec_is_arg?:bool} $spec
 	 * @phan-param array{allowClassName?:bool,allowCallable?:bool,specIsArg?:bool,extraArgs?:array,assertClass?:string} $options
-	 * @codingStandardsIgnoreEnd
+	 * @phpcs:enable
 	 * @phan-return T|object
 	 *
 	 * @param array|string|callable $spec Specification array, or (when the respective
@@ -147,6 +147,8 @@ class ObjectFactory {
 	 */
 	public function createObject( $spec, array $options = [] ) {
 		$options['serviceContainer'] = $this->serviceContainer;
+		// ObjectFactory::getObjectFromSpec accepts an array, not just a callable (phan bug)
+		// @phan-suppress-next-line PhanTypeInvalidCallableArraySize
 		return static::getObjectFromSpec( $spec, $options );
 	}
 
@@ -154,10 +156,10 @@ class ObjectFactory {
 	 * Instantiate an object based on a specification array.
 	 *
 	 * @phan-template T
-	 * @codingStandardsIgnoreStart
-	 * @phan-param class-string<T>|callable(mixed ...$args):T|array{class?:class-string<T>,factory?:callable(mixed ...$args):T,args?:array,services?:array<string|null>,calls?:string[],closure_expansion?:bool,spec_is_arg?:bool} $spec
+	 * @phpcs:disable Generic.Files.LineLength
+	 * @phan-param class-string<T>|callable(mixed ...$args):T|array{class?:class-string<T>,factory?:callable(mixed ...$args):T,args?:array,services?:array<string|null>,optional_services?:array<string|null>,calls?:string[],closure_expansion?:bool,spec_is_arg?:bool} $spec
 	 * @phan-param array{allowClassName?:bool,allowCallable?:bool,specIsArg?:bool,extraArgs?:array,assertClass?:string,serviceContainer?:ContainerInterface} $options
-	 * @codingStandardsIgnoreEnd
+	 * @phpcs:enable
 	 * @phan-return T|object
 	 *
 	 * @param array|string|callable $spec As for createObject().
@@ -233,6 +235,7 @@ class ObjectFactory {
 			if ( !is_object( $obj ) ) {
 				throw new UnexpectedValueException( '\'factory\' did not return an object' );
 			}
+			// @phan-suppress-next-line PhanRedundantCondition
 			if ( isset( $spec['class'] ) && !$obj instanceof $spec['class'] ) {
 				throw new UnexpectedValueException(
 					'\'factory\' was expected to return an instance of ' . $spec['class']
@@ -248,6 +251,7 @@ class ObjectFactory {
 			);
 		}
 
+		// @phan-suppress-next-line PhanRedundantCondition
 		if ( isset( $options['assertClass'] ) && !$obj instanceof $options['assertClass'] ) {
 			throw new UnexpectedValueException(
 				'Expected instance of ' . $options['assertClass'] . ', got ' . get_class( $obj )
@@ -308,7 +312,7 @@ class ObjectFactory {
 	 * @return array List with any Closures replaced with their output
 	 */
 	protected static function expandClosures( $list ) {
-		return array_map( function ( $value ) {
+		return array_map( static function ( $value ) {
 			if ( is_object( $value ) && $value instanceof Closure ) {
 				// If $value is a Closure, call it.
 				return $value();

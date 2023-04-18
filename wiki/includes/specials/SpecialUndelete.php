@@ -23,8 +23,12 @@
 
 use MediaWiki\Cache\LinkBatchFactory;
 use MediaWiki\Content\IContentHandlerFactory;
+use MediaWiki\MainConfigNames;
+use MediaWiki\Page\UndeletePage;
+use MediaWiki\Page\UndeletePageFactory;
 use MediaWiki\Page\WikiPageFactory;
 use MediaWiki\Permissions\PermissionManager;
+use MediaWiki\Revision\ArchivedRevisionLookup;
 use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\Revision\RevisionRenderer;
 use MediaWiki\Revision\RevisionStore;
@@ -49,10 +53,12 @@ class SpecialUndelete extends SpecialPage {
 	private $mRevdel;
 	private $mInvert;
 	private $mFilename;
-	private $mTargetTimestamp;
+	/** @var string[] */
+	private $mTargetTimestamp = [];
 	private $mAllowed;
 	private $mCanView;
-	private $mComment;
+	/** @var string */
+	private $mComment = '';
 	private $mToken;
 	/** @var bool|null */
 	private $mPreview;
@@ -62,10 +68,12 @@ class SpecialUndelete extends SpecialPage {
 	private $mDiffOnly;
 	/** @var bool|null */
 	private $mUnsuppress;
-	/** @var int[]|null */
-	private $mFileVersions;
+	/** @var int[] */
+	private $mFileVersions = [];
+	/** @var bool|null */
+	private $mUndeleteTalk;
 
-	/** @var Title */
+	/** @var Title|null */
 	private $mTargetObj;
 	/**
 	 * @var string Search prefix
@@ -105,6 +113,12 @@ class SpecialUndelete extends SpecialPage {
 	/** @var SearchEngineFactory */
 	private $searchEngineFactory;
 
+	/** @var UndeletePageFactory */
+	private $undeletePageFactory;
+
+	/** @var ArchivedRevisionLookup */
+	private $archivedRevisionLookup;
+
 	/**
 	 * @param PermissionManager $permissionManager
 	 * @param RevisionStore $revisionStore
@@ -117,6 +131,8 @@ class SpecialUndelete extends SpecialPage {
 	 * @param UserOptionsLookup $userOptionsLookup
 	 * @param WikiPageFactory $wikiPageFactory
 	 * @param SearchEngineFactory $searchEngineFactory
+	 * @param UndeletePageFactory $undeletePageFactory
+	 * @param ArchivedRevisionLookup $archivedRevisionLookup
 	 */
 	public function __construct(
 		PermissionManager $permissionManager,
@@ -129,7 +145,9 @@ class SpecialUndelete extends SpecialPage {
 		ILoadBalancer $loadBalancer,
 		UserOptionsLookup $userOptionsLookup,
 		WikiPageFactory $wikiPageFactory,
-		SearchEngineFactory $searchEngineFactory
+		SearchEngineFactory $searchEngineFactory,
+		UndeletePageFactory $undeletePageFactory,
+		ArchivedRevisionLookup $archivedRevisionLookup
 	) {
 		parent::__construct( 'Undelete', 'deletedhistory' );
 		$this->permissionManager = $permissionManager;
@@ -143,6 +161,8 @@ class SpecialUndelete extends SpecialPage {
 		$this->userOptionsLookup = $userOptionsLookup;
 		$this->wikiPageFactory = $wikiPageFactory;
 		$this->searchEngineFactory = $searchEngineFactory;
+		$this->undeletePageFactory = $undeletePageFactory;
+		$this->archivedRevisionLookup = $archivedRevisionLookup;
 	}
 
 	public function doesWrites() {
@@ -153,7 +173,7 @@ class SpecialUndelete extends SpecialPage {
 		$request = $this->getRequest();
 		$user = $this->getUser();
 
-		$this->mAction = $request->getVal( 'action' );
+		$this->mAction = $request->getRawVal( 'action' );
 		if ( $par !== null && $par !== '' ) {
 			$this->mTarget = $par;
 		} else {
@@ -184,6 +204,7 @@ class SpecialUndelete extends SpecialPage {
 		$this->mUnsuppress = $request->getVal( 'wpUnsuppress' ) &&
 			$this->permissionManager->userHasRight( $user, 'suppressrevision' );
 		$this->mToken = $request->getVal( 'token' );
+		$this->mUndeleteTalk = $request->getCheck( 'undeletetalk' );
 
 		if ( $this->isAllowed( 'undelete' ) ) {
 			$this->mAllowed = true; // user can restore
@@ -258,6 +279,7 @@ class SpecialUndelete extends SpecialPage {
 		// the target, show a block error.
 		if (
 			$this->mTargetObj && $this->permissionManager->isBlockedFrom( $user, $this->mTargetObj ) ) {
+			// @phan-suppress-next-line PhanTypeMismatchArgumentNullable Block is checked and not null
 			throw new UserBlockedError( $user->getBlock() );
 		}
 
@@ -336,14 +358,13 @@ class SpecialUndelete extends SpecialPage {
 	 * redirect the request
 	 */
 	private function redirectToRevDel() {
-		$archive = new PageArchive( $this->mTargetObj );
-
 		$revisions = [];
 
 		foreach ( $this->getRequest()->getValues() as $key => $val ) {
 			$matches = [];
 			if ( preg_match( "/^ts(\d{14})$/", $key, $matches ) ) {
-				$revisionRecord = $archive->getRevisionRecordByTimestamp( $matches[1] );
+				$revisionRecord = $this->archivedRevisionLookup
+					->getRevisionRecordByTimestamp( $this->mTargetObj, $matches[1] );
 				if ( $revisionRecord ) {
 					// Can return null
 					$revisions[ $revisionRecord->getId() ] = 1;
@@ -363,7 +384,7 @@ class SpecialUndelete extends SpecialPage {
 	private function showSearchForm() {
 		$out = $this->getOutput();
 		$out->setPageTitle( $this->msg( 'undelete-search-title' ) );
-		$fuzzySearch = $this->getRequest()->getVal( 'fuzzy', true );
+		$fuzzySearch = $this->getRequest()->getVal( 'fuzzy', '1' );
 
 		$out->enableOOUI();
 
@@ -492,16 +513,29 @@ class SpecialUndelete extends SpecialPage {
 		if ( !preg_match( '/[0-9]{14}/', $timestamp ) ) {
 			return;
 		}
+		$out = $this->getOutput();
 
-		$archive = new PageArchive( $this->mTargetObj, $this->getConfig() );
+		// When viewing a specific revision, add a subtitle link back to the overall
+		// history, see T284114
+		$listLink = $this->getLinkRenderer()->makeKnownLink(
+			$this->getPageTitle(),
+			$this->msg( 'undelete-back-to-list' )->text(),
+			[],
+			[ 'target' => $this->mTargetObj->getPrefixedText() ]
+		);
+		// same < arrow as with subpages
+		$subtitle = "&lt; $listLink";
+		$out->setSubtitle( $subtitle );
+
+		$archive = new PageArchive( $this->mTargetObj );
+		// FIXME: This hook must be deprecated, passing PageArchive by ref is awful.
 		if ( !$this->getHookRunner()->onUndeleteForm__showRevision(
 			$archive, $this->mTargetObj )
 		) {
 			return;
 		}
-		$revRecord = $archive->getRevisionRecordByTimestamp( $timestamp );
+		$revRecord = $this->archivedRevisionLookup->getRevisionRecordByTimestamp( $this->mTargetObj, $timestamp );
 
-		$out = $this->getOutput();
 		$user = $this->getUser();
 
 		if ( !$revRecord ) {
@@ -538,7 +572,8 @@ class SpecialUndelete extends SpecialPage {
 		}
 
 		if ( $this->mDiff ) {
-			$previousRevRecord = $archive->getPreviousRevisionRecord( $timestamp );
+			$previousRevRecord = $this->archivedRevisionLookup
+				->getPreviousRevisionRecord( $this->mTargetObj, $timestamp );
 			if ( $previousRevRecord ) {
 				$this->showDiff( $previousRevRecord, $revRecord );
 				if ( $this->mDiffOnly ) {
@@ -574,13 +609,7 @@ class SpecialUndelete extends SpecialPage {
 		// TODO: MCR: this will have to become something like $hasTextSlots and $hasNonTextSlots
 		$isText = ( $content instanceof TextContent );
 
-		if ( $this->mPreview || $isText ) {
-			$openDiv = '<div id="mw-undelete-revision" class="warningbox">';
-		} else {
-			$openDiv = '<div id="mw-undelete-revision">';
-		}
-		$out->addHTML( $openDiv );
-
+		$undeleteRevisionContent = '';
 		// Revision delete links
 		if ( !$this->mDiff ) {
 			$revdel = Linker::getRevDeleteLink(
@@ -589,27 +618,34 @@ class SpecialUndelete extends SpecialPage {
 				$this->mTargetObj
 			);
 			if ( $revdel ) {
-				$out->addHTML( "$revdel " );
+				$undeleteRevisionContent = $revdel . ' ';
 			}
 		}
 
-		$out->addWikiMsg(
+		$undeleteRevisionContent .= $out->msg(
 			'undelete-revision',
-			Message::rawParam( $link ), $time,
-			Message::rawParam( $userLink ), $d, $t
-		);
-		$out->addHTML( '</div>' );
+			Message::rawParam( $link ),
+			$time,
+			Message::rawParam( $userLink ),
+			$d,
+			$t
+		)->parseAsBlock();
 
-		// Hook hard deprecated since 1.35
-		if ( $this->getHookContainer()->isRegistered( 'UndeleteShowRevision' ) ) {
-			// Only create the Revision object if needed
-			$rev = new Revision( $revRecord );
-			if ( !$this->getHookRunner()->onUndeleteShowRevision(
-				$this->mTargetObj,
-				$rev
-			) ) {
-				return;
-			}
+		if ( $this->mPreview || $isText ) {
+			$out->addHTML(
+				Html::warningBox(
+					$undeleteRevisionContent,
+					'mw-undelete-revision'
+				)
+			);
+		} else {
+			$out->addHTML(
+				Html::rawElement(
+					'div',
+					[ 'class' => 'mw-undelete-revision', ],
+					$undeleteRevisionContent
+				)
+			);
 		}
 
 		if ( $this->mPreview || !$isText ) {
@@ -862,20 +898,21 @@ class SpecialUndelete extends SpecialPage {
 			[ 'undeletepagetitle', wfEscapeWikiText( $this->mTargetObj->getPrefixedText() ) ]
 		);
 
-		$archive = new PageArchive( $this->mTargetObj, $this->getConfig() );
+		$archive = new PageArchive( $this->mTargetObj );
+		// FIXME: This hook must be deprecated, passing PageArchive by ref is awful.
 		$this->getHookRunner()->onUndeleteForm__showHistory( $archive, $this->mTargetObj );
 
-		$out->addHTML( '<div class="mw-undelete-history">' );
+		$out->addHTML( Html::openElement( 'div', [ 'class' => 'mw-undelete-history' ] ) );
 		if ( $this->mAllowed ) {
 			$out->addWikiMsg( 'undeletehistory' );
 			$out->addWikiMsg( 'undeleterevdel' );
 		} else {
 			$out->addWikiMsg( 'undeletehistorynoadmin' );
 		}
-		$out->addHTML( '</div>' );
+		$out->addHTML( Html::closeElement( 'div' ) );
 
 		# List all stored revisions
-		$revisions = $archive->listRevisions();
+		$revisions = $this->archivedRevisionLookup->listRevisions( $this->mTargetObj );
 		$files = $archive->listFiles();
 
 		$haveRevisions = $revisions && $revisions->numRows() > 0;
@@ -948,6 +985,38 @@ class SpecialUndelete extends SpecialPage {
 				]
 			);
 
+			if ( $this->permissionManager->userHasRight( $this->getUser(), 'suppressrevision' ) ) {
+				$fields[] = new OOUI\FieldLayout(
+					new OOUI\CheckboxInputWidget( [
+						'name' => 'wpUnsuppress',
+						'inputId' => 'mw-undelete-unsuppress',
+						'value' => '1',
+					] ),
+					[
+						'label' => $this->msg( 'revdelete-unsuppress' )->text(),
+						'align' => 'inline',
+					]
+				);
+			}
+
+			$undelPage = $this->undeletePageFactory->newUndeletePage(
+				$this->wikiPageFactory->newFromTitle( $this->mTargetObj ),
+				$this->getContext()->getAuthority()
+			);
+			if ( $undelPage->canProbablyUndeleteAssociatedTalk()->isGood() ) {
+				$fields[] = new OOUI\FieldLayout(
+					new OOUI\CheckboxInputWidget( [
+						'name' => 'undeletetalk',
+						'inputId' => 'mw-undelete-undeletetalk',
+						'selected' => false,
+					] ),
+					[
+						'label' => $this->msg( 'undelete-undeletetalk' )->text(),
+						'align' => 'inline',
+					]
+				);
+			}
+
 			$fields[] = new OOUI\FieldLayout(
 				new OOUI\Widget( [
 					'content' => new OOUI\HorizontalLayout( [
@@ -971,26 +1040,13 @@ class SpecialUndelete extends SpecialPage {
 				] )
 			);
 
-			if ( $this->permissionManager->userHasRight( $this->getUser(), 'suppressrevision' ) ) {
-				$fields[] = new OOUI\FieldLayout(
-					new OOUI\CheckboxInputWidget( [
-						'name' => 'wpUnsuppress',
-						'inputId' => 'mw-undelete-unsuppress',
-						'value' => '1',
-					] ),
-					[
-						'label' => $this->msg( 'revdelete-unsuppress' )->text(),
-						'align' => 'inline',
-					]
-				);
-			}
-
 			$fieldset = new OOUI\FieldsetLayout( [
 				'label' => $this->msg( 'undelete-fieldset-title' )->text(),
 				'id' => 'mw-undelete-table',
 				'items' => $fields,
 			] );
 
+			// @phan-suppress-next-line PhanPossiblyUndeclaredVariable form is set, when used here
 			$form->appendContent(
 				new OOUI\PanelLayout( [
 					'expanded' => false,
@@ -1023,7 +1079,7 @@ class SpecialUndelete extends SpecialPage {
 				) . "\n";
 			}
 
-			$history .= '<ul class="mw-undelete-revlist">';
+			$history .= Html::openElement( 'ul', [ 'class' => 'mw-undelete-revlist' ] );
 			$remaining = $revisions->numRows();
 			$firstRev = $this->revisionStore->getFirstRevision( $this->mTargetObj );
 			$earliestLiveTime = $firstRev ? $firstRev->getTimestamp() : null;
@@ -1033,19 +1089,19 @@ class SpecialUndelete extends SpecialPage {
 				$history .= $this->formatRevisionRow( $row, $earliestLiveTime, $remaining );
 			}
 			$revisions->free();
-			$history .= '</ul>';
+			$history .= Html::closeElement( 'ul' );
 		} else {
 			$out->addWikiMsg( 'nohistory' );
 		}
 
 		if ( $haveFiles ) {
 			$history .= Xml::element( 'h2', null, $this->msg( 'filehist' )->text() ) . "\n";
-			$history .= '<ul class="mw-undelete-revlist">';
+			$history .= Html::openElement( 'ul', [ 'class' => 'mw-undelete-revlist' ] );
 			foreach ( $files as $row ) {
 				$history .= $this->formatFileRow( $row );
 			}
 			$files->free();
-			$history .= '</ul>';
+			$history .= Html::closeElement( 'ul' );
 		}
 
 		if ( $this->mAllowed ) {
@@ -1054,8 +1110,10 @@ class SpecialUndelete extends SpecialPage {
 			$misc .= Html::hidden( 'wpEditToken', $this->getUser()->getEditToken() );
 			$history .= $misc;
 
+			// @phan-suppress-next-line PhanPossiblyUndeclaredVariable form is set, when used here
 			$form->appendContent( new OOUI\HtmlSnippet( $history ) );
-			$out->addHTML( $form );
+			// @phan-suppress-next-line PhanPossiblyUndeclaredVariable form is set, when used here
+			$out->addHTML( (string)$form );
 		} else {
 			$out->addHTML( $history );
 		}
@@ -1217,7 +1275,12 @@ class SpecialUndelete extends SpecialPage {
 
 		if ( !$revRecord->userCan( RevisionRecord::DELETED_TEXT, $this->getAuthority() ) ) {
 			// TODO The condition cannot be true when the function is called
-			return '<span class="history-deleted">' . htmlspecialchars( $time ) . '</span>';
+			// TODO use Html::element and let it handle escaping
+			return Html::rawElement(
+				'span',
+				[ 'class' => 'history-deleted' ],
+				htmlspecialchars( $time )
+			);
 		}
 
 		$link = $this->getLinkRenderer()->makeKnownLink(
@@ -1231,7 +1294,8 @@ class SpecialUndelete extends SpecialPage {
 		);
 
 		if ( $revRecord->isDeleted( RevisionRecord::DELETED_TEXT ) ) {
-			$link = '<span class="history-deleted">' . $link . '</span>';
+			$class = Linker::getRevisionDeletedClass( $revRecord );
+			$link = '<span class="' . $class . '">' . $link . '</span>';
 		}
 
 		return $link;
@@ -1252,7 +1316,12 @@ class SpecialUndelete extends SpecialPage {
 		$time = $this->getLanguage()->userTimeAndDate( $ts, $user );
 
 		if ( !$file->userCan( File::DELETED_FILE, $user ) ) {
-			return '<span class="history-deleted">' . htmlspecialchars( $time ) . '</span>';
+			// TODO use Html::element and let it handle escaping
+			return Html::rawElement(
+				'span',
+				[ 'class' => 'history-deleted' ],
+				htmlspecialchars( $time )
+			);
 		}
 
 		$link = $this->getLinkRenderer()->makeKnownLink(
@@ -1280,17 +1349,24 @@ class SpecialUndelete extends SpecialPage {
 	 * @return string HTML fragment
 	 */
 	private function getFileUser( $file ) {
-		if ( !$file->userCan( File::DELETED_USER, $this->getUser() ) ) {
-			return '<span class="history-deleted">' .
-				$this->msg( 'rev-deleted-user' )->escaped() .
-				'</span>';
+		$uploader = $file->getUploader( File::FOR_THIS_USER, $this->getAuthority() );
+		if ( !$uploader ) {
+			return Html::rawElement(
+				'span',
+				[ 'class' => 'history-deleted' ],
+				$this->msg( 'rev-deleted-user' )->escaped()
+			);
 		}
 
-		$link = Linker::userLink( $file->getRawUser(), $file->getRawUserText() ) .
-			Linker::userToolLinks( $file->getRawUser(), $file->getRawUserText() );
+		$link = Linker::userLink( $uploader->getId(), $uploader->getName() ) .
+			Linker::userToolLinks( $uploader->getId(), $uploader->getName() );
 
 		if ( $file->isDeleted( File::DELETED_USER ) ) {
-			$link = '<span class="history-deleted">' . $link . '</span>';
+			$link = Html::rawElement(
+				'span',
+				[ 'class' => 'history-deleted' ],
+				$link
+			);
 		}
 
 		return $link;
@@ -1303,22 +1379,34 @@ class SpecialUndelete extends SpecialPage {
 	 * @return string HTML fragment
 	 */
 	private function getFileComment( $file ) {
-		if ( !$file->userCan( File::DELETED_COMMENT, $this->getUser() ) ) {
-			return '<span class="history-deleted"><span class="comment">' .
-				$this->msg( 'rev-deleted-comment' )->escaped() . '</span></span>';
+		if ( !$file->userCan( File::DELETED_COMMENT, $this->getAuthority() ) ) {
+			return Html::rawElement(
+				'span',
+				[ 'class' => 'history-deleted' ],
+				Html::rawElement(
+					'span',
+					[ 'class' => 'comment' ],
+					$this->msg( 'rev-deleted-comment' )->escaped()
+				)
+			);
 		}
 
-		$link = Linker::commentBlock( $file->getRawDescription() );
+		$comment = $file->getDescription( File::FOR_THIS_USER, $this->getAuthority() );
+		$link = Linker::commentBlock( $comment );
 
 		if ( $file->isDeleted( File::DELETED_COMMENT ) ) {
-			$link = '<span class="history-deleted">' . $link . '</span>';
+			$link = Html::rawElement(
+				'span',
+				[ 'class' => 'history-deleted' ],
+				$link
+			);
 		}
 
 		return $link;
 	}
 
 	private function undelete() {
-		if ( $this->getConfig()->get( 'UploadMaintenance' )
+		if ( $this->getConfig()->get( MainConfigNames::UploadMaintenance )
 			&& $this->mTargetObj->getNamespace() === NS_FILE
 		) {
 			throw new ErrorPageError( 'undelete-error', 'filedelete-maintenance' );
@@ -1327,53 +1415,47 @@ class SpecialUndelete extends SpecialPage {
 		$this->checkReadOnly();
 
 		$out = $this->getOutput();
-		$archive = new PageArchive( $this->mTargetObj, $this->getConfig() );
-		$this->getHookRunner()->onUndeleteForm__undelete( $archive, $this->mTargetObj );
-		$ok = $archive->undeleteAsUser(
-			$this->mTargetTimestamp,
-			$this->getUser(),
-			$this->mComment,
-			$this->mFileVersions,
-			$this->mUnsuppress
+		$undeletePage = $this->undeletePageFactory->newUndeletePage(
+			$this->wikiPageFactory->newFromTitle( $this->mTargetObj ),
+			$this->getAuthority()
 		);
+		if ( $this->mUndeleteTalk && $undeletePage->canProbablyUndeleteAssociatedTalk()->isGood() ) {
+			$undeletePage->setUndeleteAssociatedTalk( true );
+		}
+		$status = $undeletePage
+			->setUndeleteOnlyTimestamps( $this->mTargetTimestamp )
+			->setUndeleteOnlyFileVersions( $this->mFileVersions )
+			->setUnsuppress( $this->mUnsuppress )
+			// TODO This is currently duplicating some permission checks, but we do need it (T305680)
+			->undeleteIfAllowed( $this->mComment );
 
-		if ( is_array( $ok ) ) {
-			if ( $ok[1] ) { // Undeleted file count
+		if ( !$status->isGood() ) {
+			$out->setPageTitle( $this->msg( 'undelete-error' ) );
+			$out->wrapWikiTextAsInterface(
+				'error',
+				Status::wrap( $status )->getWikiText(
+					'cannotundelete',
+					'cannotundelete',
+					$this->getLanguage()
+				)
+			);
+			return;
+		}
+
+		$restoredRevs = $status->getValue()[UndeletePage::REVISIONS_RESTORED];
+		$restoredFiles = $status->getValue()[UndeletePage::FILES_RESTORED];
+
+		if ( $restoredRevs === 0 && $restoredFiles === 0 ) {
+			// TODO Should use a different message here
+			$out->setPageTitle( $this->msg( 'undelete-error' ) );
+		} else {
+			if ( $status->getValue()[UndeletePage::FILES_RESTORED] !== 0 ) {
 				$this->getHookRunner()->onFileUndeleteComplete(
 					$this->mTargetObj, $this->mFileVersions, $this->getUser(), $this->mComment );
 			}
 
 			$link = $this->getLinkRenderer()->makeKnownLink( $this->mTargetObj );
 			$out->addWikiMsg( 'undeletedpage', Message::rawParam( $link ) );
-		} else {
-			$out->setPageTitle( $this->msg( 'undelete-error' ) );
-		}
-
-		// Show revision undeletion warnings and errors
-		$status = $archive->getRevisionStatus();
-		if ( $status && !$status->isGood() ) {
-			$out->wrapWikiTextAsInterface(
-				'error',
-				'<div id="mw-error-cannotundelete">' .
-				$status->getWikiText(
-					'cannotundelete',
-					'cannotundelete',
-					$this->getLanguage()
-				) . '</div>'
-			);
-		}
-
-		// Show file undeletion warnings and errors
-		$status = $archive->getFileStatus();
-		if ( $status && !$status->isGood() ) {
-			$out->wrapWikiTextAsInterface(
-				'error',
-				$status->getWikiText(
-					'undelete-error-short',
-					'undelete-error-long',
-					$this->getLanguage()
-				)
-			);
 		}
 	}
 

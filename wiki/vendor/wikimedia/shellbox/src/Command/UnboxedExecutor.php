@@ -190,6 +190,28 @@ class UnboxedExecutor {
 	}
 
 	/**
+	 * If the environment contains an unsafe character set, filter out the
+	 * variable.
+	 *
+	 * @param array &$env
+	 */
+	private function fixLocaleEnvironment( array &$env ) {
+		if ( PHP_OS_FAMILY === 'Windows' ) {
+			// Probably OK?
+			return;
+		}
+		foreach ( [ 'LC_CTYPE', 'LC_ALL', 'LANG' ] as $name ) {
+			if ( isset( $env[$name] )
+				&& preg_match( '/\.(gb\w*)/i', $env[$name] )
+			) {
+				$this->logger->warning( "Filtering out unsafe environment variable " .
+					"$name={$env[$name]}" );
+				unset( $env[$name] );
+			}
+		}
+	}
+
+	/**
 	 * @param Command $command
 	 * @return UnboxedResult
 	 * @throws ShellboxError
@@ -215,6 +237,7 @@ class UnboxedExecutor {
 		$options = $command->getProcOpenOptions();
 
 		$combinedEnvironment = $command->getEnvironment() + $this->getParentEnvironment();
+		$this->fixLocaleEnvironment( $combinedEnvironment );
 		$env = [];
 		foreach ( $combinedEnvironment as $name => $value ) {
 			$env[] = "$name=$value";
@@ -278,10 +301,10 @@ class UnboxedExecutor {
 
 			error_clear_last();
 
-			$readPipes = array_filter( $pipes, function ( $fd ) use ( $desc ) {
+			$readPipes = array_filter( $pipes, static function ( $fd ) use ( $desc ) {
 				return $desc[$fd][0] === 'pipe' && $desc[$fd][1] === 'r';
 			}, ARRAY_FILTER_USE_KEY );
-			$writePipes = array_filter( $pipes, function ( $fd ) use ( $desc ) {
+			$writePipes = array_filter( $pipes, static function ( $fd ) use ( $desc ) {
 				return $desc[$fd][0] === 'pipe' && $desc[$fd][1] === 'w';
 			}, ARRAY_FILTER_USE_KEY );
 			// stream_select parameter names are from the POV of us being able to do the operation;
@@ -421,7 +444,7 @@ class UnboxedExecutor {
 	 */
 	protected function buildFinalCommand( Command $command ) {
 		$wrappers = $this->wrappers;
-		usort( $wrappers, function ( Wrapper $a, Wrapper $b ) {
+		usort( $wrappers, static function ( Wrapper $a, Wrapper $b ) {
 			return $a->getPriority() <=> $b->getPriority();
 		} );
 		foreach ( $wrappers as $wrapper ) {

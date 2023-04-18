@@ -1,0 +1,36 @@
+[21-Feb-2023 13:17:45 UTC] PHP Deprecated:  Premature access to service container [Called from EmbedVideoHooks::onExtension in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/EmbedVideo/EmbedVideo.hooks.php at line 77] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 376
+[21-Feb-2023 13:17:45 UTC] PHP Deprecated:  Premature access to service 'HookContainer' [Called from MediaWiki\MediaWikiServices::getInstance in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/MediaWikiServices.php at line 252] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 376
+[21-Feb-2023 13:17:45 UTC] PHP Deprecated:  Premature access to service 'ObjectFactory' [Called from Wikimedia\Services\ServiceContainer::{closure} in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/ServiceWiring.php at line 535] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 376
+[21-Feb-2023 13:17:45 UTC] PHP Deprecated:  Premature access to service 'ConfigFactory' [Called from EmbedVideoHooks::onExtension in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/EmbedVideo/EmbedVideo.hooks.php at line 77] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 376
+[21-Feb-2023 13:17:45 UTC] PHP Deprecated:  Premature access to service 'BootstrapConfig' [Called from Wikimedia\Services\ServiceContainer::{closure} in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/ServiceWiring.php at line 277] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 376
+[28-Feb-2023 14:43:39 UTC] PHP Deprecated:  Premature access to service container [Called from EmbedVideoHooks::onExtension in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/EmbedVideo/EmbedVideo.hooks.php at line 77] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[28-Feb-2023 14:43:40 UTC] PHP Deprecated:  Premature access to service 'HookContainer' [Called from MediaWiki\MediaWikiServices::getInstance in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/MediaWikiServices.php at line 289] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[28-Feb-2023 14:43:40 UTC] PHP Deprecated:  Premature access to service 'ObjectFactory' [Called from Wikimedia\Services\ServiceContainer::{closure} in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/ServiceWiring.php at line 721] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[28-Feb-2023 14:43:40 UTC] PHP Deprecated:  Premature access to service 'ConfigFactory' [Called from EmbedVideoHooks::onExtension in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/EmbedVideo/EmbedVideo.hooks.php at line 77] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[28-Feb-2023 14:43:40 UTC] PHP Deprecated:  Premature access to service 'BootstrapConfig' [Called from Wikimedia\Services\ServiceContainer::{closure} in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/ServiceWiring.php at line 414] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[31-Mar-2023 06:43:21 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function enableSemantics() in /home/sexthera/public_html/muizenmesh.co.za/wiki/LocalSettings.php:149
+Stack trace:
+#0 /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/Setup.php(218): require_once()
+#1 /home/sexthera/public_html/muizenmesh.co.za/wiki/maintenance/doMaintenance.php(83): require_once('/home/sexthera/...')
+#2 /home/sexthera/public_html/muizenmesh.co.za/wiki/maintenance/update.php(312): require_once('/home/sexthera/...')
+#3 {main}
+  thrown in /home/sexthera/public_html/muizenmesh.co.za/wiki/LocalSettings.php on line 149
+[31-Mar-2023 06:49:04 UTC] PHP Deprecated:  Premature access to service container [Called from EmbedVideoHooks::onExtension in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/EmbedVideo/EmbedVideo.hooks.php at line 77] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[31-Mar-2023 06:49:04 UTC] PHP Deprecated:  Premature access to service 'HookContainer' [Called from MediaWiki\MediaWikiServices::getInstance in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/MediaWikiServices.php at line 289] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[31-Mar-2023 06:49:04 UTC] PHP Deprecated:  Premature access to service 'ObjectFactory' [Called from Wikimedia\Services\ServiceContainer::{closure} in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/ServiceWiring.php at line 721] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[31-Mar-2023 06:49:04 UTC] PHP Deprecated:  Premature access to service 'ConfigFactory' [Called from EmbedVideoHooks::onExtension in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/EmbedVideo/EmbedVideo.hooks.php at line 77] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[31-Mar-2023 06:49:04 UTC] PHP Deprecated:  Premature access to service 'BootstrapConfig' [Called from Wikimedia\Services\ServiceContainer::{closure} in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/ServiceWiring.php at line 414] in /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/debug/MWDebug.php on line 381
+[31-Mar-2023 06:49:04 UTC] PHP Warning:  Class "SMW\DataValues\PropertyValue" not found in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/SemanticMediaWiki/includes/SemanticMediaWiki.php on line 214
+[31-Mar-2023 06:49:04 UTC] PHP Fatal error:  Uncaught Error: Class "SMWDataValue" not found in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/SemanticMediaWiki/src/DataValues/PropertyValue.php:45
+Stack trace:
+#0 /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/AutoLoader.php(244): require()
+#1 [internal function]: AutoLoader::autoload()
+#2 /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/SemanticMediaWiki/includes/SemanticMediaWiki.php(214): class_alias()
+#3 /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/SemanticMediaWiki/includes/SemanticMediaWiki.php(30): SemanticMediaWiki::setupAliases()
+#4 /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/registration/ExtensionRegistry.php(527): SemanticMediaWiki::initExtension()
+#5 /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/registration/ExtensionRegistry.php(279): ExtensionRegistry->exportExtractedData()
+#6 /home/sexthera/public_html/muizenmesh.co.za/wiki/includes/Setup.php(278): ExtensionRegistry->loadFromQueue()
+#7 /home/sexthera/public_html/muizenmesh.co.za/wiki/maintenance/doMaintenance.php(83): require_once('/home/sexthera/...')
+#8 /home/sexthera/public_html/muizenmesh.co.za/wiki/maintenance/update.php(312): require_once('/home/sexthera/...')
+#9 {main}
+  thrown in /home/sexthera/public_html/muizenmesh.co.za/wiki/extensions/SemanticMediaWiki/src/DataValues/PropertyValue.php on line 45

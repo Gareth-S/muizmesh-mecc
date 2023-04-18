@@ -1,18 +1,14 @@
 /*!
- * OOUI v0.41.3
+ * OOUI v0.44.4
  * https://www.mediawiki.org/wiki/OOUI
  *
- * Copyright 2011–2021 OOUI Team and other contributors.
+ * Copyright 2011–2023 OOUI Team and other contributors.
  * Released under the MIT license
  * http://oojs.mit-license.org
  *
- * Date: 2021-03-12T21:47:58Z
+ * Date: 2023-01-04T17:25:12Z
  */
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-tool {
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
   box-sizing: border-box;
 }
 .oo-ui-tool > .oo-ui-tool-link > .oo-ui-tool-checkIcon {
@@ -20,8 +16,6 @@
 }
 .oo-ui-tool .oo-ui-tool-link {
   position: relative;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
   box-sizing: border-box;
   padding-top: 3em;
   padding-right: 3em;
@@ -46,8 +40,6 @@
   line-height: 1.42857143em;
 }
 .oo-ui-tool.oo-ui-widget-enabled .oo-ui-tool-link {
-  -webkit-transition: background-color 100ms;
-  -moz-transition: background-color 100ms;
   transition: background-color 100ms;
 }
 .oo-ui-tool.oo-ui-widget-enabled .oo-ui-tool-link:focus {
@@ -57,15 +49,10 @@
 }
 .oo-ui-tool.oo-ui-widget-enabled .oo-ui-iconElement-icon {
   opacity: 0.87;
-  -webkit-transition: opacity 100ms;
-  -moz-transition: opacity 100ms;
   transition: opacity 100ms;
-  -webkit-transform: translateZ(0);
   transform: translateZ(0);
 }
 .oo-ui-tool.oo-ui-widget-enabled .oo-ui-tool-title {
-  -webkit-transition: color 100ms;
-  -moz-transition: color 100ms;
   transition: color 100ms;
 }
 .oo-ui-tool.oo-ui-widget-enabled:hover .oo-ui-iconElement-icon {
@@ -177,25 +164,17 @@
   opacity: 1;
 }
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-popupTool-popup.oo-ui-popupWidget {
   z-index: 4;
 }
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-toolGroupTool > .oo-ui-toolGroup {
   border-left: 0;
 }
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-toolGroup {
   display: inline-block;
   vertical-align: middle;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
   box-sizing: border-box;
 }
 .oo-ui-toolGroup-empty {
@@ -216,8 +195,6 @@
   opacity: 0.34 !important;
 }
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-barToolGroup-tools > .oo-ui-tool {
   display: inline-block;
   position: relative;
@@ -264,8 +241,6 @@
   color: #72777d;
 }
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-popupToolGroup {
   position: relative;
   min-width: 3em;
@@ -310,8 +285,6 @@
   min-width: 1.85714286em;
 }
 .oo-ui-popupToolGroup-handle {
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
   box-sizing: border-box;
 }
 .oo-ui-popupToolGroup-handle .oo-ui-iconElement-icon {
@@ -408,8 +381,6 @@
   padding-right: 2.5em;
 }
 .oo-ui-popupToolGroup.oo-ui-widget-enabled > .oo-ui-popupToolGroup-handle {
-  -webkit-transition: background-color 100ms, box-shadow 100ms;
-  -moz-transition: background-color 100ms, box-shadow 100ms;
   transition: background-color 100ms, box-shadow 100ms;
 }
 .oo-ui-popupToolGroup.oo-ui-widget-enabled > .oo-ui-popupToolGroup-handle:hover {
@@ -421,10 +392,7 @@
 .oo-ui-popupToolGroup.oo-ui-widget-enabled > .oo-ui-popupToolGroup-handle .oo-ui-iconElement-icon,
 .oo-ui-popupToolGroup.oo-ui-widget-enabled > .oo-ui-popupToolGroup-handle .oo-ui-indicatorElement-indicator {
   opacity: 0.87;
-  -webkit-transition: opacity 100ms;
-  -moz-transition: opacity 100ms;
   transition: opacity 100ms;
-  -webkit-transform: translateZ(0);
   transform: translateZ(0);
 }
 .oo-ui-popupToolGroup.oo-ui-widget-enabled > .oo-ui-popupToolGroup-handle:hover .oo-ui-iconElement-icon,
@@ -443,8 +411,6 @@
 }
 .oo-ui-toolbar-actions .oo-ui-popupToolGroup.oo-ui-widget-enabled > .oo-ui-popupToolGroup-handle {
   border-left: 1px solid transparent;
-  -webkit-transition: background-color 100ms, border-color 100ms, box-shadow 100ms;
-  -moz-transition: background-color 100ms, border-color 100ms, box-shadow 100ms;
   transition: background-color 100ms, border-color 100ms, box-shadow 100ms;
 }
 .oo-ui-toolbar-actions .oo-ui-popupToolGroup.oo-ui-widget-enabled > .oo-ui-popupToolGroup-handle:hover {
@@ -468,7 +434,7 @@
   color: #36c;
 }
 .oo-ui-popupToolGroup-tools .oo-ui-tool.oo-ui-widget-enabled .oo-ui-tool-link:focus {
-  outline: 0;
+  outline: 1px solid transparent;
   box-shadow: inset 0 0 0 2px #36c;
 }
 .oo-ui-popupToolGroup.oo-ui-flaggedElement-progressive > .oo-ui-popupToolGroup-handle {
@@ -554,12 +520,8 @@
   opacity: 1;
 }
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-listToolGroup-tools .oo-ui-tool {
   display: block;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
   box-sizing: border-box;
 }
 .oo-ui-listToolGroup-tools .oo-ui-tool.oo-ui-widget-enabled:hover {
@@ -575,13 +537,21 @@
 .oo-ui-listToolGroup-tools .oo-ui-tool-active.oo-ui-widget-enabled .oo-ui-tool-link .oo-ui-tool-title {
   color: #36c;
 }
-.oo-ui-listToolGroup.oo-ui-widget-disabled,
 .oo-ui-listToolGroup-tools .oo-ui-tool.oo-ui-widget-disabled .oo-ui-tool-title {
   color: #72777d;
 }
+.oo-ui-listToolGroup-tools .oo-ui-tool.oo-ui-widget-disabled .oo-ui-indicatorElement-indicator,
+.oo-ui-listToolGroup-tools .oo-ui-tool.oo-ui-widget-disabled .oo-ui-iconElement-icon {
+  opacity: 0.34;
+}
+.oo-ui-listToolGroup.oo-ui-widget-disabled {
+  color: #72777d;
+}
+.oo-ui-listToolGroup.oo-ui-widget-disabled .oo-ui-indicatorElement-indicator,
+.oo-ui-listToolGroup.oo-ui-widget-disabled .oo-ui-iconElement-icon {
+  opacity: 0.34;
+}
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-menuToolGroup {
   border-right: 1px solid #eaecf0;
   border-left: 1px solid #eaecf0;
@@ -615,8 +585,6 @@
   color: #72777d;
 }
 
-/* stylelint-disable selector-no-vendor-prefix */
-/* stylelint-enable selector-no-vendor-prefix */
 .oo-ui-toolbar {
   clear: both;
 }
@@ -647,10 +615,18 @@
 .oo-ui-toolbar-tools .oo-ui-popupTool-popup,
 .oo-ui-toolbar-popups .oo-ui-popupTool-popup {
   white-space: normal;
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
 }
 .oo-ui-toolbar-narrow .oo-ui-toolbar-tools,
 .oo-ui-toolbar-narrow.oo-ui-toolbar-popups {
   white-space: normal;
+}
+.oo-ui-toolbar-after {
+  float: left;
 }
 .oo-ui-toolbar-actions {
   float: left;

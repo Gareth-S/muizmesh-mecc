@@ -21,12 +21,18 @@
  */
 
 use MediaWiki\Content\IContentHandlerFactory;
+use MediaWiki\Content\Renderer\ContentRenderer;
+use MediaWiki\Content\Transform\ContentTransformer;
 use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\MainConfigNames;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\RevisionAccessException;
 use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Revision\RevisionStore;
 use MediaWiki\Revision\SlotRecord;
+use MediaWiki\Revision\SlotRoleRegistry;
 use Wikimedia\ParamValidator\ParamValidator;
+use Wikimedia\ParamValidator\TypeDef\EnumDef;
 use Wikimedia\ParamValidator\TypeDef\IntegerDef;
 
 /**
@@ -58,6 +64,66 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 		$fld_content = false, $fld_tags = false, $fld_contentmodel = false, $fld_roles = false,
 		$fld_parsetree = false;
 
+	/**
+	 * The number of uncached diffs that had to be generated for this request.
+	 * @var int
+	 */
+	private $numUncachedDiffs = 0;
+
+	/** @var RevisionStore */
+	private $revisionStore;
+
+	/** @var IContentHandlerFactory */
+	private $contentHandlerFactory;
+
+	/** @var ParserFactory */
+	private $parserFactory;
+
+	/** @var SlotRoleRegistry */
+	private $slotRoleRegistry;
+
+	/** @var ContentRenderer */
+	private $contentRenderer;
+
+	/** @var ContentTransformer */
+	private $contentTransformer;
+
+	/**
+	 * @since 1.37 Support injection of services
+	 * @stable to call
+	 * @param ApiQuery $queryModule
+	 * @param string $moduleName
+	 * @param string $paramPrefix
+	 * @param RevisionStore|null $revisionStore
+	 * @param IContentHandlerFactory|null $contentHandlerFactory
+	 * @param ParserFactory|null $parserFactory
+	 * @param SlotRoleRegistry|null $slotRoleRegistry
+	 * @param ContentRenderer|null $contentRenderer
+	 * @param ContentTransformer|null $contentTransformer
+	 */
+	public function __construct(
+		ApiQuery $queryModule,
+		$moduleName,
+		$paramPrefix = '',
+		RevisionStore $revisionStore = null,
+		IContentHandlerFactory $contentHandlerFactory = null,
+		ParserFactory $parserFactory = null,
+		SlotRoleRegistry $slotRoleRegistry = null,
+		ContentRenderer $contentRenderer = null,
+		ContentTransformer $contentTransformer = null
+	) {
+		parent::__construct( $queryModule, $moduleName, $paramPrefix );
+		// This class is part of the stable interface and
+		// therefor fallback to global state, if services are not provided
+		$services = MediaWikiServices::getInstance();
+		$this->revisionStore = $revisionStore ?? $services->getRevisionStore();
+		$this->contentHandlerFactory = $contentHandlerFactory ?? $services->getContentHandlerFactory();
+		$this->parserFactory = $parserFactory ?? $services->getParserFactory();
+		$this->slotRoleRegistry = $slotRoleRegistry ?? $services->getSlotRoleRegistry();
+		$this->contentRenderer = $contentRenderer ?? $services->getContentRenderer();
+		$this->contentTransformer = $contentTransformer ?? $services->getContentTransformer();
+	}
+
 	public function execute() {
 		$this->run();
 	}
@@ -78,7 +144,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 	 * @param array $params
 	 */
 	protected function parseParameters( $params ) {
-		$prop = array_flip( $params['prop'] );
+		$prop = array_fill_keys( $params['prop'], true );
 
 		$this->fld_ids = isset( $prop['ids'] );
 		$this->fld_flags = isset( $prop['flags'] );
@@ -143,12 +209,12 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 			// Check whether the revision exists and is readable,
 			// DifferenceEngine returns a rather ambiguous empty
 			// string if that's not the case
-			if ( $params['diffto'] != 0 ) {
-				$difftoRev = MediaWikiServices::getInstance()->getRevisionStore()
-					->getRevisionById( $params['diffto'] );
+			if ( is_numeric( $params['diffto'] ) && $params['diffto'] != 0 ) {
+				$difftoRev = $this->revisionStore->getRevisionById( $params['diffto'] );
 				if ( !$difftoRev ) {
 					$this->dieWithError( [ 'apierror-nosuchrevid', $params['diffto'] ] );
 				}
+				// @phan-suppress-next-line PhanTypeMismatchArgumentNullable T240141
 				$revDel = $this->checkRevDel( $difftoRev, RevisionRecord::DELETED_TEXT );
 				if ( $revDel & self::CANNOT_VIEW ) {
 					$this->addWarning( [ 'apiwarn-difftohidden', $difftoRev->getId() ] );
@@ -250,7 +316,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 
 		if ( $this->fld_user || $this->fld_userid ) {
 			$revDel = $this->checkRevDel( $revision, RevisionRecord::DELETED_USER );
-			if ( ( $revDel & self::IS_DELETED ) ) {
+			if ( $revDel & self::IS_DELETED ) {
 				$vals['userhidden'] = true;
 				$anyHidden = true;
 			}
@@ -259,13 +325,12 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 				if ( $this->fld_user ) {
 					$vals['user'] = $u->getName();
 				}
-				$userid = $u->getId();
-				if ( !$userid ) {
+				if ( !$u->isRegistered() ) {
 					$vals['anon'] = true;
 				}
 
 				if ( $this->fld_userid ) {
-					$vals['userid'] = $userid;
+					$vals['userid'] = $u->getId();
 				}
 			}
 		}
@@ -286,7 +351,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 
 		if ( $this->fld_sha1 ) {
 			$revDel = $this->checkRevDel( $revision, RevisionRecord::DELETED_TEXT );
-			if ( ( $revDel & self::IS_DELETED ) ) {
+			if ( $revDel & self::IS_DELETED ) {
 				$vals['sha1hidden'] = true;
 				$anyHidden = true;
 			}
@@ -326,13 +391,13 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 
 		if ( $this->fld_comment || $this->fld_parsedcomment ) {
 			$revDel = $this->checkRevDel( $revision, RevisionRecord::DELETED_COMMENT );
-			if ( ( $revDel & self::IS_DELETED ) ) {
+			if ( $revDel & self::IS_DELETED ) {
 				$vals['commenthidden'] = true;
 				$anyHidden = true;
 			}
 			if ( !( $revDel & self::CANNOT_VIEW ) ) {
 				$comment = $revision->getComment( RevisionRecord::RAW );
-				$comment = $comment ? $comment->text : '';
+				$comment = $comment->text ?? '';
 
 				if ( $this->fld_comment ) {
 					$vals['comment'] = $comment;
@@ -455,7 +520,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 		}
 
 		if ( $this->fld_slotsha1 ) {
-			if ( ( $revDel & self::IS_DELETED ) ) {
+			if ( $revDel & self::IS_DELETED ) {
 				$vals['sha1hidden'] = true;
 			}
 			if ( !( $revDel & self::CANNOT_VIEW ) ) {
@@ -473,7 +538,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 
 		$content = null;
 		if ( $this->fetchContent ) {
-			if ( ( $revDel & self::IS_DELETED ) ) {
+			if ( $revDel & self::IS_DELETED ) {
 				$vals['texthidden'] = true;
 			}
 			if ( !( $revDel & self::CANNOT_VIEW ) ) {
@@ -514,7 +579,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 				'@phan-var WikitextContent $content';
 				$t = $content->getText(); # note: don't set $text
 
-				$parser = MediaWikiServices::getInstance()->getParser();
+				$parser = $this->parserFactory->create();
 				$parser->startExternalParse(
 					$title,
 					ParserOptions::newFromContext( $this->getContext() ),
@@ -551,7 +616,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 					'@phan-var WikitextContent $content';
 					$text = $content->getText();
 
-					$text = MediaWikiServices::getInstance()->getParser()->preprocess(
+					$text = $this->parserFactory->create()->preprocess(
 						$text,
 						$title,
 						ParserOptions::newFromContext( $this->getContext() )
@@ -567,7 +632,8 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 				}
 			}
 			if ( $this->parseContent ) {
-				$po = $content->getParserOutput(
+				$po = $this->contentRenderer->getParserOutput(
+					$content,
 					$title,
 					$revision->getId(),
 					ParserOptions::newFromContext( $this->getContext() )
@@ -599,9 +665,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 		}
 
 		if ( $content && ( $this->diffto !== null || $this->difftotext !== null ) ) {
-			static $n = 0; // Number of uncached diffs we've had
-
-			if ( $n < $this->getConfig()->get( 'APIMaxUncachedDiffs' ) ) {
+			if ( $this->numUncachedDiffs < $this->getConfig()->get( MainConfigNames::APIMaxUncachedDiffs ) ) {
 				$vals['diff'] = [];
 				$context = new DerivativeContext( $this->getContext() );
 				$context->setTitle( $title );
@@ -611,8 +675,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 					$model = $title->getContentModel();
 
 					if ( $this->contentFormat
-						&& !$this->getContentHandlerFactory()
-							->getContentHandler( $model )
+						&& !$this->contentHandlerFactory->getContentHandler( $model )
 							->isSupportedFormat( $this->contentFormat )
 					) {
 						$name = wfEscapeWikiText( $title->getPrefixedText() );
@@ -620,16 +683,17 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 						$vals['diff']['badcontentformat'] = true;
 						$engine = null;
 					} else {
-						$difftocontent = ContentHandler::makeContent(
-							$this->difftotext,
-							$title,
-							$model,
-							$this->contentFormat
-						);
+						$difftocontent = $this->contentHandlerFactory->getContentHandler( $model )
+							->unserializeContent( $this->difftotext, $this->contentFormat );
 
 						if ( $this->difftotextpst ) {
 							$popts = ParserOptions::newFromContext( $this->getContext() );
-							$difftocontent = $difftocontent->preSaveTransform( $title, $this->getUser(), $popts );
+							$difftocontent = $this->contentTransformer->preSaveTransform(
+								$difftocontent,
+								$title,
+								$this->getUser(),
+								$popts
+							);
 						}
 
 						$engine = $handler->createDifferenceEngine( $context );
@@ -644,7 +708,7 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 					$difftext = $engine->getDiffBody();
 					ApiResult::setContentValue( $vals['diff'], 'body', $difftext );
 					if ( !$engine->wasCacheHit() ) {
-						$n++;
+						$this->numUncachedDiffs++;
 					}
 				}
 			} else {
@@ -675,14 +739,14 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 	 * @throws MWException
 	 */
 	public function getAllowedParams() {
-		$slotRoles = MediaWikiServices::getInstance()->getSlotRoleRegistry()->getKnownRoles();
+		$slotRoles = $this->slotRoleRegistry->getKnownRoles();
 		sort( $slotRoles, SORT_STRING );
 
 		return [
 			'prop' => [
-				ApiBase::PARAM_ISMULTI => true,
-				ApiBase::PARAM_DFLT => 'ids|timestamp|flags|comment|user',
-				ApiBase::PARAM_TYPE => [
+				ParamValidator::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_DEFAULT => 'ids|timestamp|flags|comment|user',
+				ParamValidator::PARAM_TYPE => [
 					'ids',
 					'flags',
 					'timestamp',
@@ -720,63 +784,59 @@ abstract class ApiQueryRevisionsBase extends ApiQueryGeneratorBase {
 					'parsetree' => [ 'apihelp-query+revisions+base-paramvalue-prop-parsetree',
 						CONTENT_MODEL_WIKITEXT ],
 				],
-				ApiBase::PARAM_DEPRECATED_VALUES => [
+				EnumDef::PARAM_DEPRECATED_VALUES => [
 					'parsetree' => true,
 				],
 			],
 			'slots' => [
-				ApiBase::PARAM_TYPE => $slotRoles,
+				ParamValidator::PARAM_TYPE => $slotRoles,
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-slots',
-				ApiBase::PARAM_ISMULTI => true,
-				ApiBase::PARAM_ALL => true,
+				ParamValidator::PARAM_ISMULTI => true,
+				ParamValidator::PARAM_ALL => true,
 			],
 			'limit' => [
-				ApiBase::PARAM_TYPE => 'limit',
-				ApiBase::PARAM_MIN => 1,
-				ApiBase::PARAM_MAX => ApiBase::LIMIT_BIG1,
-				ApiBase::PARAM_MAX2 => ApiBase::LIMIT_BIG2,
+				ParamValidator::PARAM_TYPE => 'limit',
+				IntegerDef::PARAM_MIN => 1,
+				IntegerDef::PARAM_MAX => ApiBase::LIMIT_BIG1,
+				IntegerDef::PARAM_MAX2 => ApiBase::LIMIT_BIG2,
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-limit',
 			],
 			'expandtemplates' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-expandtemplates',
-				ApiBase::PARAM_DEPRECATED => true,
+				ParamValidator::PARAM_DEPRECATED => true,
 			],
 			'generatexml' => [
-				ApiBase::PARAM_DFLT => false,
-				ApiBase::PARAM_DEPRECATED => true,
+				ParamValidator::PARAM_DEFAULT => false,
+				ParamValidator::PARAM_DEPRECATED => true,
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-generatexml',
 			],
 			'parse' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-parse',
-				ApiBase::PARAM_DEPRECATED => true,
+				ParamValidator::PARAM_DEPRECATED => true,
 			],
 			'section' => [
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-section',
 			],
 			'diffto' => [
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-diffto',
-				ApiBase::PARAM_DEPRECATED => true,
+				ParamValidator::PARAM_DEPRECATED => true,
 			],
 			'difftotext' => [
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-difftotext',
-				ApiBase::PARAM_DEPRECATED => true,
+				ParamValidator::PARAM_DEPRECATED => true,
 			],
 			'difftotextpst' => [
-				ApiBase::PARAM_DFLT => false,
+				ParamValidator::PARAM_DEFAULT => false,
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-difftotextpst',
-				ApiBase::PARAM_DEPRECATED => true,
+				ParamValidator::PARAM_DEPRECATED => true,
 			],
 			'contentformat' => [
-				ApiBase::PARAM_TYPE => $this->getContentHandlerFactory()->getAllContentFormats(),
+				ParamValidator::PARAM_TYPE => $this->contentHandlerFactory->getAllContentFormats(),
 				ApiBase::PARAM_HELP_MSG => 'apihelp-query+revisions+base-param-contentformat',
-				ApiBase::PARAM_DEPRECATED => true,
+				ParamValidator::PARAM_DEPRECATED => true,
 			],
 		];
-	}
-
-	private function getContentHandlerFactory(): IContentHandlerFactory {
-		return MediaWikiServices::getInstance()->getContentHandlerFactory();
 	}
 }

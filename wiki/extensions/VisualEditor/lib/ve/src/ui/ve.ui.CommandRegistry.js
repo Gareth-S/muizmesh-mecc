@@ -25,7 +25,7 @@ OO.inheritClass( ve.ui.CommandRegistry, OO.Registry );
 /**
  * Register a command with the factory.
  *
- * @param {ve.ui.Command} command Command object
+ * @param {ve.ui.Command} command
  * @throws {Error} If command is not an instance of ve.ui.Command
  */
 ve.ui.CommandRegistry.prototype.register = function ( command ) {
@@ -215,8 +215,7 @@ ve.ui.commandRegistry.register(
 	)
 );
 ( function () {
-	var level;
-	for ( level = 1; level <= 6; level++ ) {
+	for ( var level = 1; level <= 6; level++ ) {
 		ve.ui.commandRegistry.register(
 			new ve.ui.Command(
 				'heading' + level, 'format', 'convert',
@@ -275,8 +274,12 @@ ve.ui.commandRegistry.register(
 );
 ve.ui.commandRegistry.register(
 	new ve.ui.Command(
-		'submit', 'content', 'submit',
-		{ supportedSelections: [ 'linear', 'table' ] }
+		'submit', 'content', 'submit'
+	)
+);
+ve.ui.commandRegistry.register(
+	new ve.ui.Command(
+		'cancel', 'content', 'cancel'
 	)
 );
 ve.ui.commandRegistry.register(
@@ -332,7 +335,6 @@ ve.ui.commandRegistry.register(
 );
 
 ( function () {
-
 	var modes = [ 'row', 'col' ],
 		sides = [ 'before', 'after' ],
 		modeNames = { row: 'Row', col: 'Column' },
@@ -367,7 +369,6 @@ ve.ui.commandRegistry.register(
 					{ args: [ mode, side ], supportedSelections: [ 'table' ] }
 				)
 			);
-
 		} );
 
 		// Commands registered here:
@@ -379,9 +380,7 @@ ve.ui.commandRegistry.register(
 				{ args: [ mode ], supportedSelections: [ 'table' ] }
 			)
 		);
-
 	} );
-
 }() );
 
 ve.ui.commandRegistry.register(

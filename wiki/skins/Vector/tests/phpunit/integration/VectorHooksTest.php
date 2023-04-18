@@ -4,20 +4,29 @@
  * @ingroup skins
  */
 
-use Vector\Constants;
-use Vector\FeatureManagement\FeatureManager;
-use Vector\Hooks;
-use Vector\HTMLForm\Fields\HTMLLegacySkinVersionField;
+namespace MediaWiki\Skins\Vector\Tests\Integration;
+
+use HashConfig;
+use MediaWiki\Skins\Vector\Constants;
+use MediaWiki\Skins\Vector\Hooks;
+use MediaWiki\Skins\Vector\SkinVector22;
+use MediaWiki\Skins\Vector\SkinVectorLegacy;
+use MediaWiki\User\UserOptionsManager;
+use MediaWikiIntegrationTestCase;
+use ReflectionMethod;
+use RequestContext;
+use ResourceLoaderContext;
+use RuntimeException;
+use Title;
+use User;
 
 /**
  * Integration tests for Vector Hooks.
  *
  * @group Vector
- * @coversDefaultClass \Vector\Hooks
+ * @coversDefaultClass \MediaWiki\Skins\Vector\Hooks
  */
 class VectorHooksTest extends MediaWikiIntegrationTestCase {
-
-	private const SKIN_PREFS_SECTION = 'rendering/skin/skin-prefs';
 
 	/**
 	 * @param bool $excludeMainPage
@@ -39,6 +48,123 @@ class VectorHooksTest extends MediaWikiIntegrationTestCase {
 				'querystring' => $querystring,
 			],
 			'include' => $include
+		];
+	}
+
+	public function provideGetVectorResourceLoaderConfig() {
+		return [
+			[
+				[
+					'VectorWebABTestEnrollment' => [],
+					'VectorSearchHost' => 'en.wikipedia.org'
+				],
+				[
+					'wgVectorSearchHost' => 'en.wikipedia.org',
+					'wgVectorWebABTestEnrollment' => [],
+				]
+			],
+			[
+				[
+					'VectorWebABTestEnrollment' => [
+						'name' => 'vector.sticky_header',
+						'enabled' => true,
+						'buckets' => [
+								'unsampled' => [
+										'samplingRate' => 1,
+								],
+								'control' => [
+										'samplingRate' => 0
+								],
+								'stickyHeaderEnabled' => [
+										'samplingRate' => 0
+								],
+								'stickyHeaderDisabled' => [
+										'samplingRate' => 0
+								],
+						],
+					],
+					'VectorSearchHost' => 'en.wikipedia.org'
+				],
+				[
+					'wgVectorSearchHost' => 'en.wikipedia.org',
+					'wgVectorWebABTestEnrollment' => [
+						'name' => 'vector.sticky_header',
+						'enabled' => true,
+						'buckets' => [
+								'unsampled' => [
+										'samplingRate' => 1,
+								],
+								'control' => [
+										'samplingRate' => 0
+								],
+								'stickyHeaderEnabled' => [
+										'samplingRate' => 0
+								],
+								'stickyHeaderDisabled' => [
+										'samplingRate' => 0
+								],
+						],
+					],
+				]
+			],
+		];
+	}
+
+	public function provideGetVectorResourceLoaderConfigWithExceptions() {
+		return [
+			# Bad experiment (no buckets)
+			[
+				[
+					'VectorSearchHost' => 'en.wikipedia.org',
+					'VectorWebABTestEnrollment' => [
+						'name' => 'vector.sticky_header',
+						'enabled' => true,
+					],
+				]
+			],
+			# Bad experiment (no unsampled bucket)
+			[
+				[
+					'VectorSearchHost' => 'en.wikipedia.org',
+					'VectorWebABTestEnrollment' => [
+						'name' => 'vector.sticky_header',
+						'enabled' => true,
+						'buckets' => [
+							'a' => [
+								'samplingRate' => 0
+							],
+						]
+					],
+				]
+			],
+			# Bad experiment (wrong format)
+			[
+				[
+					'VectorSearchHost' => 'en.wikipedia.org',
+					'VectorWebABTestEnrollment' => [
+						'name' => 'vector.sticky_header',
+						'enabled' => true,
+						'buckets' => [
+							'unsampled' => 1,
+						]
+					],
+				]
+			],
+			# Bad experiment (samplingRate defined as string)
+			[
+				[
+					'VectorSearchHost' => 'en.wikipedia.org',
+					'VectorWebABTestEnrollment' => [
+						'name' => 'vector.sticky_header',
+						'enabled' => true,
+						'buckets' => [
+							'unsampled' => [
+								'samplingRate' => '1'
+							],
+						]
+					],
+				]
+			],
 		];
 	}
 
@@ -106,6 +232,38 @@ class VectorHooksTest extends MediaWikiIntegrationTestCase {
 				true
 			],
 			[
+				'Can be disabled with a regex match.',
+				self::makeMaxWidthConfig(
+					false,
+					[
+						/* no namespaces excluded */
+					],
+					[
+						/* no includes */
+					],
+					[ 'foo' => '[0-9]+' ]
+				),
+				Title::makeTitle( NS_MAIN, 'Test' ),
+				[ 'foo' => '1234' ],
+				true
+			],
+			[
+				'Can be disabled with a non-regex wildcard (for backwards compatibility).',
+				self::makeMaxWidthConfig(
+					false,
+					[
+						/* no namespaces excluded */
+					],
+					[
+						/* no includes */
+					],
+					[ 'foo' => '*' ]
+				),
+				Title::makeTitle( NS_MAIN, 'Test' ),
+				[ 'foo' => 'bar' ],
+				true
+			],
+			[
 				'Include can override exclusions',
 				self::makeMaxWidthConfig(
 					false,
@@ -160,186 +318,75 @@ class VectorHooksTest extends MediaWikiIntegrationTestCase {
 	}
 
 	/**
-	 * @covers ::onGetPreferences
+	 * @covers ::getVectorResourceLoaderConfig
+	 * @dataProvider provideGetVectorResourceLoaderConfig
 	 */
-	public function testOnGetPreferencesShowPreferencesDisabled() {
-		$config = new HashConfig( [
-			'VectorShowSkinPreferences' => false,
-		] );
-		$this->setService( 'Vector.Config', $config );
+	public function testGetVectorResourceLoaderConfig( $configData, $expected ) {
+		$config = new HashConfig( $configData );
+		$vectorConfig = Hooks::getVectorResourceLoaderConfig(
+			$this->createMock( ResourceLoaderContext::class ),
+			$config
+		);
 
-		$prefs = [];
-		Hooks::onGetPreferences( $this->getTestUser()->getUser(), $prefs );
-		$this->assertSame( [], $prefs, 'No preferences are added.' );
-	}
-
-	private function setFeatureLatestSkinVersionIsEnabled( $isEnabled ) {
-		$featureManager = new FeatureManager();
-		$featureManager->registerSimpleRequirement( Constants::REQUIREMENT_LATEST_SKIN_VERSION, $isEnabled );
-		$featureManager->registerFeature( Constants::FEATURE_LATEST_SKIN, [
-			Constants::REQUIREMENT_LATEST_SKIN_VERSION
-		] );
-
-		$this->setService( Constants::SERVICE_FEATURE_MANAGER, $featureManager );
-	}
-
-	/**
-	 * @covers ::onGetPreferences
-	 */
-	public function testOnGetPreferencesShowPreferencesEnabledSkinSectionFoundLegacy() {
-		$isLegacy = true;
-		$this->setFeatureLatestSkinVersionIsEnabled( !$isLegacy );
-
-		$prefs = [
-			'foo' => [],
-			'skin' => [],
-			'bar' => []
-		];
-		Hooks::onGetPreferences( $this->getTestUser()->getUser(), $prefs );
-		$this->assertEquals(
-			[
-				'foo' => [],
-				'skin' => [],
-				'VectorSkinVersion' => [
-					'class' => HTMLLegacySkinVersionField::class,
-					'label-message' => 'prefs-vector-enable-vector-1-label',
-					'help-message' => 'prefs-vector-enable-vector-1-help',
-					'section' => self::SKIN_PREFS_SECTION,
-					'default' => $isLegacy,
-					'hide-if' => [ '!==', 'wpskin', Constants::SKIN_NAME ]
-				],
-				'VectorSidebarVisible' => [
-					'type' => 'api',
-					'default' => true
-				],
-				'bar' => [],
-			],
-			$prefs,
-			'Preferences are inserted directly after skin.'
+		$this->assertSame(
+			$expected,
+			$vectorConfig
 		);
 	}
 
 	/**
-	 * @covers ::onGetPreferences
+	 * @covers ::getVectorResourceLoaderConfig
+	 * @dataProvider provideGetVectorResourceLoaderConfigWithExceptions
 	 */
-	public function testOnGetPreferencesShowPreferencesEnabledSkinSectionMissingLegacy() {
-		$isLegacy = false;
-		$this->setFeatureLatestSkinVersionIsEnabled( !$isLegacy );
-
-		$prefs = [
-			'foo' => [],
-			'bar' => []
-		];
-		Hooks::onGetPreferences( $this->getTestUser()->getUser(), $prefs );
-		$this->assertEquals(
-			[
-				'foo' => [],
-				'bar' => [],
-				'VectorSkinVersion' => [
-					'class' => HTMLLegacySkinVersionField::class,
-					'label-message' => 'prefs-vector-enable-vector-1-label',
-					'help-message' => 'prefs-vector-enable-vector-1-help',
-					'section' => self::SKIN_PREFS_SECTION,
-					'default' => $isLegacy,
-					'hide-if' => [ '!==', 'wpskin', Constants::SKIN_NAME ]
-				],
-				'VectorSidebarVisible' => [
-					'type' => 'api',
-					'default' => true
-				],
-			],
-			$prefs,
-			'Preferences are appended.'
+	public function testGetVectorResourceLoaderConfigWithExceptions( $configData ) {
+		$config = new HashConfig( $configData );
+		$this->expectException( RuntimeException::class );
+		Hooks::getVectorResourceLoaderConfig(
+			$this->createMock( ResourceLoaderContext::class ),
+			$config
 		);
-	}
-
-	/**
-	 * @covers ::onPreferencesFormPreSave
-	 */
-	public function testOnPreferencesFormPreSaveVectorEnabledLegacyNewPreference() {
-		$formData = [
-			'skin' => 'vector',
-			'VectorSkinVersion' => Constants::SKIN_VERSION_LEGACY,
-		];
-		$form = $this->createMock( HTMLForm::class );
-		$user = $this->createMock( User::class );
-		$user->expects( $this->never() )
-			->method( 'setOption' );
-		$result = true;
-		$oldPreferences = [];
-
-		Hooks::onPreferencesFormPreSave( $formData, $form, $user, $result, $oldPreferences );
-	}
-
-	/**
-	 * @covers ::onPreferencesFormPreSave
-	 */
-	public function testOnPreferencesFormPreSaveVectorDisabledNoOldPreference() {
-		$formData = [
-			'VectorSkinVersion' => Constants::SKIN_VERSION_LATEST,
-		];
-		$form = $this->createMock( HTMLForm::class );
-		$user = $this->createMock( User::class );
-		$user->expects( $this->never() )
-			->method( 'setOption' );
-		$result = true;
-		$oldPreferences = [];
-
-		Hooks::onPreferencesFormPreSave( $formData, $form, $user, $result, $oldPreferences );
-	}
-
-	/**
-	 * @covers ::onPreferencesFormPreSave
-	 */
-	public function testOnPreferencesFormPreSaveVectorDisabledOldPreference() {
-		$formData = [
-			'VectorSkinVersion' => Constants::SKIN_VERSION_LATEST,
-		];
-		$form = $this->createMock( HTMLForm::class );
-		$user = $this->createMock( User::class );
-		$user->expects( $this->once() )
-			->method( 'setOption' )
-			->with( 'VectorSkinVersion', 'old' );
-		$result = true;
-		$oldPreferences = [
-			'VectorSkinVersion' => 'old',
-		];
-
-		Hooks::onPreferencesFormPreSave( $formData, $form, $user, $result, $oldPreferences );
 	}
 
 	/**
 	 * @covers ::onLocalUserCreated
 	 */
 	public function testOnLocalUserCreatedLegacy() {
-		$config = new HashConfig( [
-			'VectorDefaultSkinVersionForNewAccounts' => Constants::SKIN_VERSION_LEGACY,
+		$this->setMwGlobals( [
+			'wgVectorDefaultSkinVersionForNewAccounts' => Constants::SKIN_VERSION_LEGACY,
 		] );
-		$this->setService( 'Vector.Config', $config );
 
 		$user = $this->createMock( User::class );
-		$user->expects( $this->once() )
+		$userOptionsManager = $this->createMock( UserOptionsManager::class );
+		$userOptionsManager->expects( $this->once() )
 			->method( 'setOption' )
-			->with( 'VectorSkinVersion', Constants::SKIN_VERSION_LEGACY );
-		$isAutoCreated = false;
-		Hooks::onLocalUserCreated( $user, $isAutoCreated );
+			->with( $user, 'skin', Constants::SKIN_NAME_LEGACY );
+		$this->setService( 'UserOptionsManager', $userOptionsManager );
+
+		// NOTE: Using $this->getServiceContainer()->getHookContainer()->run( ... )
+		// will instead call Echo's legacy hook as that is already registered which
+		// will break this test. Use Vector's hook handler instead.
+		( new Hooks() )->onLocalUserCreated( $user, false );
 	}
 
 	/**
 	 * @covers ::onLocalUserCreated
 	 */
 	public function testOnLocalUserCreatedLatest() {
-		$config = new HashConfig( [
-			'VectorDefaultSkinVersionForNewAccounts' => Constants::SKIN_VERSION_LATEST,
+		$this->setMwGlobals( [
+			'wgVectorDefaultSkinVersionForNewAccounts' => Constants::SKIN_VERSION_LATEST,
 		] );
-		$this->setService( 'Vector.Config', $config );
 
 		$user = $this->createMock( User::class );
-		$user->expects( $this->once() )
+		$userOptionsManager = $this->createMock( UserOptionsManager::class );
+		$userOptionsManager->expects( $this->once() )
 			->method( 'setOption' )
-			->with( 'VectorSkinVersion', Constants::SKIN_VERSION_LATEST );
-		$isAutoCreated = false;
-		Hooks::onLocalUserCreated( $user, $isAutoCreated );
+			->with( $user, 'skin', Constants::SKIN_NAME_MODERN );
+		$this->setService( 'UserOptionsManager', $userOptionsManager );
+
+		// NOTE: Using $this->getServiceContainer()->getHookContainer()->run( ... )
+		// will instead call Echo's legacy hook as that is already registered which
+		// will break this test. Use Vector's hook handler instead.
+		( new Hooks() )->onLocalUserCreated( $user, false );
 	}
 
 	/**
@@ -349,16 +396,16 @@ class VectorHooksTest extends MediaWikiIntegrationTestCase {
 		$this->setMwGlobals( [
 			'wgVectorUseIconWatch' => true
 		] );
-		$skin = new SkinVector( [ 'name' => 'vector' ] );
+		$skin = new SkinVector22( [ 'name' => 'vector' ] );
 		$skin->getContext()->setTitle( Title::newFromText( 'Foo' ) );
 		$contentNavWatch = [
 			'actions' => [
-				'watch' => [ 'class' => 'watch' ],
+				'watch' => [ 'class' => [ 'watch' ] ],
 			]
 		];
 		$contentNavUnWatch = [
 			'actions' => [
-				'move' => [ 'class' => 'move' ],
+				'move' => [ 'class' => [ 'move' ] ],
 				'unwatch' => [],
 			],
 		];
@@ -366,17 +413,314 @@ class VectorHooksTest extends MediaWikiIntegrationTestCase {
 		Hooks::onSkinTemplateNavigation( $skin, $contentNavUnWatch );
 		Hooks::onSkinTemplateNavigation( $skin, $contentNavWatch );
 
-		$this->assertTrue(
-			strpos( $contentNavWatch['views']['watch']['class'], 'icon' ) !== false,
+		$this->assertContains(
+			'icon', $contentNavWatch['views']['watch']['class'],
 			'Watch list items require an "icon" class'
 		);
-		$this->assertTrue(
-			strpos( $contentNavUnWatch['views']['unwatch']['class'], 'icon' ) !== false,
+		$this->assertContains(
+			'icon', $contentNavUnWatch['views']['unwatch']['class'],
 			'Unwatch list items require an "icon" class'
 		);
-		$this->assertFalse(
-			strpos( $contentNavUnWatch['actions']['move']['class'], 'icon' ) !== false,
+		$this->assertNotContains(
+			'icon', $contentNavUnWatch['actions']['move']['class'],
 			'List item other than watch or unwatch should not have an "icon" class'
 		);
+	}
+
+	/**
+	 * @covers ::updateUserLinksItems
+	 */
+	public function testUpdateUserLinksItems() {
+		$vector2022Skin = new SkinVector22( [ 'name' => 'vector-2022' ] );
+		$contentNav = [
+			'user-page' => [
+				'userpage' => [ 'class' => [], 'icon' => 'userpage' ],
+			],
+			'user-menu' => [
+				'login' => [ 'class' => [], 'icon' => 'login' ],
+			]
+		];
+		$vectorLegacySkin = new SkinVectorLegacy( [ 'name' => 'vector' ] );
+		$contentNavLegacy = [
+			'user-page' => [
+				'userpage' => [ 'class' => [], 'icon' => 'userpage' ],
+			]
+		];
+
+		Hooks::onSkinTemplateNavigation( $vector2022Skin, $contentNav );
+		$this->assertFalse( isset( $contentNav['user-page']['login'] ),
+			'updateUserLinksDropdownItems is called when not legacy'
+		);
+		Hooks::onSkinTemplateNavigation( $vectorLegacySkin, $contentNavLegacy );
+		$this->assertFalse( isset( $contentNavLegacy['user-page'] ),
+			'user-page is unset for legacy vector'
+		);
+	}
+
+	/**
+	 * @covers ::updateUserLinksDropdownItems
+	 */
+	public function testUpdateUserLinksDropdownItems() {
+		$updateUserLinksDropdownItems = new ReflectionMethod(
+			Hooks::class,
+			'updateUserLinksDropdownItems'
+		);
+		$updateUserLinksDropdownItems->setAccessible( true );
+
+		// Anon users
+		$skin = new SkinVector22( [ 'name' => 'vector-2022' ] );
+		$contentAnon = [
+			'user-menu' => [
+				'anonuserpage' => [ 'class' => [], 'icon' => 'anonuserpage' ],
+				'createaccount' => [ 'class' => [], 'icon' => 'createaccount' ],
+				'login' => [ 'class' => [], 'icon' => 'login' ],
+				'login-private' => [ 'class' => [], 'icon' => 'login-private' ],
+			],
+		];
+		$updateUserLinksDropdownItems->invokeArgs( null, [ $skin, &$contentAnon ] );
+		$this->assertTrue(
+			count( $contentAnon['user-menu'] ) === 0,
+			'Anon user page, create account, login, and login private links are removed from anon user links dropdown'
+		);
+
+		// Registered user
+		$registeredUser = $this->createMock( User::class );
+		$registeredUser->method( 'isRegistered' )->willReturn( true );
+		$context = new RequestContext();
+		$context->setUser( $registeredUser );
+		$skin->setContext( $context );
+		$contentRegistered = [
+			'user-menu' => [
+				'userpage' => [ 'class' => [], 'icon' => 'userpage' ],
+				'watchlist' => [ 'class' => [], 'icon' => 'watchlist' ],
+				'logout' => [ 'class' => [], 'icon' => 'logout' ],
+			],
+		];
+		$updateUserLinksDropdownItems->invokeArgs( null, [ $skin, &$contentRegistered ] );
+		$this->assertContains( 'user-links-collapsible-item', $contentRegistered['user-menu']['userpage']['class'],
+			'User page link in user links dropdown requires collapsible class'
+		);
+		$this->assertEquals(
+			'<span class="mw-ui-icon mw-ui-icon-userpage mw-ui-icon-wikimedia-userpage"></span>',
+			$contentRegistered['user-menu']['userpage']['link-html'],
+			'User page link in user links dropdown has link-html'
+		);
+		$this->assertContains( 'user-links-collapsible-item', $contentRegistered['user-menu']['watchlist']['class'],
+			'Watchlist link in user links dropdown requires collapsible class'
+		);
+		$this->assertEquals(
+			'<span class="mw-ui-icon mw-ui-icon-watchlist mw-ui-icon-wikimedia-watchlist"></span>',
+			$contentRegistered['user-menu']['watchlist']['link-html'],
+			'Watchlist link in user links dropdown has link-html'
+		);
+		$this->assertFalse( isset( $contentRegistered['user-menu']['logout'] ),
+			'Logout link in user links dropdown is not set'
+		);
+	}
+
+	/**
+	 * @covers ::updateUserLinksOverflowItems
+	 */
+	public function testUpdateUserLinksOverflowItems() {
+		$updateUserLinksOverflowItems = new ReflectionMethod(
+			Hooks::class,
+			'updateUserLinksOverflowItems'
+		);
+		$updateUserLinksOverflowItems->setAccessible( true );
+		$skin = new SkinVector22( [ 'name' => 'vector-2022' ] );
+
+		// Registered user
+		$registeredUser = $this->createMock( User::class );
+		$registeredUser->method( 'isRegistered' )->willReturn( true );
+		$context = new RequestContext();
+		$context->setUser( $registeredUser );
+		$skin->setContext( $context );
+		$content = [
+			'notifications' => [
+				'alert' => [ 'class' => [], 'icon' => 'alert' ],
+			],
+			'user-interface-preferences' => [
+				'uls' => [ 'class' => [], 'icon' => 'uls' ],
+			],
+			'user-page' => [
+				'userpage' => [ 'class' => [], 'icon' => 'userpage' ],
+				'watchlist' => [ 'class' => [], 'icon' => 'watchlist' ],
+			],
+			'user-menu' => [
+				'watchlist' => [ 'class' => [], 'icon' => 'watchlist' ],
+			],
+		];
+		$updateUserLinksOverflowItems->invokeArgs( null, [ $skin, &$content ] );
+		$this->assertContains( 'user-links-collapsible-item',
+			$content['vector-user-menu-overflow']['uls']['class'],
+			'ULS link in user links overflow requires collapsible class'
+		);
+		$this->assertContains( 'user-links-collapsible-item',
+			$content['vector-user-menu-overflow']['userpage']['class'],
+			'User page link in user links overflow requires collapsible class'
+		);
+		$this->assertNotContains( 'mw-ui-icon',
+			$content['vector-user-menu-overflow']['userpage']['class'],
+			'User page link in user links overflow does not have icon classes'
+		);
+		$this->assertContains( 'user-links-collapsible-item',
+			$content['vector-user-menu-overflow']['watchlist']['class'],
+			'Watchlist link in user links overflow requires collapsible class'
+		);
+		$this->assertContains( 'mw-ui-button',
+			$content['vector-user-menu-overflow']['watchlist']['link-class'],
+			'Watchlist link in user links overflow requires button classes'
+		);
+		$this->assertContains( 'mw-ui-quiet',
+			$content['vector-user-menu-overflow']['watchlist']['link-class'],
+			'Watchlist link in user links overflow requires quiet button classes'
+		);
+		$this->assertContains( 'mw-ui-icon-element',
+			$content['vector-user-menu-overflow']['watchlist']['link-class'],
+			'Watchlist link in user links overflow hides text'
+		);
+		$this->assertTrue(
+			$content['vector-user-menu-overflow']['watchlist']['id'] === 'pt-watchlist-2',
+			'Watchlist link in user links has unique id'
+		);
+	}
+
+	public function provideAppendClassToItem() {
+		return [
+			// Add array class to array
+			[
+				[],
+				[ 'array1', 'array2' ],
+				[ 'array1', 'array2' ],
+			],
+			// Add string class to array
+			[
+				[],
+				'array1 array2',
+				[ 'array1 array2' ],
+			],
+			// Add array class to string
+			[
+				'',
+				[ 'array1', 'array2' ],
+				'array1 array2',
+			],
+			// Add string class to string
+			[
+				'',
+				'array1 array2',
+				'array1 array2',
+			],
+			// Add string class to undefined
+			[
+				null,
+				'array1 array2',
+				'array1 array2',
+			],
+			// Add array class to undefined
+			[
+				null,
+				[ 'array1', 'array2' ],
+				[ 'array1', 'array2' ],
+			],
+		];
+	}
+
+	/**
+	 * @covers ::appendClassToItem
+	 * @dataProvider provideAppendClassToItem
+	 */
+	public function testAppendClassToItem(
+		$item,
+		$classes,
+		$expected
+	) {
+		$appendClassToItem = new ReflectionMethod(
+			Hooks::class,
+			'appendClassToItem'
+		);
+		$appendClassToItem->setAccessible( true );
+		$appendClassToItem->invokeArgs( null, [ &$item, $classes ] );
+		$this->assertEquals( $expected, $item );
+	}
+
+	public function provideUpdateItemData() {
+		return [
+			// Removes extra attributes
+			[
+				[ 'class' => [], 'icon' => '', 'button' => false, 'text-hidden' => false, 'collapsible' => false ],
+				'link-class',
+				'link-html',
+				[ 'class' => [] ],
+			],
+			// Adds icon html
+			[
+				[ 'class' => [], 'icon' => 'userpage' ],
+				'link-class',
+				'link-html',
+				[
+					'class' => [],
+					'link-html' =>
+					'<span class="mw-ui-icon mw-ui-icon-userpage mw-ui-icon-wikimedia-userpage"></span>'
+				],
+			],
+			// Adds collapsible class
+			[
+				[ 'class' => [], 'collapsible' => true ],
+				'link-class',
+				'link-html',
+				[ 'class' => [ 'user-links-collapsible-item' ] ],
+			],
+			// Adds button classes
+			[
+				[ 'class' => [], 'button' => true ],
+				'link-class',
+				'link-html',
+				[ 'class' => [], 'link-class' => [ 'mw-ui-button', 'mw-ui-quiet' ] ],
+			],
+			// Adds text hidden classes
+			[
+				[ 'class' => [], 'text-hidden' => true, 'icon' => 'userpage' ],
+				'link-class',
+				'link-html',
+				[ 'class' => [], 'link-class' => [
+					'mw-ui-icon',
+					'mw-ui-icon-element',
+					'mw-ui-icon-userpage',
+					'mw-ui-icon-wikimedia-userpage'
+				] ],
+			],
+			// Adds button and icon classes
+			[
+				[ 'class' => [], 'button' => true, 'icon' => 'userpage' ],
+				'class',
+				'link-html',
+				[ 'class' => [
+					'mw-ui-button',
+					'mw-ui-quiet'
+				], 'link-html' =>
+					'<span class="mw-ui-icon mw-ui-icon-userpage mw-ui-icon-wikimedia-userpage"></span>'
+				],
+			]
+		];
+	}
+
+	/**
+	 * @covers ::updateItemData
+	 * @dataProvider provideUpdateItemData
+	 */
+	public function testUpdateItemData(
+		array $item,
+		string $buttonClassProp,
+		string $iconHtmlProp,
+		array $expected
+	) {
+		$updateItemData = new ReflectionMethod(
+			Hooks::class,
+			'updateItemData'
+		);
+		$updateItemData->setAccessible( true );
+		$data = $updateItemData->invokeArgs( null, [ $item, $buttonClassProp, $iconHtmlProp ] );
+		$this->assertEquals( $expected, $data );
 	}
 }

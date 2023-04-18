@@ -16,6 +16,7 @@ $plugin_description = gettext("Responsive jQuery bxSlider thumb nav plugin based
 $plugin_author = "Malte Müller (acrylian), Stephen Billard (sbillard), Fred Sondaar (fretzl)";
 $plugin_disable = (extensionEnabled('jcarousel_thumb_nav')) ? sprintf(gettext('Only one Carousel plugin may be enabled. <a href="#%1$s"><code>%1$s</code></a> is already enabled.'), 'jcarousel_thumb_nav') : '';
 $plugin_category = gettext('Media');
+$plugin_deprecated = true;
 $option_interface = 'bxslider';
 
 /**
@@ -208,13 +209,13 @@ if (!$plugin_disable && !OFFSET_PATH) {
 				foreach ($bxslider_items as $item) {
 					if (is_array($item)) {
 						if (in_context(ZP_SEARCH_LINKED)) {
-							$albumobj = newAlbum($item['folder']);
+							$albumobj = AlbumBase::newAlbum($item['folder']);
 						} else {
 							$albumobj = $_zp_current_album;
 						}
-						$imgobj = newImage($albumobj, $item['filename']);
+						$imgobj = Image::newImage($albumobj, $item['filename']);
 					} else {
-						$imgobj = newImage($_zp_current_album, $item);
+						$imgobj = Image::newImage($_zp_current_album, $item);
 					}
 					if ($fullimagelink) {
 						$link = $imgobj->getFullImageURL();

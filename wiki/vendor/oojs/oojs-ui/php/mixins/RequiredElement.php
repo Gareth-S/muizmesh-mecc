@@ -21,9 +21,14 @@ trait RequiredElement {
 	protected $requiredElement;
 
 	/**
-	 * @var Element
+	 * @var IndicatorElement|null
 	 */
 	protected $indicatorElement;
+
+	/**
+	 * @var Element|null
+	 */
+	protected $input;
 
 	/**
 	 * @param array $config Configuration options
@@ -53,7 +58,7 @@ trait RequiredElement {
 	 *
 	 * @return bool
 	 */
-	public function isRequired() : bool {
+	public function isRequired(): bool {
 		return $this->required;
 	}
 
@@ -67,16 +72,14 @@ trait RequiredElement {
 		$this->required = $state;
 		if ( $this->required ) {
 			$this->requiredElement->setAttributes( [
-				'required' => null,
-				'aria-required' => 'true',
+				'required' => null
 			] );
 			if ( $this->indicatorElement && $this->indicatorElement->getIndicator() === null ) {
 				$this->indicatorElement->setIndicator( 'required' );
 			}
 		} else {
 			$this->requiredElement->removeAttributes( [
-				'required',
-				'aria-required'
+				'required'
 			] );
 			if ( $this->indicatorElement && $this->indicatorElement->getIndicator() === 'required' ) {
 				$this->indicatorElement->setIndicator( null );
@@ -84,4 +87,9 @@ trait RequiredElement {
 		}
 		return $this;
 	}
+
+	/**
+	 * @param callable $func
+	 */
+	abstract public function registerConfigCallback( callable $func );
 }

@@ -5,23 +5,26 @@ namespace Wikimedia\Parsoid;
 
 use Composer\Semver\Comparator;
 use Composer\Semver\Semver;
-use DOMDocument;
 use InvalidArgumentException;
 use LogicException;
 use Wikimedia\Parsoid\Config\DataAccess;
 use Wikimedia\Parsoid\Config\Env;
 use Wikimedia\Parsoid\Config\PageConfig;
 use Wikimedia\Parsoid\Config\SiteConfig;
+use Wikimedia\Parsoid\Config\StubMetadataCollector;
+use Wikimedia\Parsoid\Core\ContentMetadataCollector;
 use Wikimedia\Parsoid\Core\PageBundle;
+use Wikimedia\Parsoid\Core\ResourceLimitExceededException;
 use Wikimedia\Parsoid\Core\SelserData;
+use Wikimedia\Parsoid\DOM\Document;
+use Wikimedia\Parsoid\Ext\ParsoidExtensionAPI;
 use Wikimedia\Parsoid\Language\LanguageConverter;
 use Wikimedia\Parsoid\Logger\LintLogger;
-use Wikimedia\Parsoid\Tokens\Token;
 use Wikimedia\Parsoid\Utils\ContentUtils;
 use Wikimedia\Parsoid\Utils\DOMCompat;
 use Wikimedia\Parsoid\Utils\DOMDataUtils;
 use Wikimedia\Parsoid\Utils\DOMUtils;
-use Wikimedia\Parsoid\Wt2Html\PegTokenizer;
+use Wikimedia\Parsoid\Wikitext\Wikitext;
 use Wikimedia\Parsoid\Wt2Html\PP\Processors\AddRedLinks;
 use Wikimedia\Parsoid\Wt2Html\PP\Processors\ConvertOffsets;
 
@@ -32,7 +35,7 @@ class Parsoid {
 	 * @see https://www.mediawiki.org/wiki/Parsoid/API#Content_Negotiation
 	 * @see https://www.mediawiki.org/wiki/Specs/HTML#Versioning
 	 */
-	public const AVAILABLE_VERSIONS = [ '2.2.0', '999.0.0' ];
+	public const AVAILABLE_VERSIONS = [ '2.6.0', '999.0.0' ];
 
 	private const DOWNGRADES = [
 		[ 'from' => '999.0.0', 'to' => '2.0.0', 'func' => 'downgrade999to2' ],
@@ -130,11 +133,14 @@ class Parsoid {
 	 * Parsing code shared between the next two methods.
 	 *
 	 * @param PageConfig $pageConfig
+	 * @param ContentMetadataCollector $metadata
 	 * @param array $options See wikitext2html.
 	 * @return array
 	 */
 	private function parseWikitext(
-		PageConfig $pageConfig, array $options = []
+		PageConfig $pageConfig,
+		ContentMetadataCollector $metadata,
+		array $options = []
 	): array {
 		$envOptions = $this->setupCommonOptions( $options );
 		if ( isset( $options['outputContentVersion'] ) ) {
@@ -151,15 +157,19 @@ class Parsoid {
 			$envOptions['logLinterData'] = !empty( $options['logLinterData'] );
 		}
 		$env = new Env(
-			$this->siteConfig, $pageConfig, $this->dataAccess, $envOptions
+			$this->siteConfig, $pageConfig, $this->dataAccess, $metadata, $envOptions
 		);
-		$env->bumpWt2HtmlResourceUse(
-			# Should perhaps be strlen instead (or cached!): T239841
-			'wikitextSize', mb_strlen( $pageConfig->getPageMainContent() )
-		);
+		if ( !$env->compareWt2HtmlLimit(
+			'wikitextSize', strlen( $pageConfig->getPageMainContent() )
+		) ) {
+			throw new ResourceLimitExceededException(
+				"wt2html: wikitextSize limit exceeded"
+			);
+		}
 		$contentmodel = $options['contentmodel'] ?? null;
 		$handler = $env->getContentHandler( $contentmodel );
-		return [ $env, $handler->toDOM( $env ), $contentmodel ];
+		$extApi = new ParsoidExtensionAPI( $env );
+		return [ $env, $handler->toDOM( $extApi ), $contentmodel ];
 	}
 
 	/**
@@ -186,12 +196,18 @@ class Parsoid {
 	 *   'logLevels'            => (string[]) Levels to log
 	 * ]
 	 * @param ?array &$headers
+	 * @param ?ContentMetadataCollector $metadata Pass in a CMC in order to
+	 *  collect and retrieve metadata about the parse.
 	 * @return PageBundle|string
 	 */
 	public function wikitext2html(
-		PageConfig $pageConfig, array $options = [], ?array &$headers = null
+		PageConfig $pageConfig, array $options = [], ?array &$headers = null,
+		?ContentMetadataCollector $metadata = null
 	) {
-		[ $env, $doc, $contentmodel ] = $this->parseWikitext( $pageConfig, $options );
+		if ( $metadata === null ) {
+			$metadata = new StubMetadataCollector( $this->siteConfig->getLogger() );
+		}
+		[ $env, $doc, $contentmodel ] = $this->parseWikitext( $pageConfig, $metadata, $options );
 		// FIXME: Does this belong in parseWikitext so that the other endpoint
 		// is covered as well?  It probably depends on expectations of the
 		// Rest API.  If callers of /page/lint/ assume that will update the
@@ -215,9 +231,10 @@ class Parsoid {
 				$contentmodel
 			);
 		} else {
-			return ContentUtils::toXML( $node, [
+			$xml = ContentUtils::toXML( $node, [
 				'innerXML' => $body_only,
 			] );
+			return $xml;
 		}
 	}
 
@@ -231,7 +248,8 @@ class Parsoid {
 	public function wikitext2lint(
 		PageConfig $pageConfig, array $options = []
 	): array {
-		[ $env, ] = $this->parseWikitext( $pageConfig, $options );
+		$metadata = new StubMetadataCollector( $this->siteConfig->getLogger() );
+		[ $env, ] = $this->parseWikitext( $pageConfig, $metadata, $options );
 		return $env->getLints();
 	}
 
@@ -239,10 +257,9 @@ class Parsoid {
 	 * Serialize DOM to wikitext.
 	 *
 	 * @param PageConfig $pageConfig
-	 * @param DOMDocument $doc Data attributes are expected to have been applied
+	 * @param Document $doc Data attributes are expected to have been applied
 	 *   already.  Loading them will happen once the environment is created.
 	 * @param array $options [
-	 *   'scrubWikitext'       => (bool) Indicates emit "clean" wikitext.
 	 *   'inputContentVersion' => (string) The content version of the input.
 	 *     Necessary if it differs from the current default in order to
 	 *     account for any serialization differences.
@@ -261,24 +278,23 @@ class Parsoid {
 	 * @return string
 	 */
 	public function dom2wikitext(
-		PageConfig $pageConfig, DOMDocument $doc, array $options = [],
+		PageConfig $pageConfig, Document $doc, array $options = [],
 		?SelserData $selserData = null
 	): string {
 		$envOptions = $this->setupCommonOptions( $options );
 		if ( isset( $options['inputContentVersion'] ) ) {
 			$envOptions['inputContentVersion'] = $options['inputContentVersion'];
 		}
-		if ( isset( $options['scrubWikitext'] ) ) {
-			$envOptions['scrubWikitext'] = !empty( $options['scrubWikitext'] );
-		}
 		$envOptions['topLevelDoc'] = $doc;
+		$metadata = new StubMetadataCollector( $this->siteConfig->getLogger() );
 		$env = new Env(
-			$this->siteConfig, $pageConfig, $this->dataAccess, $envOptions
+			$this->siteConfig, $pageConfig, $this->dataAccess, $metadata, $envOptions
 		);
 		$env->bumpHtml2WtResourceUse( 'htmlSize', $options['htmlSize'] ?? 0 );
 		$contentmodel = $options['contentmodel'] ?? null;
 		$handler = $env->getContentHandler( $contentmodel );
-		return $handler->fromDOM( $env, $selserData );
+		$extApi = new ParsoidExtensionAPI( $env );
+		return $handler->fromDOM( $extApi, $selserData );
 	}
 
 	/**
@@ -320,8 +336,9 @@ class Parsoid {
 			'pageBundle' => true,
 			'topLevelDoc' => DOMUtils::parseHTML( $pb->toHtml(), true ),
 		];
+		$metadata = new StubMetadataCollector( $this->siteConfig->getLogger() );
 		$env = new Env(
-			$this->siteConfig, $pageConfig, $this->dataAccess, $envOptions
+			$this->siteConfig, $pageConfig, $this->dataAccess, $metadata, $envOptions
 		);
 		$doc = $env->topLevelDoc;
 		DOMDataUtils::visitAndLoadDataAttribs(
@@ -340,19 +357,14 @@ class Parsoid {
 				$env, $doc, $options['variant']['target'],
 				$options['variant']['source'] ?? null
 			);
-			// Ensure there's a <head>
-			if ( !DOMCompat::getHead( $doc ) ) {
-				$doc->documentElement->insertBefore(
-					$doc->createElement( 'head' ), DOMCompat::getBody( $doc )
-				);
-			}
 			// Update content-language and vary headers.
-			$ensureHeader = function ( string $h ) use ( $doc ) {
+			// This also ensures there is a <head> element.
+			$ensureHeader = static function ( string $h ) use ( $doc ) {
 				$el = DOMCompat::querySelector( $doc, "meta[http-equiv=\"{$h}\"i]" );
 				if ( !$el ) {
-					$el = $doc->createElement( 'meta' );
-					$el->setAttribute( 'http-equiv', $h );
-					( DOMCompat::getHead( $doc ) )->appendChild( $el );
+					$el = DOMUtils::appendToHead( $doc, 'meta', [
+						'http-equiv' => $h,
+					] );
 				}
 				return $el;
 			};
@@ -392,11 +404,7 @@ class Parsoid {
 	}
 
 	/**
-	 * To support the 'subst' API parameter, we need to prefix each
-	 * top-level template with 'subst'. To make sure we do this for the
-	 * correct templates, tokenize the starting wikitext and use that to
-	 * detect top-level templates. Then, substitute each starting '{{' with
-	 * '{{subst' using the template token's tsr.
+	 * Perform pre-save transformations with top-level templates subst'd.
 	 *
 	 * @param PageConfig $pageConfig
 	 * @param string $wikitext
@@ -405,22 +413,9 @@ class Parsoid {
 	public function substTopLevelTemplates(
 		PageConfig $pageConfig, string $wikitext
 	): string {
-		$env = new Env( $this->siteConfig, $pageConfig, $this->dataAccess );
-		$tokenizer = new PegTokenizer( $env );
-		$tokens = $tokenizer->tokenizeSync( $wikitext );
-		$tsrIncr = 0;
-		foreach ( $tokens as $token ) {
-			/** @var Token $token */
-			if ( $token->getName() === 'template' ) {
-				$tsr = $token->dataAttribs->tsr;
-				$wikitext = substr( $wikitext, 0, $tsr->start + $tsrIncr )
-					. '{{subst:' . substr( $wikitext, $tsr->start + $tsrIncr + 2 );
-				$tsrIncr += 6;
-			}
-		}
-		// Now pass it to the MediaWiki API with onlypst set so that it
-		// subst's the templates.
-		return $this->dataAccess->doPst( $pageConfig, $wikitext );
+		$metadata = new StubMetadataCollector( $this->siteConfig->getLogger() );
+		$env = new Env( $this->siteConfig, $pageConfig, $this->dataAccess, $metadata );
+		return Wikitext::pst( $env, $wikitext, true /* $substTLTemplates */ );
 	}
 
 	/**
@@ -457,7 +452,7 @@ class Parsoid {
 	): void {
 		foreach ( self::DOWNGRADES as list( 'from' => $dgFrom, 'to' => $dgTo, 'func' => $dgFunc ) ) {
 			if ( $dg['from'] === $dgFrom && $dg['to'] === $dgTo ) {
-				call_user_func( [ 'self', $dgFunc ], $pageBundle );
+				call_user_func( [ self::class, $dgFunc ], $pageBundle );
 
 				// FIXME: Maybe this resolve should just be part of the $dg
 				$pageBundle->version = self::resolveContentVersion( $dg['to'] );
@@ -465,7 +460,8 @@ class Parsoid {
 				// FIXME: Maybe this should be a helper to avoid the rt
 				$doc = DOMUtils::parseHTML( $pageBundle->html );
 				// Match the http-equiv meta to the content-type header
-				$meta = DOMCompat::querySelector( $doc, 'meta[property="mw:html:version"]' );
+				$meta = DOMCompat::querySelector( $doc,
+					'meta[property="mw:htmlVersion"], meta[property="mw:html:version"]' );
 				if ( $meta ) {
 					$meta->setAttribute( 'content', $pageBundle->version );
 					$pageBundle->html = ContentUtils::toXML( $doc );

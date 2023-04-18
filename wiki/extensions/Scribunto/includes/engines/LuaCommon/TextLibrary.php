@@ -30,7 +30,7 @@ class Scribunto_LuaTextLibrary extends Scribunto_LuaLibraryBase {
 				// To convert the protocol into a case-insensitive Lua pattern,
 				// we need to replace letters with a character class like [Xx]
 				// and insert a '%' before various punctuation.
-				$prot = preg_replace_callback( '/([a-zA-Z])|([()^$%.\[\]*+?-])/', function ( $m ) {
+				$prot = preg_replace_callback( '/([a-zA-Z])|([()^$%.\[\]*+?-])/', static function ( $m ) {
 					if ( $m[1] ) {
 						return '[' . strtoupper( $m[1] ) . strtolower( $m[1] ) . ']';
 					} else {
@@ -140,8 +140,9 @@ class Scribunto_LuaTextLibrary extends Scribunto_LuaLibraryBase {
 	 * @param array $arr
 	 * @param bool $isEncoding
 	 * @return array
+	 * @internal
 	 */
-	private static function reindexArrays( array $arr, $isEncoding ) {
+	public static function reindexArrays( array $arr, $isEncoding ) {
 		if ( $isEncoding ) {
 			ksort( $arr, SORT_NUMERIC );
 			$next = 1;

@@ -1,7 +1,17 @@
 <?php
 
-use MediaWiki\CheckUser\Hooks;
+namespace MediaWiki\Extension\SpamBlacklist;
+
+use ExtensionRegistry;
+use LogPage;
+use ManualLogEntry;
+use MediaWiki\CheckUser\Hooks as CUHooks;
 use MediaWiki\MediaWikiServices;
+use ObjectCache;
+use RequestContext;
+use Title;
+use User;
+use Wikimedia\AtEase\AtEase;
 use Wikimedia\Rdbms\Database;
 
 class SpamBlacklist extends BaseBlacklist {
@@ -78,7 +88,8 @@ class SpamBlacklist extends BaseBlacklist {
 			}
 		} elseif ( $mode === 'stash' ) {
 			if ( $knownNonMatchAsOf && ( time() - $knownNonMatchAsOf ) < self::STASH_AGE_DYING ) {
-				return false; // OK; not about to expire soon
+				// OK; not about to expire soon
+				return false;
 			}
 		}
 
@@ -109,9 +120,9 @@ class SpamBlacklist extends BaseBlacklist {
 				wfDebugLog( 'SpamBlacklist', "Excluding whitelisted URLs from " . count( $whitelists ) .
 					" regexes: " . implode( ', ', $whitelists ) . "\n" );
 				foreach ( $whitelists as $regex ) {
-					Wikimedia\suppressWarnings();
+					AtEase::suppressWarnings();
 					$newLinks = preg_replace( $regex, '', $links );
-					Wikimedia\restoreWarnings();
+					AtEase::restoreWarnings();
 					if ( is_string( $newLinks ) ) {
 						// If there wasn't a regex error, strip the matching URLs
 						$links = $newLinks;
@@ -124,10 +135,10 @@ class SpamBlacklist extends BaseBlacklist {
 				" regexes: " . implode( ', ', $blacklists ) . "\n" );
 			$retVal = false;
 			foreach ( $blacklists as $regex ) {
-				Wikimedia\suppressWarnings();
+				AtEase::suppressWarnings();
 				$matches = [];
 				$check = ( preg_match_all( $regex, $links, $matches ) > 0 );
-				Wikimedia\restoreWarnings();
+				AtEase::restoreWarnings();
 				if ( $check ) {
 					wfDebugLog( 'SpamBlacklist', "Match!\n" );
 					$ip = RequestContext::getMain()->getRequest()->getIP();
@@ -137,7 +148,7 @@ class SpamBlacklist extends BaseBlacklist {
 					$imploded = implode( ' ', $fullUrls[0] );
 					wfDebugLog( 'SpamBlacklistHit', "$ip caught submitting spam: $imploded\n" );
 					if ( !$preventLog && $title ) {
-						$this->logFilterHit( $user, $title, $imploded ); // Log it
+						$this->logFilterHit( $user, $title, $imploded );
 					}
 					if ( $retVal === false ) {
 						$retVal = [];
@@ -178,14 +189,15 @@ class SpamBlacklist extends BaseBlacklist {
 			// Key is warmed via warmCachesForFilter() from ApiStashEdit
 			$cache->makeKey( 'external-link-list', $title->getLatestRevID() ),
 			$cache::TTL_MINUTE,
-			function ( $oldValue, &$ttl, array &$setOpts ) use ( $title, $fname ) {
+			static function ( $oldValue, &$ttl, array &$setOpts ) use ( $title, $fname ) {
 				$dbr = wfGetDB( DB_REPLICA );
 				$setOpts += Database::getCacheSetOptions( $dbr );
 
 				return $dbr->selectFieldValues(
 					'externallinks',
 					'el_to',
-					[ 'el_from' => $title->getArticleID() ], // should be zero queries
+					// should be zero queries
+					[ 'el_from' => $title->getArticleID() ],
 					$fname
 				);
 			}
@@ -197,7 +209,8 @@ class SpamBlacklist extends BaseBlacklist {
 			$entries,
 			$title,
 			$user,
-			true /* no logging */,
+			// no logging
+			true,
 			'stash'
 		);
 	}
@@ -245,7 +258,7 @@ class SpamBlacklist extends BaseBlacklist {
 				// (which is the default)
 				if ( ExtensionRegistry::getInstance()->isLoaded( 'CheckUser' ) ) {
 					$rc = $logEntry->getRecentChange( $logid );
-					Hooks::updateCheckUserData( $rc );
+					CUHooks::updateCheckUserData( $rc );
 				}
 			} else {
 				// If the log is unrestricted, publish normally to RC,

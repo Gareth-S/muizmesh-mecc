@@ -28,22 +28,22 @@
  * Except it doesn't use 193 byte per element
  */
 class ExplodeIterator implements Iterator {
-	/** @var string The subject string */
+	/** @var string */
 	private $subject;
 
-	/** @var int The subject string length */
+	/** @var int */
 	private $subjectLength;
 
-	/** @var string The delimiter */
+	/** @var string */
 	private $delim;
 
-	/** @var int The delimiter string length */
+	/** @var int */
 	private $delimLength;
 
-	/** @var int The position of the start of the line */
+	/** @var int|false The position of the start of the line */
 	private $curPos;
 
-	/** @var int The position after the end of the next delimiter */
+	/** @var int|false The position after the end of the next delimiter */
 	private $endPos;
 
 	/** @var string|false The current token */
@@ -65,7 +65,7 @@ class ExplodeIterator implements Iterator {
 		$this->rewind();
 	}
 
-	public function rewind() {
+	public function rewind(): void {
 		$this->curPos = 0;
 		$this->endPos = strpos( $this->subject, $this->delim );
 		$this->refreshCurrent();
@@ -83,13 +83,18 @@ class ExplodeIterator implements Iterator {
 		}
 	}
 
+	/**
+	 * @return string|false
+	 */
+	#[\ReturnTypeWillChange]
 	public function current() {
 		return $this->current;
 	}
 
 	/**
-	 * @return int|bool Current position or boolean false if invalid
+	 * @return int|false Current position or boolean false if invalid
 	 */
+	#[\ReturnTypeWillChange]
 	public function key() {
 		return $this->curPos;
 	}
@@ -97,7 +102,7 @@ class ExplodeIterator implements Iterator {
 	/**
 	 * @return void
 	 */
-	public function next() {
+	public function next(): void {
 		if ( $this->endPos === false ) {
 			$this->curPos = false;
 		} else {
@@ -114,7 +119,7 @@ class ExplodeIterator implements Iterator {
 	/**
 	 * @return bool
 	 */
-	public function valid() {
+	public function valid(): bool {
 		return $this->curPos !== false;
 	}
 }

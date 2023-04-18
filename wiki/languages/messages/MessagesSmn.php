@@ -3,8 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
+ * @ingroup Languages
  *
  * @author Muotâ
  */
@@ -28,6 +28,14 @@ $namespaceNames = [
 	NS_HELP_TALK        => 'Savâstâllâm_ravvust',
 	NS_CATEGORY         => 'Luokka',
 	NS_CATEGORY_TALK    => 'Savâstâllâm_luokkaast',
+];
+
+$defaultDateFormat = 'dmy';
+
+$dateFormats = [
+	'dmy time' => 'H:i',
+	'dmy date' => 'j. M Y',
+	'dmy both' => 'j. M Y "tme" H:i',
 ];
 
 $linkTrail = '/^([a-zâčđŋšžäá]+)(.*)$/sDu';

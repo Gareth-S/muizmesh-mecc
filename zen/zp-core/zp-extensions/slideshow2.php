@@ -37,6 +37,7 @@ $plugin_description = gettext("Slideshow plugin based on the Cycle2 jQuery plugi
 $plugin_author = "Malte Müller (acrylian)";
 $plugin_disable = (extensionEnabled('slideshow')) ? sprintf(gettext('Only one slideshow plugin may be enabled. <a href="#%1$s"><code>%1$s</code></a> is already enabled.'), 'slideshow') : '';
 $plugin_category = gettext('Media');
+$plugin_deprecated = true;
 $option_interface = 'cycle';
 
 global $_zp_gallery, $_zp_gallery_page;
@@ -201,7 +202,7 @@ class cycle {
 	static function getSlideshowPlayer($album, $controls = false, $width = NULL, $height = NULL) {
 		$albumobj = NULL;
 		if (!empty($album)) {
-			$albumobj = newAlbum($album, NULL, true);
+			$albumobj = AlbumBase::newAlbum($album, NULL, true);
 		}
 		if (is_object($albumobj) && $albumobj->loaded) {
 			$returnpath = $albumobj->getLink();
@@ -234,8 +235,8 @@ class cycle {
 		$slides = array();
 		//sort out non image types as the script does not work with them
 		foreach($slides_temp as $slide) {
-			$imgobj = newImage($albumobj, $slide);
-			if(isImagePhoto($imgobj)) {
+			$imgobj = Image::newImage($albumobj, $slide);
+			if($imgobj->isPhoto()) {
 				$slides[] = $slide;
 			}
 		}
@@ -436,7 +437,7 @@ class cycle {
 	 * @return type
 	 */
 	static function getSlideObj($slide, $albumobj) {
-		return newImage($albumobj, $slide);
+		return Image::newImage($albumobj, $slide);
 	}
 
 	static function macro($macros) {
@@ -540,7 +541,7 @@ if (extensionEnabled('slideshow2')) {
 	 * @param string $linkstyle Style of Text for the link
 	 */
 	function printSlideShowLink($linktext = NULL, $linkstyle = Null) {
-		global $_zp_gallery, $_zp_current_image, $_zp_current_album, $_zp_current_search, $slideshow_instance, $_zp_gallery_page, $_myFavorites;
+		global $_zp_gallery, $_zp_current_image, $_zp_current_album, $_zp_current_search, $_zp_slideshow_instance, $_zp_gallery_page, $_zp_myfavorites;
 		if (is_null($linktext)) {
 			$linktext = gettext('View Slideshow');
 		}
@@ -572,10 +573,10 @@ if (extensionEnabled('slideshow2')) {
 				$albumnr = $_zp_current_album->getID();
 			}
 			if ($albumnr) {
-				$slideshowlink = rewrite_path(pathurlencode($_zp_current_album->getFolder()) . '/' . _PAGE_ . '/slideshow/', "index.php?p=slideshow&amp;album=" . urlencode($_zp_current_album->getFolder()));
+				$slideshowlink = rewrite_path(pathurlencode($_zp_current_album->getName()) . '/' . _PAGE_ . '/slideshow/', "index.php?p=slideshow&amp;album=" . urlencode($_zp_current_album->getName()));
 			} else {
 				$slideshowlink = getCustomPageURL('slideshow');
-				$slideshowhidden = '<input type="hidden" name="favorites_page" value="1" />' . "\n" . '<input type="hidden" name="title" value="' . $_myFavorites->instance . '" />';
+				$slideshowhidden = '<input type="hidden" name="favorites_page" value="1" />' . "\n" . '<input type="hidden" name="title" value="' . $_zp_myfavorites->instance . '" />';
 			}
 		}
 		$numberofimages = getNumImages();
@@ -584,7 +585,7 @@ if (extensionEnabled('slideshow2')) {
 			case 'cycle':
 				if ($numberofimages > 1) {
 					?>
-					<form name="slideshow_<?php echo $slideshow_instance; ?>" method="post"	action="<?php echo $slideshowlink; ?>">
+					<form name="slideshow_<?php echo $_zp_slideshow_instance; ?>" method="post"	action="<?php echo $slideshowlink; ?>">
 						<?php echo $slideshowhidden; ?>
 						<input type="hidden" name="pagenr" value="<?php echo html_encode($pagenr); ?>" />
 						<input type="hidden" name="albumid" value="<?php echo $albumnr; ?>" />
@@ -592,12 +593,12 @@ if (extensionEnabled('slideshow2')) {
 						<input type="hidden" name="imagenumber" value="<?php echo $imagenumber; ?>" />
 						<input type="hidden" name="imagefile" value="<?php echo html_encode($imagefile); ?>" />
 						<?php if (!empty($linkstyle)) echo '<p style="' . $linkstyle . '">'; ?>
-						<a class="slideshowlink" id="slideshowlink_<?php echo $slideshow_instance; ?>" 	href="javascript:document.slideshow_<?php echo $slideshow_instance; ?>.submit()"><?php echo $linktext; ?></a>
+						<a class="slideshowlink" id="slideshowlink_<?php echo $_zp_slideshow_instance; ?>" 	href="javascript:document.slideshow_<?php echo $_zp_slideshow_instance; ?>.submit()"><?php echo $linktext; ?></a>
 						<?php if (!empty($linkstyle)) echo '</p>'; ?>
 					</form>
 					<?php
 				}
-				$slideshow_instance++;
+				$_zp_slideshow_instance++;
 				break;
 			case 'colorbox':
 				$theme = $_zp_gallery->getCurrentTheme();
@@ -648,10 +649,10 @@ if (extensionEnabled('slideshow2')) {
 						if (in_array($suffix, $suffixes)) {
 							$count++;
 							if (is_array($image)) {
-								$albobj = newAlbum($image['folder']);
-								$imgobj = newImage($albobj, $image['filename']);
+								$albobj = AlbumBase::newAlbum($image['folder']);
+								$imgobj = Image::newImage($albobj, $image['filename']);
 							} else {
-								$imgobj = newImage($_zp_current_album, $image);
+								$imgobj = Image::newImage($_zp_current_album, $image);
 							}
 							if (in_context(ZP_SEARCH_LINKED) || $_zp_gallery_page != 'image.php') {
 								if ($count == 1) {
@@ -716,7 +717,7 @@ if (extensionEnabled('slideshow2')) {
 	 *
 	 */
 	function printSlideShow($heading = true, $speedctl = false, $albumobj = NULL, $imageobj = NULL, $width = NULL, $height = NULL, $crop = false, $shuffle = false, $linkslides = false, $controls = true) {
-		global $_myFavorites, $_zp_conf_vars;
+		global $_zp_myfavorites, $_zp_conf_vars, $_zp_db;
 		if (!isset($_POST['albumid']) AND ! is_object($albumobj)) {
 			return '<div class="errorbox" id="message"><h2>' . gettext('Invalid linking to the slideshow page.') . '</h2></div>';
 		}
@@ -763,21 +764,21 @@ if (extensionEnabled('slideshow2')) {
 			$searchdate = $search->getSearchDate();
 			$searchfields = $search->getSearchFields(true);
 			$page = $search->page;
-			$returnpath = getSearchURL($searchwords, $searchdate, $searchfields, $page);
+			$returnpath = SearchEngine::getSearchURL($searchwords, $searchdate, $searchfields, $page);
 			$albumobj = new AlbumBase(NULL, false);
 			$albumobj->setTitle(gettext('Search'));
 			$albumobj->images = $search->getImages(0);
 		} else {
 			if (isset($_POST['favorites_page'])) {
-				$albumobj = $_myFavorites;
-				$returnpath = $_myFavorites->getLink($pagenumber);
+				$albumobj = $_zp_myfavorites;
+				$returnpath = $_zp_myfavorites->getLink($pagenumber);
 			} else {
-				$albumq = query_single_row("SELECT title, folder FROM " . prefix('albums') . " WHERE id = " . $albumid);
-				$albumobj = newAlbum($albumq['folder']);
+				$albumq = $_zp_db->querySingleRow("SELECT title, folder FROM " . $_zp_db->prefix('albums') . " WHERE id = " . $albumid);
+				$albumobj = AlbumBase::newAlbum($albumq['folder']);
 				if (empty($_POST['imagenumber'])) {
 					$returnpath = $albumobj->getLink($pagenumber);
 				} else {
-					$image = newImage($albumobj, sanitize($_POST['imagefile']));
+					$image = Image::newImage($albumobj, sanitize($_POST['imagefile']));
 					$returnpath = $image->getLink();
 				}
 			}

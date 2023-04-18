@@ -40,7 +40,7 @@ abstract class ApiQueryBase extends ApiBase {
 	private $mQueryModule, $mDb;
 
 	/**
-	 * @var SelectQueryBuilder
+	 * @var SelectQueryBuilder|null
 	 */
 	private $queryBuilder;
 
@@ -123,14 +123,19 @@ abstract class ApiQueryBase extends ApiBase {
 	}
 
 	/**
-	 * Selects the query database connection with the given name.
-	 * See ApiQuery::getNamedDB() for more information
+	 * Change the database connection for subsequent calls to ::getDB().
+	 *
+	 * See ApiQuery::getNamedDB() for more information.
+	 *
+	 * @deprecated since 1.39 Use or override ApiBase::getDB() and optionally
+	 *  pass a query group to wfGetDB() or ILoadBalancer::getConnectionRef().
 	 * @param string $name Name to assign to the database connection
 	 * @param int $db One of the DB_* constants
 	 * @param string|string[] $groups Query groups
 	 * @return IDatabase
 	 */
 	public function selectNamedDB( $name, $db, $groups ) {
+		wfDeprecated( __METHOD__, '1.39' );
 		$this->mDb = $this->getQuery()->getNamedDB( $name, $db, $groups );
 		return $this->mDb;
 	}
@@ -217,7 +222,7 @@ abstract class ApiQueryBase extends ApiBase {
 	 * Same as addFields(), but add the fields only if a condition is met
 	 * @param array|string $value See addFields()
 	 * @param bool $condition If false, do nothing
-	 * @return bool $condition
+	 * @return bool
 	 */
 	protected function addFieldsIf( $value, $condition ) {
 		if ( $condition ) {
@@ -244,7 +249,7 @@ abstract class ApiQueryBase extends ApiBase {
 	 */
 	protected function addWhere( $value ) {
 		if ( is_array( $value ) ) {
-			// Sanity check: don't insert empty arrays,
+			// Double check: don't insert empty arrays,
 			// Database::makeList() chokes on them
 			if ( count( $value ) ) {
 				$this->getQueryBuilder()->where( $value );
@@ -258,7 +263,7 @@ abstract class ApiQueryBase extends ApiBase {
 	 * Same as addWhere(), but add the WHERE clauses only if a condition is met
 	 * @param string|array $value
 	 * @param bool $condition If false, do nothing
-	 * @return bool $condition
+	 * @return bool
 	 */
 	protected function addWhereIf( $value, $condition ) {
 		if ( $condition ) {
@@ -328,9 +333,9 @@ abstract class ApiQueryBase extends ApiBase {
 	 * @param string $field Field name
 	 * @param string $dir If 'newer', sort in ascending order, otherwise
 	 *  sort in descending order
-	 * @param string|null $start Value to start the list at. If $dir == 'newer'
+	 * @param string|int|null $start Value to start the list at. If $dir == 'newer'
 	 *  this is the lower boundary, otherwise it's the upper boundary
-	 * @param string|null $end Value to end the list at. If $dir == 'newer' this
+	 * @param string|int|null $end Value to end the list at. If $dir == 'newer' this
 	 *  is the upper boundary, otherwise it's the lower boundary
 	 * @param bool $sort If false, don't add an ORDER BY clause
 	 */
@@ -414,7 +419,7 @@ abstract class ApiQueryBase extends ApiBase {
 			$queryBuilder->joinConds( (array)$extraQuery['join_conds'] );
 		}
 
-		if ( $hookData !== null && Hooks::isRegistered( 'ApiQueryBaseBeforeQuery' ) ) {
+		if ( $hookData !== null && $this->getHookContainer()->isRegistered( 'ApiQueryBaseBeforeQuery' ) ) {
 			$info = $queryBuilder->getQueryInfo();
 			$this->getHookRunner()->onApiQueryBaseBeforeQuery(
 				$this, $info['tables'], $info['fields'], $info['conds'],
@@ -443,7 +448,7 @@ abstract class ApiQueryBase extends ApiBase {
 	 * @since 1.28
 	 * @param stdClass $row Database row
 	 * @param array &$data Data to be added to the result
-	 * @param array &$hookData Hook data from ApiQueryBase::select()
+	 * @param array &$hookData Hook data from ApiQueryBase::select() @phan-output-reference
 	 * @return bool Return false if row processing should end with continuation
 	 */
 	protected function processRow( $row, array &$data, array &$hookData ) {
@@ -470,7 +475,7 @@ abstract class ApiQueryBase extends ApiBase {
 
 	/**
 	 * Add a sub-element under the page element with the given page ID
-	 * @param int $pageId Page ID
+	 * @param int $pageId
 	 * @param array $data Data array à la ApiResult
 	 * @return bool Whether the element fit in the result
 	 */
@@ -485,7 +490,7 @@ abstract class ApiQueryBase extends ApiBase {
 
 	/**
 	 * Same as addPageSubItems(), but one element of $data at a time
-	 * @param int $pageId Page ID
+	 * @param int $pageId
 	 * @param mixed $item Data à la ApiResult
 	 * @param string|null $elemname XML element name. If null, getModuleName()
 	 *  is used
@@ -522,7 +527,7 @@ abstract class ApiQueryBase extends ApiBase {
 	 * $namespace should always be specified in order to handle per-namespace
 	 * capitalization settings.
 	 *
-	 * @param string $titlePart Title part
+	 * @param string $titlePart
 	 * @param int $namespace Namespace of the title
 	 * @return string DBkey (no namespace prefix)
 	 */
@@ -548,7 +553,7 @@ abstract class ApiQueryBase extends ApiBase {
 	 * Convert an input title or title prefix into a TitleValue.
 	 *
 	 * @since 1.35
-	 * @param string $titlePart Title part
+	 * @param string $titlePart
 	 * @param int $defaultNamespace Default namespace if none is given
 	 * @return TitleValue
 	 */
@@ -566,21 +571,6 @@ abstract class ApiQueryBase extends ApiBase {
 		}
 
 		return new TitleValue( $t->getNamespace(), substr( $t->getDBkey(), 0, -1 ) );
-	}
-
-	/**
-	 * Convert an input title or title prefix into a namespace constant and dbkey.
-	 *
-	 * @since 1.26
-	 * @deprecated sine 1.35, use parsePrefixedTitlePart() instead.
-	 * @param string $titlePart Title part parsePrefixedTitlePart instead
-	 * @param int $defaultNamespace Default namespace if none is given
-	 * @return array (int, string) Namespace number and DBkey
-	 */
-	public function prefixedTitlePartToKey( $titlePart, $defaultNamespace = NS_MAIN ) {
-		wfDeprecated( __METHOD__, '1.35' );
-		$t = $this->parsePrefixedTitlePart( $titlePart, $defaultNamespace );
-		return [ $t->getNamespace(), $t->getDBkey() ];
 	}
 
 	/**
@@ -608,6 +598,7 @@ abstract class ApiQueryBase extends ApiBase {
 		return $this->getAuthority()->isAllowedAny(
 			'deletedhistory',
 			'deletedtext',
+			'deleterevision',
 			'suppressrevision',
 			'viewsuppressed'
 		);
@@ -654,22 +645,4 @@ abstract class ApiQueryBase extends ApiBase {
 	}
 
 	// endregion -- end of utility methods
-
-	/***************************************************************************/
-	// region   Deprecated methods
-	/** @name   Deprecated methods */
-
-	/**
-	 * Filters hidden users (where the user doesn't have the right to view them)
-	 * Also adds relevant block information
-	 *
-	 * @deprecated since 1.34, use ApiQueryBlockInfoTrait instead
-	 * @param bool $showBlockInfo
-	 */
-	public function showHiddenUsersAddBlockInfo( $showBlockInfo ) {
-		wfDeprecated( __METHOD__, '1.34' );
-		$this->addBlockInfoToQuery( $showBlockInfo );
-	}
-
-	// endregion -- end of deprecated methods
 }

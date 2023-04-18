@@ -1427,5 +1427,11 @@ return array(
     'XBT - Bitcoin' => 'XBT - Bitcoin',
     'You must select a file to upload as your avatar!' => 'Du musst eine Datei auswählen, die als Avatar hochgeladen werden soll!',
     'The file you uploaded is not a valid image! (Only *.gif, *.jpg, *.jpeg and *.png are allowed!)' => 'Die hochgeladene Datei ist kein gültiges Bild! (Nur *.gif, *.jpg, *.jpeg and *.png sind erlaubt!)',
-    // 'Automatically set the due date when the task is moved away from a specific column' => '',
+    'Automatically set the due date when the task is moved away from a specific column' => 'Automatisches Setzen des Fälligkeitsdatums, wenn die Aufgabe aus einer bestimmten Spalte heraus verschoben wird',
+    'No other projects found.' => 'Keine weiteren Projekte vorhanden.',
+    'Please choose a project you want to copy the tasks from.' => 'Bitte wähle ein Projekt aus, dessen Tickets du kopieren möchten!',
+    'Import Tasks' => 'Aufgaben importieren',
+    'Copy' => 'Kopieren',
+    'Tasks copied successfully.' => 'Die Aufgaben wurden erfolgreich kopiert.',
+    'Unable to copy tasks.' => 'Die Aufgaben konnten nicht kopiert werden.',
 );

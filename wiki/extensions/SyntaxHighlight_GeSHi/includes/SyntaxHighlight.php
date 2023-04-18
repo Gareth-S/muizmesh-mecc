@@ -16,10 +16,29 @@
  * http://www.gnu.org/copyleft/gpl.html
  */
 
-use MediaWiki\MediaWikiServices;
-use MediaWiki\Shell\Shell;
+namespace MediaWiki\SyntaxHighlight;
 
-class SyntaxHighlight {
+use Content;
+use ExtensionRegistry;
+use FormatJson;
+use Html;
+use IContextSource;
+use MediaWiki\MediaWikiServices;
+use MWException;
+use Parser;
+use ParserOptions;
+use ParserOutput;
+use Sanitizer;
+use Status;
+use TextContent;
+use Title;
+use WANObjectCache;
+
+use Wikimedia\Parsoid\DOM\DocumentFragment;
+use Wikimedia\Parsoid\Ext\ExtensionTagHandler;
+use Wikimedia\Parsoid\Ext\ParsoidExtensionAPI;
+
+class SyntaxHighlight extends ExtensionTagHandler {
 
 	/** @var int The maximum number of lines that may be selected for highlighting. */
 	private const HIGHLIGHT_MAX_LINES = 1000;
@@ -54,7 +73,7 @@ class SyntaxHighlight {
 		}
 
 		if ( !$lexers ) {
-			$lexers = require __DIR__ . '/../SyntaxHighlight.lexers.php';
+			$lexers = Pygmentize::getLexers();
 		}
 
 		$lexer = strtolower( $lang );
@@ -83,14 +102,14 @@ class SyntaxHighlight {
 	 * @param Parser $parser
 	 */
 	public static function onParserFirstCallInit( Parser $parser ) {
-		$parser->setHook( 'source', [ 'SyntaxHighlight', 'parserHookSource' ] );
-		$parser->setHook( 'syntaxhighlight', [ 'SyntaxHighlight', 'parserHook' ] );
+		$parser->setHook( 'source', [ self::class, 'parserHookSource' ] );
+		$parser->setHook( 'syntaxhighlight', [ self::class, 'parserHook' ] );
 	}
 
 	/**
 	 * Parser hook for <source> to add deprecated tracking category
 	 *
-	 * @param string $text
+	 * @param ?string $text
 	 * @param array $args
 	 * @param Parser $parser
 	 * @return string
@@ -102,20 +121,24 @@ class SyntaxHighlight {
 	}
 
 	/**
-	 * Parser hook for both <source> and <syntaxhighlight> logic
+	 * @return array
+	 */
+	private static function getModuleStyles(): array {
+		return [ 'ext.pygments' ];
+	}
+
+	/**
 	 *
 	 * @param string $text
 	 * @param array $args
-	 * @param Parser $parser
-	 * @return string
+	 * @param ?Parser $parser
+	 * @return array
 	 * @throws MWException
 	 */
-	public static function parserHook( $text, $args, $parser ) {
-		// Replace strip markers (For e.g. {{#tag:syntaxhighlight|<nowiki>...}})
-		$out = $parser->getStripState()->unstripNoWiki( $text );
-
+	private static function processContent( string $text, array $args, ?Parser $parser = null ): array {
 		// Don't trim leading spaces away, just the linefeeds
-		$out = preg_replace( '/^\n+/', '', rtrim( $out ) );
+		$out = preg_replace( '/^\n+/', '', rtrim( $text ) );
+		$trackingCats = [];
 
 		// Convert deprecated attributes
 		if ( isset( $args['enclose'] ) ) {
@@ -123,23 +146,56 @@ class SyntaxHighlight {
 				$args['inline'] = true;
 			}
 			unset( $args['enclose'] );
-			$parser->addTrackingCategory( 'syntaxhighlight-enclose-category' );
+			$trackingCats[] = 'syntaxhighlight-enclose-category';
 		}
 
 		$lexer = $args['lang'] ?? '';
 
 		$result = self::highlight( $out, $lexer, $args, $parser );
 		if ( !$result->isGood() ) {
-			$parser->addTrackingCategory( 'syntaxhighlight-error-category' );
+			$trackingCats[] = 'syntaxhighlight-error-category';
 		}
-		$out = $result->getValue();
+
+		return [ 'html' => $result->getValue(), 'cats' => $trackingCats ];
+	}
+
+	/**
+	 * Parser hook for both <source> and <syntaxhighlight> logic
+	 *
+	 * @param ?string $text
+	 * @param array $args
+	 * @param Parser $parser
+	 * @return string
+	 * @throws MWException
+	 */
+	public static function parserHook( $text, $args, $parser ) {
+		// Replace strip markers (For e.g. {{#tag:syntaxhighlight|<nowiki>...}})
+		$out = $parser->getStripState()->unstripNoWiki( $text ?? '' );
+
+		$result = self::processContent( $out, $args, $parser );
+		foreach ( $result['cats'] as $cat ) {
+			$parser->addTrackingCategory( $cat );
+		}
 
 		// Register CSS
-		// TODO: Consider moving to a separate method so that public method
-		// highlight() can be used without needing to know the module name.
-		$parser->getOutput()->addModuleStyles( 'ext.pygments' );
+		$parser->getOutput()->addModuleStyles( self::getModuleStyles() );
 
-		return $out;
+		return $result['html'];
+	}
+
+	/** @inheritDoc */
+	public function sourceToDom(
+		ParsoidExtensionAPI $extApi, string $text, array $extArgs
+	): ?DocumentFragment {
+		$result = self::processContent( $text, $extApi->extArgsToArray( $extArgs ) );
+
+		// FIXME: There is no API method in Parsoid to add tracking categories
+		// So, $result['cats'] is being ignored
+
+		// Register CSS
+		$extApi->addModuleStyles( self::getModuleStyles() );
+
+		return $extApi->htmlToDom( $result['html'] );
 	}
 
 	/**
@@ -148,7 +204,7 @@ class SyntaxHighlight {
 	 * @param string $out Output
 	 * @return string Unwrapped output
 	 */
-	private static function unwrap( string $out ) : string {
+	private static function unwrap( string $out ): string {
 		if ( $out !== '' ) {
 			$m = [];
 			if ( preg_match( '/^<div class="?mw-highlight"?>(.*)<\/div>$/s', trim( $out ), $m ) ) {
@@ -158,20 +214,6 @@ class SyntaxHighlight {
 			}
 		}
 		return $out;
-	}
-
-	/**
-	 * @return string
-	 */
-	public static function getPygmentizePath() {
-		global $wgPygmentizePath;
-
-		// If $wgPygmentizePath is unset, use the bundled copy.
-		if ( $wgPygmentizePath === false ) {
-			$wgPygmentizePath = __DIR__ . '/../pygments/pygmentize';
-		}
-
-		return $wgPygmentizePath;
 	}
 
 	/**
@@ -219,16 +261,6 @@ class SyntaxHighlight {
 				'syntaxhighlight-error-exceeds-size-limit',
 				$length,
 				self::HIGHLIGHT_MAX_BYTES
-			);
-		} elseif ( Shell::isDisabled() ) {
-			// Disable syntax highlighting
-			$lexer = null;
-			$status->warning( 'syntaxhighlight-error-pygments-invocation-failure' );
-			wfWarn(
-				'MediaWiki determined that it cannot invoke Pygments. ' .
-				'As a result, SyntaxHighlight_GeSHi will not perform any syntax highlighting. ' .
-				'See the debug log for details: ' .
-				'https://www.mediawiki.org/wiki/Manual:$wgDebugLogFile'
 			);
 		}
 
@@ -285,28 +317,14 @@ class SyntaxHighlight {
 		$output = $cache->getWithSetCallback(
 			$cache->makeGlobalKey( 'highlight', self::makeCacheKeyHash( $code, $lexer, $options ) ),
 			$cache::TTL_MONTH,
-			function ( $oldValue, &$ttl ) use ( $code, $lexer, $options, &$error ) {
-				$optionPairs = [];
-				foreach ( $options as $k => $v ) {
-					$optionPairs[] = "{$k}={$v}";
-				}
-				$result = Shell::command(
-					self::getPygmentizePath(),
-					'-l', $lexer,
-					'-f', 'html',
-					'-O', implode( ',', $optionPairs )
-				)
-					->input( $code )
-					->restrict( Shell::RESTRICT_DEFAULT | Shell::NO_NETWORK )
-					->execute();
-
-				if ( $result->getExitCode() != 0 ) {
+			static function ( $oldValue, &$ttl ) use ( $code, $lexer, $options, &$error ) {
+				try {
+					return Pygmentize::highlight( $lexer, $code, $options );
+				} catch ( PygmentsException $e ) {
 					$ttl = WANObjectCache::TTL_UNCACHEABLE;
-					$error = $result->getStderr();
+					$error = $e->getMessage();
 					return null;
 				}
-
-				return $result->getStdout();
 			}
 		);
 
@@ -503,14 +521,20 @@ class SyntaxHighlight {
 	 * @param int $revId
 	 * @param ParserOptions $options
 	 * @param bool $generateHtml
-	 * @param ParserOutput &$output
+	 * @param ParserOutput &$parserOutput
 	 * @return bool
 	 * @since MW 1.21
 	 */
 	public static function onContentGetParserOutput( Content $content, Title $title,
-		$revId, ParserOptions $options, $generateHtml, ParserOutput &$output
+		$revId, ParserOptions $options, $generateHtml, ParserOutput &$parserOutput
 	) {
 		global $wgTextModelsToParse;
+
+		// Hope that the "SyntaxHighlightModels" attribute does not contain silly types.
+		if ( !( $content instanceof TextContent ) ) {
+			// Oops! Non-text content? Let MediaWiki handle this.
+			return true;
+		}
 
 		if ( !$generateHtml ) {
 			// Nothing special for us to do, let MediaWiki handle this.
@@ -531,18 +555,12 @@ class SyntaxHighlight {
 			return true;
 		}
 		$lexer = $models[$model];
-
-		// Hope that the "SyntaxHighlightModels" attribute does not contain silly types.
-		$text = ContentHandler::getContentText( $content );
-		if ( !$text ) {
-			// Oops! Non-text content? Let MediaWiki handle this.
-			return true;
-		}
+		$text = $content->getText();
 
 		// Parse using the standard parser to get links etc. into the database, HTML is replaced below.
 		// We could do this using $content->fillParserOutput(), but alas it is 'protected'.
-		if ( $content instanceof TextContent && in_array( $model, $wgTextModelsToParse ) ) {
-			$output = MediaWikiServices::getInstance()->getParser()
+		if ( in_array( $model, $wgTextModelsToParse ) ) {
+			$parserOutput = MediaWikiServices::getInstance()->getParser()
 				->parse( $text, $title, $options, true, true, $revId );
 		}
 
@@ -552,9 +570,9 @@ class SyntaxHighlight {
 		}
 		$out = $status->getValue();
 
-		$output->addModuleStyles( 'ext.pygments' );
-		$output->addModules( 'ext.pygments.linenumbers' );
-		$output->setText( $out );
+		$parserOutput->addModuleStyles( self::getModuleStyles() );
+		$parserOutput->addModules( [ 'ext.pygments.linenumbers' ] );
+		$parserOutput->setText( $out );
 
 		// Inform MediaWiki that we have parsed this page and it shouldn't mess with it.
 		return false;
@@ -589,10 +607,26 @@ class SyntaxHighlight {
 			$out = '<pre' . $encodedAttrs . '>' . substr( $out, strlen( $m[0] ) );
 		}
 		$output = $context->getOutput();
-		$output->addModuleStyles( 'ext.pygments' );
+		$output->addModuleStyles( self::getModuleStyles() );
 		$output->addHTML( '<div dir="ltr">' . $out . '</div>' );
 
 		// Inform MediaWiki that we have parsed this page and it shouldn't mess with it.
 		return false;
 	}
+
+	/**
+	 * Hook to add Pygments version to Special:Version
+	 *
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/SoftwareInfo
+	 * @param array &$software
+	 */
+	public static function onSoftwareInfo( array &$software ) {
+		try {
+			$software['[https://pygments.org/ Pygments]'] = Pygmentize::getVersion();
+		} catch ( PygmentsException $e ) {
+			// pass
+		}
+	}
 }
+
+class_alias( SyntaxHighlight::class, 'SyntaxHighlight' );

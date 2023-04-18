@@ -51,7 +51,7 @@
 	},
 	"oojs": {
 		"scripts": [
-			"lib/oojs/oojs.jquery.js"
+			"lib/oojs/oojs.js"
 		],
 		"dependencies": [
 			"jquery"
@@ -558,6 +558,7 @@
 			"src/ce/styles/nodes/ve.ce.AlienNode.css",
 			"src/ce/styles/nodes/ve.ce.BranchNode.css",
 			"src/ce/styles/nodes/ve.ce.ContentBranchNode.css",
+			"src/ce/styles/nodes/ve.ce.ParagraphNode.css",
 			"src/ce/styles/nodes/ve.ce.RootNode.css",
 			"src/ce/styles/nodes/ve.ce.GeneratedContentNode.css",
 			"src/ce/styles/nodes/ve.ce.HorizontalRuleNode.css",
@@ -587,7 +588,7 @@
 			"src/ui/contextitems/ve.ui.LinearContextItem.js",
 			"src/ui/contextitems/ve.ui.AnnotationContextItem.js",
 			"src/ui/contextitems/ve.ui.TableLineContextItem.js",
-			"src/ui/contextitems/ve.ui.AlienContextItem.js",
+			"src/ui/contextitems/ve.ui.MobileActionsContextItem.js",
 			"src/ui/contextitems/ve.ui.AlignableContextItem.js",
 			"src/ui/contextitems/ve.ui.CommentContextItem.js",
 			"src/ui/contextitems/ve.ui.LanguageContextItem.js",
@@ -828,6 +829,7 @@
 			"tests/ve.BranchNode.test.js",
 			"tests/ve.LeafNode.test.js",
 			"tests/dm/ve.dm.example.js",
+			"tests/dm/ve.dm.example.StubReferenceNode.js",
 			"tests/dm/ve.dm.Annotation.test.js",
 			"tests/dm/ve.dm.AnnotationSet.test.js",
 			"tests/dm/ve.dm.LinkAnnotation.test.js",
@@ -889,7 +891,9 @@
 			"tests/ce/nodes/ve.ce.ResizableNode.test.js",
 			"tests/ce/nodes/ve.ce.TextNode.test.js",
 			"tests/ce/nodes/ve.ce.TableNode.test.js",
+			"tests/init/ve.init.Target.test.js",
 			"tests/init/ve.init.sa.Platform.test.js",
+			"tests/init/ve.init.ListStorage.test.js",
 			"tests/ui/ve.ui.DataTransferHandlerFactory.test.js",
 			"tests/ui/ve.ui.Trigger.test.js",
 			"tests/ui/ve.ui.Sequence.test.js",

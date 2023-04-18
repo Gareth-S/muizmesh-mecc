@@ -41,7 +41,7 @@
 			&copy;<?php echo date_i18n( _x( 'Y', 'copyright date format; check date() on php.net', 'membershiply' ) ) ?> <?php bloginfo( 'name' ); ?>
 							<!-- Delete below lines to remove copyright from footer -->
 				<span class="footer-info-right">
-					<?php echo __(' | WordPress Theme by', 'membershiply') ?> <a href="<?php echo esc_url('https://superbthemes.com/membershiply/', 'membershiply'); ?>"><?php echo __(' SuperbThemes.com', 'membershiply') ?></a>
+					<?php echo __(' | WordPress Theme by', 'Netbones') ?> <a href="<?php echo esc_url('https://netbones.co.za/', 'Netbones'); ?>"><?php echo __(' netbones.co.za', 'netshiply') ?></a>
 				</span>
 				<!-- Delete above lines to remove copyright from footer -->
 		</div><!-- .site-info -->

@@ -114,16 +114,12 @@ class ParserCache {
 	private $wikiPageFactory;
 
 	/**
-	 * @note Temporary feature flag, remove before 1.36 is released.
-	 * @var bool
+	 * @var BagOStuff small in-process cache to store metadata.
+	 * It's needed multiple times during the request, for example
+	 * to build a PoolWorkArticleView key, and then to fetch the
+	 * actual ParserCache entry.
 	 */
-	private $writeJson = false;
-
-	/**
-	 * @note Temporary feature flag, remove before 1.36 is released.
-	 * @var bool
-	 */
-	private $readJson = false;
+	private $metadataProcCache;
 
 	/**
 	 * Setup a cache pathway with a given back-end storage mechanism.
@@ -140,7 +136,6 @@ class ParserCache {
 	 * @param LoggerInterface $logger
 	 * @param TitleFactory $titleFactory
 	 * @param WikiPageFactory $wikiPageFactory
-	 * @param bool $useJson Temporary feature flag, remove before 1.36 is released.
 	 */
 	public function __construct(
 		string $name,
@@ -151,22 +146,8 @@ class ParserCache {
 		IBufferingStatsdDataFactory $stats,
 		LoggerInterface $logger,
 		TitleFactory $titleFactory,
-		WikiPageFactory $wikiPageFactory,
-		$useJson = false
+		WikiPageFactory $wikiPageFactory
 	) {
-		if ( !$cache instanceof EmptyBagOStuff && !$cache instanceof CachedBagOStuff ) {
-			// It seems on some page views, the same entry is retreived twice from the ParserCache.
-			// This shouldn't happen but use a process-cache and log duplicate fetches to mitigate
-			// this and figure out why. (T269593)
-			$cache = new CachedBagOStuff( $cache, [
-				'logger' => $logger,
-				'asyncHandler' => [ DeferredUpdates::class, 'addCallableUpdate' ],
-				'reportDupes' => true,
-				// Each ParserCache entry uses 2 keys, one for metadata and one for parser output.
-				// So, cache at most 4 different parser outputs in memory. The number was chosen ad hoc.
-				'maxKeys' => 8
-			] );
-		}
 		$this->name = $name;
 		$this->cache = $cache;
 		$this->cacheEpoch = $cacheEpoch;
@@ -176,8 +157,7 @@ class ParserCache {
 		$this->logger = $logger;
 		$this->titleFactory = $titleFactory;
 		$this->wikiPageFactory = $wikiPageFactory;
-		$this->readJson = $useJson;
-		$this->writeJson = $useJson;
+		$this->metadataProcCache = new HashBagOStuff( [ 'maxKeys' => 2 ] );
 	}
 
 	/**
@@ -186,36 +166,16 @@ class ParserCache {
 	 */
 	public function deleteOptionsKey( PageRecord $page ) {
 		$page->assertWiki( PageRecord::LOCAL );
-		$this->cache->delete( $this->makeMetadataKey( $page ) );
-	}
-
-	/**
-	 * Provides an E-Tag suitable for the whole page. Note that $page
-	 * is just the main wikitext. The E-Tag has to be unique to the whole
-	 * page, even if the article itself is the same, so it uses the
-	 * complete set of user options. We don't want to use the preference
-	 * of a different user on a message just because it wasn't used in
-	 * $page. For example give a Chinese interface to a user with
-	 * English preferences. That's why we take into account *all* user
-	 * options. (r70809 CR)
-	 *
-	 * @deprecated since 1.36
-	 * @param PageRecord $page
-	 * @param ParserOptions $popts
-	 * @return string
-	 */
-	public function getETag( PageRecord $page, $popts ) {
-		wfDeprecated( __METHOD__, '1.36' );
-		$page->assertWiki( PageRecord::LOCAL );
-		return 'W/"' . $this->makeParserOutputKey( $page, $popts )
-			. "--" . $page->getTouched() . '"';
+		$key = $this->makeMetadataKey( $page );
+		$this->metadataProcCache->delete( $key );
+		$this->cache->delete( $key );
 	}
 
 	/**
 	 * Retrieve the ParserOutput from ParserCache, even if it's outdated.
 	 * @param PageRecord $page
 	 * @param ParserOptions $popts
-	 * @return ParserOutput|bool False on failure
+	 * @return ParserOutput|false
 	 */
 	public function getDirty( PageRecord $page, $popts ) {
 		$page->assertWiki( PageRecord::LOCAL );
@@ -232,55 +192,6 @@ class ParserCache {
 		$contentModel = str_replace( '.', '_', $wikiPage->getContentModel() );
 		$metricSuffix = str_replace( '.', '_', $metricSuffix );
 		$this->stats->increment( "{$this->name}.{$contentModel}.{$metricSuffix}" );
-	}
-
-	/**
-	 * Generates a key for caching the given page considering
-	 * the given parser options.
-	 *
-	 * @note Which parser options influence the cache key
-	 * is controlled via ParserOutput::recordOption() or
-	 * ParserOptions::addExtraKey().
-	 *
-	 * @note Used by Article to provide a unique id for the PoolCounter.
-	 * It would be preferable to have this code in get()
-	 * instead of having Article looking in our internals.
-	 *
-	 * @param PageRecord $page
-	 * @param ParserOptions $popts
-	 * @param int|bool $useOutdated One of the USE constants. For backwards
-	 *  compatibility, boolean false is treated as USE_CURRENT_ONLY and
-	 *  boolean true is treated as USE_ANYTHING.
-	 * @return bool|mixed|string
-	 * @since 1.30 Changed $useOutdated to an int and added the non-boolean values
-	 * @deprecated 1.36 Use ::getMetadata and ::makeParserOutputKey methods instead.
-	 */
-	public function getKey( PageRecord $page, $popts, $useOutdated = self::USE_ANYTHING ) {
-		wfDeprecated( __METHOD__, '1.36' );
-		$page->assertWiki( PageRecord::LOCAL );
-
-		if ( is_bool( $useOutdated ) ) {
-			$useOutdated = $useOutdated ? self::USE_ANYTHING : self::USE_CURRENT_ONLY;
-		}
-
-		if ( $popts instanceof User ) {
-			$this->logger->warning(
-				"Use of outdated prototype ParserCache::getKey( &\$wikiPage, &\$user )\n"
-			);
-			$popts = ParserOptions::newFromUser( $popts );
-		}
-
-		$metadata = $this->getMetadata( $page, $useOutdated );
-		if ( !$metadata ) {
-			if ( $useOutdated < self::USE_ANYTHING ) {
-				return false;
-			}
-			$usedOptions = ParserOptions::allCacheVaryingOptions();
-		} else {
-			$usedOptions = $metadata->getUsedOptions();
-		}
-
-		return $this->makeParserOutputKey( $page, $popts, $usedOptions );
 	}
 
 	/**
@@ -303,10 +214,19 @@ class ParserCache {
 		$page->assertWiki( PageRecord::LOCAL );
 
 		$pageKey = $this->makeMetadataKey( $page );
-		$metadata = $this->cache->get(
-			$pageKey,
-			BagOStuff::READ_VERIFIED
-		);
+		$metadata = $this->metadataProcCache->get( $pageKey );
+		if ( !$metadata ) {
+			$metadata = $this->cache->get(
+				$pageKey,
+				BagOStuff::READ_VERIFIED
+			);
+		}
+
+		if ( $metadata === false ) {
+			$this->incrementStats( $page, "miss.absent.metadata" );
+			$this->logger->debug( 'ParserOutput metadata cache miss', [ 'name' => $this->name ] );
+			return null;
+		}
 
 		// NOTE: If the value wasn't serialized to JSON when being stored,
 		//       we may already have a ParserOutput object here. This used
@@ -316,7 +236,7 @@ class ParserCache {
 		// NOTE: Support for reading string values from the cache must be
 		//       deployed a while before starting to write JSON to the cache,
 		//       in case we have to revert either change.
-		if ( is_string( $metadata ) && $this->readJson ) {
+		if ( is_string( $metadata ) ) {
 			$metadata = $this->restoreFromJson( $metadata, $pageKey, CacheTime::class );
 		}
 
@@ -356,7 +276,7 @@ class ParserCache {
 	 *
 	 * @param PageRecord $page
 	 * @param ParserOptions $options
-	 * @param array|null $usedOptions Defaults to all cache verying options.
+	 * @param array|null $usedOptions Defaults to all cache varying options.
 	 * @return string
 	 * @internal
 	 * @since 1.36
@@ -366,17 +286,15 @@ class ParserCache {
 		ParserOptions $options,
 		array $usedOptions = null
 	): string {
-		global $wgRequest;
 		$usedOptions = $usedOptions ?? ParserOptions::allCacheVaryingOptions();
-
 		// idhash seem to mean 'page id' + 'rendering hash' (r3710)
 		$pageid = $page->getId( PageRecord::LOCAL );
-		// TODO: remove the split T263581
-		$renderkey = (int)( $wgRequest->getVal( 'action' ) == 'render' );
 		$title = $this->titleFactory->castFromPageIdentity( $page );
 		$hash = $options->optionsHash( $usedOptions, $title );
-
-		return $this->cache->makeKey( $this->name, 'idhash', "{$pageid}-{$renderkey}!{$hash}" );
+		// Before T263581 ParserCache was split between normal page views
+		// and action=parse. -0 is left in the key to avoid invalidating the entire
+		// cache when removing the cache split.
+		return $this->cache->makeKey( $this->name, 'idhash', "{$pageid}-0!{$hash}" );
 	}
 
 	/**
@@ -387,7 +305,7 @@ class ParserCache {
 	 * @param ParserOptions $popts
 	 * @param bool $useOutdated (default false)
 	 *
-	 * @return ParserOutput|bool False on failure
+	 * @return ParserOutput|false
 	 */
 	public function get( PageRecord $page, $popts, $useOutdated = false ) {
 		$page->assertWiki( PageRecord::LOCAL );
@@ -435,7 +353,7 @@ class ParserCache {
 		// NOTE: Support for reading string values from the cache must be
 		//       deployed a while before starting to write JSON to the cache,
 		//       in case we have to revert either change.
-		if ( is_string( $value ) && $this->readJson ) {
+		if ( is_string( $value ) ) {
 			$value = $this->restoreFromJson( $value, $parserOutputKey, ParserOutput::class );
 		}
 
@@ -512,6 +430,15 @@ class ParserCache {
 		$cacheTime = $cacheTime ?: wfTimestampNow();
 		$revId = $revId ?: $page->getLatest( PageRecord::LOCAL );
 
+		if ( !$revId ) {
+			$this->logger->debug(
+				'Parser output cannot be saved if the revision ID is not known',
+				[ 'name' => $this->name ]
+			);
+			$this->incrementStats( $page, 'save.norevid' );
+			return;
+		}
+
 		$metadata = new CacheTime;
 		$metadata->recordOptions( $parserOutput->getUsedOptions() );
 		$metadata->updateCacheExpiry( $expire );
@@ -530,23 +457,12 @@ class ParserCache {
 		$msg = "Saved in parser cache with key $parserOutputKey" .
 			" and timestamp $cacheTime" .
 			" and revision id $revId.";
-		if ( $this->writeJson ) {
-			$msg .= " Serialized with JSON.";
-		} else {
-			$msg .= " Serialized with PHP.";
-		}
 		$parserOutput->addCacheMessage( $msg );
 
 		$pageKey = $this->makeMetadataKey( $page );
 
-		if ( $this->writeJson ) {
-			$parserOutputData = $this->encodeAsJson( $parserOutput, $parserOutputKey );
-			$metadataData = $this->encodeAsJson( $metadata, $pageKey );
-		} else {
-			// rely on implicit PHP serialization in the cache
-			$parserOutputData = $parserOutput;
-			$metadataData = $metadata;
-		}
+		$parserOutputData = $this->convertForCache( $parserOutput, $parserOutputKey );
+		$metadataData = $this->convertForCache( $metadata, $pageKey );
 
 		if ( !$parserOutputData || !$metadataData ) {
 			$this->logger->warning(
@@ -565,10 +481,13 @@ class ParserCache {
 			BagOStuff::WRITE_ALLOW_SEGMENTS
 		);
 
-		// ...and its pointer
+		// ...and its pointer to the local cache.
+		$this->metadataProcCache->set( $pageKey, $metadataData, $expire );
+		// ...and to the global cache.
 		$this->cache->set( $pageKey, $metadataData, $expire );
 
 		$title = $this->titleFactory->castFromPageIdentity( $page );
+		// @phan-suppress-next-line PhanTypeMismatchArgumentNullable castFrom does not return null here
 		$this->hookRunner->onParserCacheSaveComplete( $this, $parserOutput, $title, $popts, $revId );
 
 		$this->logger->debug( 'Saved in parser cache', [
@@ -649,17 +568,6 @@ class ParserCache {
 	}
 
 	/**
-	 * @note setter for temporary feature flags, for use in testing.
-	 * @internal
-	 * @param bool $readJson
-	 * @param bool $writeJson
-	 */
-	public function setJsonSupport( bool $readJson, bool $writeJson ): void {
-		$this->readJson = $readJson;
-		$this->writeJson = $writeJson;
-	}
-
-	/**
 	 * @param string $jsonData
 	 * @param string $key
 	 * @param string $expectedClass
@@ -685,7 +593,7 @@ class ParserCache {
 	 * @param string $key
 	 * @return string|null
 	 */
-	private function encodeAsJson( CacheTime $obj, string $key ) {
+	protected function convertForCache( CacheTime $obj, string $key ) {
 		try {
 			return $this->jsonCodec->serialize( $obj );
 		} catch ( InvalidArgumentException $e ) {

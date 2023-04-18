@@ -5,12 +5,12 @@ namespace MediaWiki\Tests\Rest\Handler;
 use MediaWiki\Config\ServiceOptions;
 use MediaWiki\Interwiki\ClassicInterwikiLookup;
 use MediaWiki\Languages\LanguageNameUtils;
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
 use MediaWiki\Page\PageIdentity;
 use MediaWiki\Rest\Handler\LanguageLinksHandler;
 use MediaWiki\Rest\LocalizedHttpException;
 use MediaWiki\Rest\RequestData;
-use MockTitleTrait;
+use MediaWiki\Tests\Unit\DummyServicesTrait;
 use Title;
 use Wikimedia\Message\MessageValue;
 
@@ -20,9 +20,8 @@ use Wikimedia\Message\MessageValue;
  * @group Database
  */
 class LanguageLinksHandlerTest extends \MediaWikiIntegrationTestCase {
-
+	use DummyServicesTrait;
 	use HandlerTestTrait;
-	use MockTitleTrait;
 
 	public function addDBData() {
 		$defaults = [
@@ -33,35 +32,36 @@ class LanguageLinksHandlerTest extends \MediaWikiIntegrationTestCase {
 
 		$base = 'https://wiki.test/';
 
-		$this->setMwGlobals( [
-			'wgInterwikiCache' => ClassicInterwikiLookup::buildCdbHash( [
+		$this->overrideConfigValue(
+			MainConfigNames::InterwikiCache,
+			ClassicInterwikiLookup::buildCdbHash( [
 				[ 'iw_prefix' => 'de', 'iw_url' => $base . '/de', 'iw_wikiid' => 'dewiki' ] + $defaults,
 				[ 'iw_prefix' => 'en', 'iw_url' => $base . '/en', 'iw_wikiid' => 'enwiki' ] + $defaults,
-				[ 'iw_prefix' => 'fr', 'iw_url' => $base . '/fr', 'iw_wikiid' => 'frwiki' ] + $defaults,
-			] ),
-		] );
+				[ 'iw_prefix' => 'fr', 'iw_url' => $base . '/fr', 'iw_wikiid' => 'frwiki' ] + $defaults
+			] )
+		);
 
 		$this->editPage( __CLASS__ . '_Foo', 'Foo [[fr:Fou baux]] [[de:Füh bär]]' );
 	}
 
 	private function newHandler() {
-		$services = MediaWikiServices::getInstance();
-
 		$languageNameUtils = new LanguageNameUtils(
 			new ServiceOptions(
 				LanguageNameUtils::CONSTRUCTOR_OPTIONS,
 				[ 'ExtraLanguageNames' => [], 'UsePigLatinVariant' => false ]
 			),
-			$services->getHookContainer()
+			$this->getServiceContainer()->getHookContainer()
 		);
 
-		$titleCodec = $this->makeMockTitleCodec();
+		// DummyServicesTrait::getDummyMediaWikiTitleCodec
+		$titleCodec = $this->getDummyMediaWikiTitleCodec();
 
 		return new LanguageLinksHandler(
-			$services->getDBLoadBalancer(),
+			$this->getServiceContainer()->getDBLoadBalancer(),
 			$languageNameUtils,
 			$titleCodec,
-			$titleCodec
+			$titleCodec,
+			$this->getServiceContainer()->getPageStore()
 		);
 	}
 

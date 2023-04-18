@@ -21,6 +21,8 @@
  */
 
 use MediaWiki\Http\HttpRequestFactory;
+use MediaWiki\MainConfigNames;
+use Wikimedia\RequestTimeout\TimeoutException;
 
 /**
  * Web access for files temporarily stored by UploadStash.
@@ -55,7 +57,7 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 	 * This service is really for thumbnails and other such previews while
 	 * uploading.
 	 */
-	private const MAX_SERVE_BYTES = 1048576; // 1MB
+	private const MAX_SERVE_BYTES = 1048576; // 1 MiB
 
 	/**
 	 * @param RepoGroup $repoGroup
@@ -96,7 +98,7 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 
 	/**
 	 * If file available in stash, cats it out to the client as a simple HTTP response.
-	 * n.b. Most sanity checking done in UploadStashLocalFile, so this is straightforward.
+	 * n.b. Most checking done in UploadStashLocalFile, so this is straightforward.
 	 *
 	 * @param string $key The key of a particular requested file
 	 * @throws HttpError
@@ -121,6 +123,7 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 			$message = $e->getMessage();
 		}
 
+		// @phan-suppress-next-line PhanPossiblyUndeclaredVariable False positive
 		throw new HttpError( $code, $message );
 	}
 
@@ -182,7 +185,7 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 		// point here, but fetch the scaled file from somewhere else that
 		// happens to share it over NFS.
 		if ( $file->getRepo()->getThumbProxyUrl()
-			|| $this->getConfig()->get( 'UploadStashScalerBaseUrl' )
+			|| $this->getConfig()->get( MainConfigNames::UploadStashScalerBaseUrl )
 		) {
 			$this->outputRemoteScaledThumb( $file, $params, $flags );
 		} else {
@@ -261,7 +264,7 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 			// This option probably looks something like
 			// '//upload.wikimedia.org/wikipedia/test/thumb/temp'. Do not use
 			// trailing slash.
-			$scalerBaseUrl = $this->getConfig()->get( 'UploadStashScalerBaseUrl' );
+			$scalerBaseUrl = $this->getConfig()->get( MainConfigNames::UploadStashScalerBaseUrl );
 
 			if ( preg_match( '/^\/\//', $scalerBaseUrl ) ) {
 				// this is apparently a protocol-relative URL, which makes no sense in this context,
@@ -357,7 +360,7 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 	 * usually is.
 	 * Side effect: preps PHP to write headers to STDOUT.
 	 * @param string $contentType String suitable for content-type header
-	 * @param string $size Length in bytes
+	 * @param int $size Length in bytes
 	 */
 	private static function outputFileHeaders( $contentType, $size ) {
 		header( "Content-Type: $contentType", true );
@@ -380,15 +383,14 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 		// create the form, which will also be used to execute a callback to process incoming form data
 		// this design is extremely dubious, but supposedly HTMLForm is our standard now?
 
-		$context = new DerivativeContext( $this->getContext() );
-		$context->setTitle( $this->getPageTitle() ); // Remove subpage
 		$form = HTMLForm::factory( 'ooui', [
 			'Clear' => [
 				'type' => 'hidden',
 				'default' => true,
 				'name' => 'clear',
 			]
-		], $context, 'clearStashedUploads' );
+		], $this->getContext(), 'clearStashedUploads' );
+		$form->setTitle( $this->getPageTitle() ); // Remove subpage
 		$form->setSubmitDestructive();
 		$form->setSubmitCallback( function ( $formData, $form ) {
 			if ( isset( $formData['Clear'] ) ) {
@@ -407,14 +409,15 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 		$formResult = $form->tryAuthorizedSubmit();
 
 		// show the files + form, if there are any, or just say there are none
-		$refreshHtml = Html::element( 'a',
-			[ 'href' => $this->getPageTitle()->getLocalURL() ],
-			$this->msg( 'uploadstash-refresh' )->text() );
+		$linkRenderer = $this->getLinkRenderer();
+		$refreshHtml = $linkRenderer->makeKnownLink(
+			$this->getPageTitle(),
+			$this->msg( 'uploadstash-refresh' )->text()
+		);
 		$files = $this->stash->listFiles();
 		if ( $files && count( $files ) ) {
 			sort( $files );
 			$fileListItemsHtml = '';
-			$linkRenderer = $this->getLinkRenderer();
 			foreach ( $files as $file ) {
 				$itemHtml = $linkRenderer->makeKnownLink(
 					$this->getPageTitle( "file/$file" ),
@@ -431,7 +434,10 @@ class SpecialUploadStash extends UnlistedSpecialPage {
 								$this->msg( 'uploadstash-thumbnail' )->text()
 							)
 						)->escaped();
+				} catch ( TimeoutException $e ) {
+					throw $e;
 				} catch ( Exception $e ) {
+					MWExceptionHandler::logException( $e );
 				}
 				$fileListItemsHtml .= Html::rawElement( 'li', [], $itemHtml );
 			}

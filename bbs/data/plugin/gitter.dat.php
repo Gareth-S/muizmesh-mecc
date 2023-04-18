@@ -1,5 +1,5 @@
 <?php exit;?>
 array (
-  'gitterstate' => true,
-  'room' => 'Fred89/flatboard',
+  'gitterstate' => 'on',
+  'room' => '#muizenberg-electricity-cooperative',
 )

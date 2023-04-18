@@ -4,8 +4,12 @@ use PHPUnit\Framework\TestFailure;
 use PHPUnit\TextUI\ResultPrinter;
 
 class MediaWikiPHPUnitResultPrinter extends ResultPrinter {
-	/** @inheritDoc */
-	protected function printDefectTrace( TestFailure $defect ) : void {
+
+	/**
+	 * @param TestFailure $defect
+	 * @return void
+	 */
+	protected function printDefectTrace( TestFailure $defect ): void {
 		parent::printDefectTrace( $defect );
 		$test = $defect->getTestName();
 		$log = MediaWikiLoggerPHPUnitExtension::$testsCollection[$test] ?? null;

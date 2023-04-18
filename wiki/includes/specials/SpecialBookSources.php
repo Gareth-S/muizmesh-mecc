@@ -87,9 +87,9 @@ class SpecialBookSources extends SpecialPage {
 				if ( $isbn[$i] === 'X' ) {
 					return false;
 				} elseif ( $i % 2 == 0 ) {
-					$sum += $isbn[$i];
+					$sum += (int)$isbn[$i];
 				} else {
-					$sum += 3 * $isbn[$i];
+					$sum += 3 * (int)$isbn[$i];
 				}
 			}
 
@@ -102,7 +102,7 @@ class SpecialBookSources extends SpecialPage {
 				if ( $isbn[$i] === 'X' ) {
 					return false;
 				}
-				$sum += $isbn[$i] * ( $i + 1 );
+				$sum += (int)$isbn[$i] * ( $i + 1 );
 			}
 
 			$check = $sum % 11;
@@ -144,9 +144,8 @@ class SpecialBookSources extends SpecialPage {
 			],
 		];
 
-		$context = new DerivativeContext( $this->getContext() );
-		$context->setTitle( $this->getPageTitle() );
-		HTMLForm::factory( 'ooui', $formDescriptor, $context )
+		HTMLForm::factory( 'ooui', $formDescriptor, $this->getContext() )
+			->setTitle( $this->getPageTitle() )
 			->setWrapperLegendMsg( 'booksources-search-legend' )
 			->setSubmitTextMsg( 'booksources-search' )
 			->setMethod( 'get' )

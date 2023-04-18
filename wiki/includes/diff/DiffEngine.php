@@ -235,6 +235,7 @@ class DiffEngine {
 				while ( $start > 0 && $lines[$start - 1] == $lines[$i - 1] ) {
 					$changed[--$start] = 1;
 					$changed[--$i] = false;
+					// @phan-suppress-next-line PhanPluginLoopVariableReuse
 					while ( $start > 0 && $changed[$start - 1] ) {
 						$start--;
 					}
@@ -690,7 +691,7 @@ class DiffEngine {
 		}
 		/*
 		 * computing the true LCS is too expensive, instead find the diagonal
-		 * with the most progress and pretend a midle snake of length 0 occurs
+		 * with the most progress and pretend a middle snake of length 0 occurs
 		 * there.
 		 */
 

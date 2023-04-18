@@ -3,6 +3,7 @@
 namespace MediaWiki\Tests\Unit\Permissions;
 
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\MainConfigNames;
 use MediaWiki\Permissions\GroupPermissionsLookup;
 use MediaWikiUnitTestCase;
 
@@ -14,7 +15,7 @@ class GroupPermissionsLookupTest extends MediaWikiUnitTestCase {
 	private function createGroupPermissionsLookup(): GroupPermissionsLookup {
 		return new GroupPermissionsLookup(
 			new ServiceOptions( GroupPermissionsLookup::CONSTRUCTOR_OPTIONS, [
-				'GroupPermissions' => [
+				MainConfigNames::GroupPermissions => [
 					'unittesters' => [
 						'test' => true,
 						'runtest' => true,
@@ -25,15 +26,17 @@ class GroupPermissionsLookupTest extends MediaWikiUnitTestCase {
 						'writetest' => true,
 						'modifytest' => true,
 					],
-
 				],
-				'RevokePermissions' => [
+				MainConfigNames::RevokePermissions => [
 					'unittesters' => [
 						'nukeworld' => true,
 					],
 					'formertesters' => [
 						'runtest' => true,
 					],
+				],
+				MainConfigNames::GroupInheritsPermissions => [
+					'inheritedtesters' => 'unittesters',
 				],
 			] )
 		);
@@ -54,11 +57,11 @@ class GroupPermissionsLookupTest extends MediaWikiUnitTestCase {
 	public static function provideGetGroupsWithPermission() {
 		return [
 			[
-				[ 'unittesters', 'testwriters' ],
+				[ 'unittesters', 'testwriters', 'inheritedtesters' ],
 				'test'
 			],
 			[
-				[ 'unittesters' ],
+				[ 'unittesters', 'inheritedtesters' ],
 				'runtest'
 			],
 			[
@@ -76,14 +79,20 @@ class GroupPermissionsLookupTest extends MediaWikiUnitTestCase {
 	 * @covers \MediaWiki\Permissions\GroupPermissionsLookup::getGroupPermissions
 	 */
 	public function testGroupPermissions() {
-		$rights = $this->createGroupPermissionsLookup()
+		$lookup = $this->createGroupPermissionsLookup();
+		$rights = $lookup
 			->getGroupPermissions( [ 'unittesters' ] );
 		$this->assertContains( 'runtest', $rights );
 		$this->assertNotContains( 'writetest', $rights );
 		$this->assertNotContains( 'modifytest', $rights );
 		$this->assertNotContains( 'nukeworld', $rights );
 
-		$rights = $this->createGroupPermissionsLookup()
+		$this->assertEquals(
+			$lookup->getGroupPermissions( [ 'unittesters' ] ),
+			$lookup->getGroupPermissions( [ 'inheritedtesters' ] )
+		);
+
+		$rights = $lookup
 			->getGroupPermissions( [ 'unittesters', 'testwriters' ] );
 		$this->assertContains( 'runtest', $rights );
 		$this->assertContains( 'writetest', $rights );
@@ -107,12 +116,40 @@ class GroupPermissionsLookupTest extends MediaWikiUnitTestCase {
 	 * @covers \MediaWiki\Permissions\GroupPermissionsLookup::groupHasPermission
 	 */
 	public function testGroupHasPermission() {
-		$result = $this->createGroupPermissionsLookup()
-			->groupHasPermission( 'unittesters', 'test' );
-		$this->assertTrue( $result );
+		$lookup = $this->createGroupPermissionsLookup();
+		$this->assertTrue( $lookup->groupHasPermission( 'unittesters', 'test' ) );
+		$this->assertTrue( $lookup->groupHasPermission( 'inheritedtesters', 'test' ) );
 
-		$result = $this->createGroupPermissionsLookup()
-			->groupHasPermission( 'formertesters', 'runtest' );
-		$this->assertFalse( $result );
+		$this->assertFalse( $lookup->groupHasPermission( 'formertesters', 'runtest' ) );
+	}
+
+	/**
+	 * @covers \MediaWiki\Permissions\GroupPermissionsLookup::getGrantedPermissions
+	 */
+	public function testGetGrantedPermissions() {
+		$lookup = $this->createGroupPermissionsLookup();
+		$this->assertSame(
+			$lookup->getGrantedPermissions( 'unittesters' ),
+			[ 'test', 'runtest', 'nukeworld' ]
+		);
+		$this->assertSame(
+			$lookup->getGrantedPermissions( 'inheritedtesters' ),
+			[ 'test', 'runtest', 'nukeworld' ]
+		);
+	}
+
+	/**
+	 * @covers \MediaWiki\Permissions\GroupPermissionsLookup::getRevokedPermissions
+	 */
+	public function testGetRevokedPermissions() {
+		$lookup = $this->createGroupPermissionsLookup();
+		$this->assertSame(
+			$lookup->getRevokedPermissions( 'unittesters' ),
+			[ 'nukeworld' ]
+		);
+		$this->assertSame(
+			$lookup->getRevokedPermissions( 'inheritedtesters' ),
+			[ 'nukeworld' ]
+		);
 	}
 }

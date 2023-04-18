@@ -58,6 +58,13 @@ class MockApiHelper extends ApiHelper {
 			'bits' => 24,
 			'mime' => 'image/svg+xml'
 		],
+		'Bad.jpg' => [
+			'size' => 12345,
+			'width' => 320,
+			'height' => 240,
+			'bits' => 24,
+			'mime' => 'image/jpeg',
+		],
 		'LoremIpsum.djvu' => [
 			'size' => 3249,
 			'width' => 2480,
@@ -398,17 +405,31 @@ class MockApiHelper extends ApiHelper {
 		"Датотека:Foobar.jpg" => 'Foobar.jpg',
 		'Image:Foobar.svg' => 'Foobar.svg',
 		'File:Foobar.svg' => 'Foobar.svg',
+		'Файл:Foobar.svg' => 'Foobar.svg',
+		'Datei:Foobar.svg' => 'Foobar.svg',
 		'Image:Thumb.png' => 'Thumb.png',
 		'File:Thumb.png' => 'Thumb.png',
 		'File:LoremIpsum.djvu' => 'LoremIpsum.djvu',
 		'File:Video.ogv' => 'Video.ogv',
-		'File:Audio.oga' => 'Audio.oga'
+		'File:Audio.oga' => 'Audio.oga',
+		'File:Bad.jpg' => 'Bad.jpg',
 	];
 
 	private const PNAMES = [
 		'Image:Foobar.jpg' => 'File:Foobar.jpg',
 		'Image:Foobar.svg' => 'File:Foobar.svg',
 		'Image:Thumb.png' => 'File:Thumb.png'
+	];
+
+	// FIXME: Get this info from pagelanguage of a revision for these pages
+	private const PAGELANGS = [
+		'Rupage' => 'ru',
+		'Depage' => 'de',
+	];
+
+	// File is present in these langs
+	private const FILELANGS = [
+		'Foobar.svg' => [ 'en', 'ru' ],
 	];
 
 	// This templatedata description only provides a subset of fields
@@ -489,7 +510,7 @@ class MockApiHelper extends ApiHelper {
 	 * @param string $key The normalized title of the article
 	 * @param Article $article The contents of the article
 	 */
-	public function addArticle( string $key, Article $article ):void {
+	public function addArticle( string $key, Article $article ): void {
 		$this->articleCache[$key] = $article;
 	}
 
@@ -529,11 +550,13 @@ class MockApiHelper extends ApiHelper {
 	 * @param ?int $twidth
 	 * @param ?int $theight
 	 * @param ?string $extraParam optional iiurlparam, used for video/pdf/etc
+	 * @param ?string $contexttitle optional iibadfilecontexttitle
 	 * @return ?array
 	 */
 	private function imageInfo(
-		string $filename, ?int $twidth, ?int $theight, ?string $extraParam
-	) : ?array {
+		string $filename, ?int $twidth, ?int $theight, ?string $extraParam,
+		?string $contexttitle
+	): ?array {
 		$normPageName = self::PNAMES[$filename] ?? $filename;
 		$normFileName = self::FNAMES[$filename] ?? $filename;
 		$props = self::FILE_PROPS[$normFileName] ?? null;
@@ -569,9 +592,25 @@ class MockApiHelper extends ApiHelper {
 			$info['pagecount'] = $props['pagecount'];
 		}
 
-		if ( $mediatype === 'VIDEO' && !$twidth && !$theight ) {
+		if ( ( $mediatype === 'VIDEO' || $mediatype === 'DRAWING' ) && !$twidth && !$theight ) {
 			$twidth = $width;
 			$theight = $height;
+		}
+
+		preg_match( '/^lang([a-z]+(?:-[a-z]+)*)-(\d+)px$/i', $extraParam ?? '', $matches );
+		$lang = $matches[1] ?? null;
+		$pagelang = self::PAGELANGS[$contexttitle] ?? 'en';
+		$filelangs = self::FILELANGS[$normFileName] ?? [ 'en' ];
+
+		// Set $lang based on the targetlang, if the file is present in that lang
+		if (
+			$lang === null &&
+			$mediatype === 'DRAWING' &&
+			$pagelang !== 'en' &&
+			in_array( $pagelang, $filelangs, true )
+		) {
+			$lang = $pagelang;
+			$extraParam = "lang{$lang}-{$twidth}px";
 		}
 
 		if ( $theight || $twidth ) {
@@ -606,7 +645,7 @@ class MockApiHelper extends ApiHelper {
 			}
 			$thumbBaseUrl = $turl;
 			$page = null;
-			if ( $urlWidth !== $width || $mediatype === 'AUDIO' || $mediatype === 'VIDEO' || $mediatype === 'OFFICE' ) {
+			if ( $urlWidth !== $width || $mediatype === 'AUDIO' || $mediatype === 'VIDEO' || $mediatype === 'OFFICE' || $mediatype === 'DRAWING' ) {
 				$turl .= '/';
 				if ( preg_match( '/^page(\d+)-(\d+)px$/', $extraParam ?? '', $matches ) ) {
 					$turl .= $extraParam;
@@ -614,13 +653,21 @@ class MockApiHelper extends ApiHelper {
 				} elseif ( $mediatype === 'OFFICE' ) {
 					$turl .= 'page1-' . $urlWidth . 'px';
 					$page = 1;
+				} elseif ( $lang !== null ) {
+					// Explicit English just gets the default path
+					if ( $lang === 'en' ) {
+						$turl .= $urlWidth . 'px';
+						$lang = null;
+					} else {
+						$turl .= $extraParam;
+					}
 				} else {
 					$turl .= $urlWidth . 'px';
 				}
 				$turl .= '-';
 				if ( $mediatype === 'VIDEO' ) {
 					// Hack in a 'seek' option, if provided (T258767)
-					if ( preg_match( '/^seek/', $extraParam ?? '' ) ) {
+					if ( str_starts_with( $extraParam ?? '', 'seek' ) ) {
 						$turl .= $props['extraParams'][$extraParam] ?? '';
 					}
 					$turl .= '-';
@@ -656,6 +703,9 @@ class MockApiHelper extends ApiHelper {
 					$turl = $thumbBaseUrl . '/';
 					if ( $page !== null ) {
 						$turl .= "page{$page}-";
+					}
+					if ( $lang !== null ) {
+						$turl .= "lang{$lang}-";
 					}
 					$turl .= round( $twidth * $scale ) . 'px-' . $normFileName;
 					if ( $mediatype === 'VIDEO' || $mediatype === 'OFFICE' ) {
@@ -776,20 +826,20 @@ class MockApiHelper extends ApiHelper {
 		if ( ( $params['prop'] ?? null ) === 'imageinfo' ) {
 			$response = [ 'query' => [] ];
 			$filename = $params['titles']; // assumes this is a single file
-			$tonum = function ( $x ) {
+			$tonum = static function ( $x ) {
 				return $x ? (int)$x : null;
 			};
 			$ii = self::imageInfo(
 				$filename,
 				isset( $params['iiurlwidth'] ) ? $tonum( $params['iiurlwidth'] ) : null,
 				isset( $params['iiurlheight'] ) ? $tonum( $params['iiurlheight'] ) : null,
-				$params['iiurlparam'] ?? null
+				$params['iiurlparam'] ?? null,
+				$params['iibadfilecontexttitle'] ?? null
 			);
 			if ( $ii === null ) {
 				$p = [
 					'ns' => 6,
 					'title' => $filename,
-					'missing' => true,
 					'imagerepository' => true,
 					'imageinfo' => [ [
 						'size' => 0,
@@ -814,7 +864,7 @@ class MockApiHelper extends ApiHelper {
 					'title' => $ii['normPageName'],
 					'imageinfo' => [ $ii['result'] ]
 				];
-				$p['badfile'] = false;
+				$p['badfile'] = ( $filename === 'File:Bad.jpg' );
 			}
 			$response['query']['pages'] = [ $p ];
 
@@ -855,7 +905,7 @@ class MockApiHelper extends ApiHelper {
 
 			case 'indicator':
 			case 'section':
-				$res = "\n";
+				$res = "";
 				break;
 
 			default:

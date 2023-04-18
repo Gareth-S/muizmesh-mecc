@@ -65,7 +65,7 @@ class RevisionStoreRecordTest extends MediaWikiIntegrationTestCase {
 			$slots,
 		];
 
-		$title = Title::newFromText( 'Dummy' );
+		$title = Title::makeTitle( NS_MAIN, 'Dummy' );
 		$title->resetArticleID( 17 );
 
 		yield 'all info, local with Title' => [
@@ -124,7 +124,7 @@ class RevisionStoreRecordTest extends MediaWikiIntegrationTestCase {
 
 		$row = $protoRow;
 		yield 'no length, no hash' => [
-			Title::newFromText( 'DummyDoesNotExist' ),
+			Title::makeTitle( NS_MAIN, 'DummyDoesNotExist' ),
 			$user,
 			$comment,
 			(object)$row,
@@ -213,7 +213,7 @@ class RevisionStoreRecordTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function provideConstructorFailure() {
-		$title = Title::newFromText( 'Dummy' );
+		$title = Title::makeTitle( NS_MAIN, 'Dummy' );
 		$title->resetArticleID( 17 );
 
 		$user = new UserIdentityValue( 11, 'Tester' );
@@ -234,15 +234,6 @@ class RevisionStoreRecordTest extends MediaWikiIntegrationTestCase {
 			'rev_len' => $slots->computeSize(),
 			'rev_sha1' => $slots->computeSha1(),
 			'page_latest' => '18',
-		];
-
-		yield 'not a row' => [
-			new PageIdentityValue( 17, NS_MAIN, 'Dummy', 'acmewiki' ),
-			$user,
-			$comment,
-			'not a row',
-			$slots,
-			'acmewiki'
 		];
 
 		$row = $protoRow;
@@ -299,7 +290,7 @@ class RevisionStoreRecordTest extends MediaWikiIntegrationTestCase {
 		$this->expectException( TimestampException::class );
 		new RevisionStoreRecord(
 			$this->createMock( PageIdentity::class ),
-			new UserIdentityValue( 11, 'Tester', 0 ),
+			new UserIdentityValue( 11, __CLASS__ ),
 			$this->createMock( CommentStoreComment::class ),
 			$row,
 			$this->createMock( RevisionSlots::class ),

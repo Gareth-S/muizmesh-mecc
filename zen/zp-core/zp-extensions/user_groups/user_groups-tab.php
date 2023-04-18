@@ -10,13 +10,13 @@ require_once(dirname(dirname(dirname(__FILE__))) . '/admin-globals.php');
 
 admin_securityChecks(NULL, currentRelativeURL());
 define('USERS_PER_PAGE', max(1, getOption('users_per_page')));
-if (isset($_GET['subpage'])) {
-	$subpage = sanitize_numeric($_GET['subpage']);
+if (isset($_GET['pagenumber'])) {
+	$pagenumber = sanitize_numeric($_GET['pagenumber']);
 } else {
-	if (isset($_POST['subpage'])) {
-		$subpage = sanitize_numeric($_POST['subpage']);
+	if (isset($_POST['pagenumber'])) {
+		$pagenumber = sanitize_numeric($_POST['pagenumber']);
 	} else {
-		$subpage = 0;
+		$pagenumber = 0;
 	}
 }
 
@@ -38,21 +38,21 @@ if (isset($_GET['action'])) {
 	switch ($action) {
 		case 'deletegroup':
 			$groupname = trim(sanitize($_GET['group']));
-			$groupobj = Zenphoto_Authority::newAdministrator($groupname, 0);
+			$groupobj = Authority::newAdministrator($groupname, 0);
 			$groupobj->remove();
 			// clear out existing user assignments
-			Zenphoto_Authority::updateAdminField('group', NULL, array('`valid`>=' => '1', '`group`=' => $groupname));
-			redirectURL(FULLWEBPATH . "/" . ZENFOLDER . '/' . PLUGIN_FOLDER . '/user_groups/user_groups-tab.php?page=users&tab=groups&deleted&subpage=' . $subpage);
+			Authority::updateAdminField('group', NULL, array('`valid`>=' => '1', '`group`=' => $groupname));
+			redirectURL(FULLWEBPATH . "/" . ZENFOLDER . '/' . PLUGIN_FOLDER . '/user_groups/user_groups-tab.php?page=users&tab=groups&deleted&pagenumber=' . $pagenumber);
 		case 'savegroups':
 			if (isset($_POST['checkForPostTruncation'])) {
 				for ($i = 0; $i < $_POST['totalgroups']; $i++) {
 					$groupname = trim(sanitize($_POST[$i . '-group']));
 					if (!empty($groupname)) {
 						$rights = 0;
-						$group = Zenphoto_Authority::newAdministrator($groupname, 0);
+						$group = Authority::newAdministrator($groupname, 0);
 						if (isset($_POST[$i . '-initgroup']) && !empty($_POST[$i . '-initgroup'])) {
 							$initgroupname = trim(sanitize($_POST[$i . '-initgroup'], 3));
-							$initgroup = Zenphoto_Authority::newAdministrator($initgroupname, 0);
+							$initgroup = Authority::newAdministrator($initgroupname, 0);
 							$rights = $initgroup->getRights();
 							$group->setObjects(processManagedObjects($group->getID(), $rights));
 							$group->setRights(NO_RIGHTS | $rights);
@@ -75,7 +75,7 @@ if (isset($_GET['action'])) {
 								if ($admin['valid']) {
 									$hisgroups = explode(',', $admin['group']);
 									if (in_array($groupname, $hisgroups)) {
-										$user = Zenphoto_Authority::newAdministrator($admin['user'], $admin['valid']);
+										$user = Authority::newAdministrator($admin['user'], $admin['valid']);
 										user_groups::merge_rights($user, $hisgroups);
 										$user->setLastChangeUser($_zp_current_admin_obj->getUser());
 										$user->save();
@@ -83,14 +83,14 @@ if (isset($_GET['action'])) {
 								}
 							}
 							//user assignments: first clear out existing ones
-							Zenphoto_Authority::updateAdminField('group', NULL, array('`valid`>=' => '1', '`group`=' => $groupname));
+							Authority::updateAdminField('group', NULL, array('`valid`>=' => '1', '`group`=' => $groupname));
 							//then add the ones marked
 							$target = 'user_' . $i . '-';
 							foreach ($_POST as $item => $username) {
 								$item = sanitize(postIndexDecode($item));
 								if (strpos($item, $target) !== false) {
 									$username = substr($item, strlen($target));
-									$user = Zenphoto_Authority::getAnAdmin(array('`user`=' => $username, '`valid`>=' => 1));
+									$user = Authority::getAnAdmin(array('`user`=' => $username, '`valid`>=' => 1));
 									$user->setRights($group->getRights());
 									$user->setObjects($group->getObjects());
 									$user->setGroup($groupname);
@@ -106,14 +106,14 @@ if (isset($_GET['action'])) {
 			} else {
 				$notify = '&post_error';
 			}
-			redirectURL(FULLWEBPATH . "/" . ZENFOLDER . '/' . PLUGIN_FOLDER . '/user_groups/user_groups-tab.php?page=users&tab=groups&subpage=' . $subpage . $notify);
+			redirectURL(FULLWEBPATH . "/" . ZENFOLDER . '/' . PLUGIN_FOLDER . '/user_groups/user_groups-tab.php?page=users&tab=groups&pagenumber=' . $pagenumber . $notify);
 		case 'saveauserassignments':
 			if (isset($_POST['checkForPostTruncation'])) {
 				for ($i = 0; $i < $_POST['totalusers']; $i++) {
 					if (isset($_POST[$i . 'group'])) {
 						$newgroups = sanitize($_POST[$i . 'group']);
 						$username = trim(sanitize($_POST[$i . '-user'], 3));
-						$userobj = Zenphoto_Authority::getAnAdmin(array('`user`=' => $username, '`valid`>=' => 1));
+						$userobj = Authority::getAnAdmin(array('`user`=' => $username, '`valid`>=' => 1));
 						user_groups::merge_rights($userobj, $newgroups);
 						$userobj->setLastChangeUser($_zp_current_admin_obj->getUser());
 						$userobj->save();
@@ -123,7 +123,7 @@ if (isset($_GET['action'])) {
 			} else {
 				$notify = '&post_error';
 			}
-			redirectURL(FULLWEBPATH . "/" . ZENFOLDER . '/' . PLUGIN_FOLDER . '/user_groups/user_groups-tab.php?page=users&tab=assignments&subpage=' . $subpage . $notify);
+			redirectURL(FULLWEBPATH . "/" . ZENFOLDER . '/' . PLUGIN_FOLDER . '/user_groups/user_groups-tab.php?page=users&tab=assignments&pagenumber=' . $pagenumber . $notify);
 	}
 }
 
@@ -177,14 +177,14 @@ echo '</head>' . "\n";
 							}
 						}
 						$max = floor((count($list) - 1) / USERS_PER_PAGE);
-						if ($subpage > $max) {
-							$subpage = $max;
+						if ($pagenumber > $max) {
+							$pagenumber = $max;
 						}
 						$rangeset = getPageSelector($list, USERS_PER_PAGE);
-						$groups = array_slice($groups, $subpage * USERS_PER_PAGE, USERS_PER_PAGE);
+						$groups = array_slice($groups, $pagenumber * USERS_PER_PAGE, USERS_PER_PAGE);
 						$albumlist = array();
 						foreach ($_zp_gallery->getAlbums() as $folder) {
-							$alb = newAlbum($folder);
+							$alb = AlbumBase::newAlbum($folder);
 							$name = $alb->getTitle();
 							$albumlist[$name] = $folder;
 						}
@@ -202,7 +202,7 @@ echo '</head>' . "\n";
 							</p>
 							<br class="clearall" /><br />
 							<input type="hidden" name="savegroups" value="yes" />
-							<input type="hidden" name="subpage" value="<?php echo $subpage; ?>" />
+							<input type="hidden" name="pagenumber" value="<?php echo $pagenumber; ?>" />
 							<table class="bordered">
 								<tr>
 									<th>
@@ -213,7 +213,7 @@ echo '</head>' . "\n";
 										</span>
 									</th>
 									<th>
-										<?php printPageSelector($subpage, $rangeset, PLUGIN_FOLDER . '/user_groups/user_groups-tab.php', array('page' => 'users', 'tab' => 'groups')); ?>
+										<?php printPageSelector($pagenumber, $rangeset, PLUGIN_FOLDER . '/user_groups/user_groups-tab.php', array('page' => 'users', 'tab' => 'groups')); ?>
 									</th>
 									<th></th>
 								</tr>
@@ -228,7 +228,7 @@ echo '</head>' . "\n";
 									$rights = $user['rights'];
 									$grouptype = $user['name'];
 									$desc = $user['other_credentials'];
-									$groupobj = new Zenphoto_Administrator($groupname, 0);
+									$groupobj = new Administrator($groupname, 0);
 									if ($grouptype == 'group') {
 										$kind = gettext('group');
 									} else {
@@ -387,7 +387,7 @@ echo '</head>' . "\n";
 										</span>
 									</th>
 									<th>
-										<?php printPageSelector($subpage, $rangeset, PLUGIN_FOLDER . '/user_groups/user_groups-tab.php', array('page' => 'users', 'tab' => 'groups')); ?>
+										<?php printPageSelector($pagenumber, $rangeset, PLUGIN_FOLDER . '/user_groups/user_groups-tab.php', array('page' => 'users', 'tab' => 'groups')); ?>
 									</th>
 									<th></th>
 								</tr>
@@ -469,7 +469,7 @@ echo '</head>' . "\n";
 								foreach ($adminordered as $user) {
 									if ($user['valid']) {
 
-										$userobj = new Zenphoto_Administrator($user['user'], $user['valid']);
+										$userobj = new Administrator($user['user'], $user['valid']);
 
 										$group = $user['group'];
 										?>

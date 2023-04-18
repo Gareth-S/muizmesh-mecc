@@ -3,8 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
+ * @ingroup Languages
  *
  * @author Audun
  * @author Boivie
@@ -47,7 +47,7 @@
  * @author לערי ריינהארט
  */
 
-$fallback = 'nn';
+$fallback = 'no, nn';
 
 $bookstoreList = [
 	'Antikvariat.net' => 'http://www.antikvariat.net/',

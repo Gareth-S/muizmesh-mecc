@@ -165,7 +165,6 @@ do {
 			$res = $mcc->get( $args[0] );
 			$hv = $mcc->_hashfunc( $args[0] );
 			for ( $i = 0; $i < 3; $i++ ) {
-				// @phan-suppress-next-line PhanTypeArraySuspiciousNullable
 				print $mcc->_buckets[$hv % $mcc->_bucketcount] . "\n";
 				$hv += $mcc->_hashfunc( $i . $args[0] );
 			}
@@ -174,7 +173,7 @@ do {
 		case 'set':
 			$key = array_shift( $args );
 			if ( $args[0] == "#" && is_numeric( $args[1] ) ) {
-				$value = str_repeat( '*', $args[1] );
+				$value = str_repeat( '*', (int)$args[1] );
 			} else {
 				$value = implode( ' ', $args );
 			}

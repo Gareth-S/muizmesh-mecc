@@ -21,14 +21,14 @@
  */
 
 use Liuggio\StatsdClient\Factory\StatsdDataFactoryInterface;
+use MediaWiki\JobQueue\JobQueueGroupFactory;
 use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\MediaWikiServices;
 use Psr\Log\LoggerInterface;
 use Wikimedia\Rdbms\DBTransactionError;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\ILBFactory;
-use Wikimedia\Rdbms\LBFactory;
-use Wikimedia\Rdbms\LoadBalancer;
+use Wikimedia\ScopedCallback;
 
 /**
  * Class for managing the deferral of updates within the scope of a PHP script invocation
@@ -60,7 +60,7 @@ use Wikimedia\Rdbms\LoadBalancer;
  *   - d) When the queue is large and an LBFactory DB handle commits (EnqueueableDataUpdate only)
  *   - e) Upon the completion of Maintenance::execute() via Maintenance::shutdown()
  *
- * @see Maintenance::setLBFactoryTriggers()
+ * @see MWLBFactory::applyGlobalState()
  *
  * If DeferredUpdates::doUpdates() is currently running a deferred update, then the public
  * DeferredUpdates interface operates on the PRESEND/POSTSEND "sub"-queues that correspond to
@@ -82,6 +82,11 @@ use Wikimedia\Rdbms\LoadBalancer;
 class DeferredUpdates {
 	/** @var DeferredUpdatesScopeStack|null Queue states based on recursion level */
 	private static $scopeStack;
+
+	/**
+	 * @var int Nesting level for preventOpportunisticUpdates()
+	 */
+	private static $preventOpportunisticUpdates = 0;
 
 	/** @var int Process all updates; in web requests, use only after flushing output buffer */
 	public const ALL = 0;
@@ -117,7 +122,7 @@ class DeferredUpdates {
 	 * @since 1.28 Added the $stage parameter
 	 */
 	public static function addUpdate( DeferrableUpdate $update, $stage = self::POSTSEND ) {
-		global $wgCommandLineMode;
+		$commandLineMode = MediaWikiServices::getInstance()->getMainConfig()->get( 'CommandLineMode' );
 
 		self::getScopeStack()->current()->addUpdate( $update, $stage );
 		// If CLI mode is active and no RDBMs transaction round is in the way, then run all
@@ -125,8 +130,8 @@ class DeferredUpdates {
 		// RDBMs layer, but that do modify systems via deferred updates. This logic avoids
 		// excessive pending update queue sizes when long-running scripts never trigger the
 		// basic RDBMs hooks for running pending updates.
-		if ( $wgCommandLineMode ) {
-			self::tryOpportunisticExecute( 'run' );
+		if ( $commandLineMode ) {
+			self::tryOpportunisticExecute();
 		}
 	}
 
@@ -160,21 +165,17 @@ class DeferredUpdates {
 	 * inside an outer execution loop). In that case, it will instead operate on the sub-queue
 	 * of the innermost in-progress update on the stack.
 	 *
-	 * The $mode parameter determines how the updates are processed. Use "run" to process the
-	 * updates by running them. Otherwise, use "enqueue" to process the updates by converting
-	 * the EnqueueableDataUpdate instances to jobs and running the others.
-	 *
-	 * @param string $mode Either "run" or "enqueue" [default: "run"]
+	 * @internal For use by MediaWiki, Maintenance, JobRunner, JobExecutor
+	 * @param string|null $unused Previously for an "enqueue" mode
 	 * @param int $stage Which updates to process. One of
 	 *  (DeferredUpdates::PRESEND, DeferredUpdates::POSTSEND, DeferredUpdates::ALL)
-	 * @internal For use by MediaWiki, Maintenance, JobRunner, JobExecutor
-	 * @since 1.27 Added $stage parameter
 	 */
-	public static function doUpdates( $mode = 'run', $stage = self::ALL ) {
+	public static function doUpdates( $unused = null, $stage = self::ALL ) {
 		$services = MediaWikiServices::getInstance();
 		$stats = $services->getStatsdDataFactory();
 		$lbf = $services->getDBLoadBalancerFactory();
 		$logger = LoggerFactory::getInstance( 'DeferredUpdates' );
+		$jobQueueGroupFactory = $services->getJobQueueGroupFactory();
 		$httpMethod = $services->getMainConfig()->get( 'CommandLineMode' )
 			? 'cli'
 			: strtolower( RequestContext::getMain()->getRequest()->getMethod() );
@@ -205,20 +206,12 @@ class DeferredUpdates {
 		$scope->processUpdates(
 			$stage,
 			function ( DeferrableUpdate $update, $activeStage )
-				use ( $mode, $lbf, $logger, $stats, $httpMethod, &$guiError, &$exception )
+				use ( $lbf, $logger, $stats, $jobQueueGroupFactory, $httpMethod, &$guiError, &$exception )
 			{
-				// If applicable, just enqueue the update as a job in the job queue system
-				if ( $mode === 'enqueue' && $update instanceof EnqueueableDataUpdate ) {
-					self::jobify( $update, $lbf, $logger, $stats, $httpMethod );
-
-					return;
-				}
-
-				// Otherwise, run the update....
 				$scopeStack = self::getScopeStack();
 				$childScope = $scopeStack->descend( $activeStage, $update );
 				try {
-					$e = self::run( $update, $lbf, $logger, $stats, $httpMethod );
+					$e = self::run( $update, $lbf, $logger, $stats, $jobQueueGroupFactory, $httpMethod );
 					$guiError = $guiError ?: ( $e instanceof ErrorPageError ? $e : null );
 					$exception = $exception ?: $e;
 					// Any addUpdate() calls between descend() and ascend() used the sub-queue.
@@ -229,9 +222,9 @@ class DeferredUpdates {
 					$childScope->processUpdates(
 						$activeStage,
 						function ( DeferrableUpdate $subUpdate )
-							use ( $lbf, $logger, $stats, $httpMethod, &$guiError, &$exception )
+							use ( $lbf, $logger, $stats, $jobQueueGroupFactory, $httpMethod, &$guiError, &$exception )
 						{
-							$e = self::run( $subUpdate, $lbf, $logger, $stats, $httpMethod );
+							$e = self::run( $subUpdate, $lbf, $logger, $stats, $jobQueueGroupFactory, $httpMethod );
 							$guiError = $guiError ?: ( $e instanceof ErrorPageError ? $e : null );
 							$exception = $exception ?: $e;
 						}
@@ -259,35 +252,33 @@ class DeferredUpdates {
 
 	/**
 	 * Consume and execute all pending updates unless an update is already
-	 * in progress or the LBFactory service instance has "busy" DB handles
+	 * in progress or the ILBFactory service instance has "busy" DB handles
 	 *
 	 * A DB handle is considered "busy" if it has an unfinished transaction that cannot safely
-	 * be flushed or the parent LBFactory instance has an unfinished transaction round that
+	 * be flushed or the parent ILBFactory instance has an unfinished transaction round that
 	 * cannot safely be flushed. If the number of pending updates reaches BIG_QUEUE_SIZE and
 	 * there are still busy DB handles, then EnqueueableDataUpdate updates might be enqueued
 	 * as jobs. This avoids excessive memory use and risk of losing updates due to failures.
 	 *
-	 * The $mode parameter determines how the updates are processed. Use "run" to process the
-	 * updates by running them. Otherwise, use "enqueue" to process the updates by converting
-	 * the EnqueueableDataUpdate instances to jobs and running the others.
-	 *
 	 * Note that this method operates on updates from all stages and thus should not be called
 	 * during web requests. It is only intended for long-running Maintenance scripts.
 	 *
-	 * @param string $mode Either "run" or "enqueue" [default: "run"]
-	 * @return bool Whether updates were allowed to run
 	 * @internal For use by Maintenance
 	 * @since 1.28
+	 * @return bool Whether updates were allowed to run
 	 */
-	public static function tryOpportunisticExecute( $mode = 'run' ) {
+	public static function tryOpportunisticExecute(): bool {
 		// Leave execution up to the current loop if an update is already in progress
-		if ( self::getRecursiveExecutionStackDepth() ) {
+		// or if updates are explicitly disabled
+		if ( self::getRecursiveExecutionStackDepth()
+			|| self::$preventOpportunisticUpdates
+		) {
 			return false;
 		}
 
 		// Run the updates for this context if they will have outer transaction scope
 		if ( !self::areDatabaseTransactionsActive() ) {
-			self::doUpdates( $mode, self::ALL );
+			self::doUpdates( null, self::ALL );
 
 			return true;
 		}
@@ -302,12 +293,26 @@ class DeferredUpdates {
 				EnqueueableDataUpdate::class,
 				static function ( EnqueueableDataUpdate $update ) {
 					$spec = $update->getAsJobSpecification();
-					JobQueueGroup::singleton( $spec['domain'] )->push( $spec['job'] );
+					MediaWikiServices::getInstance()->getJobQueueGroupFactory()
+						->makeJobQueueGroup( $spec['domain'] )->push( $spec['job'] );
 				}
 			);
 		}
 
 		return false;
+	}
+
+	/**
+	 * Prevent opportunistic updates until the returned ScopedCallback is
+	 * consumed.
+	 *
+	 * @return ScopedCallback
+	 */
+	public static function preventOpportunisticUpdates() {
+		self::$preventOpportunisticUpdates++;
+		return new ScopedCallback( static function () {
+			self::$preventOpportunisticUpdates--;
+		} );
 	}
 
 	/**
@@ -369,6 +374,7 @@ class DeferredUpdates {
 	 * @param ILBFactory $lbFactory
 	 * @param LoggerInterface $logger
 	 * @param StatsdDataFactoryInterface $stats
+	 * @param JobQueueGroupFactory $jobQueueGroupFactory
 	 * @param string $httpMethod
 	 * @return Throwable|null
 	 */
@@ -377,99 +383,54 @@ class DeferredUpdates {
 		ILBFactory $lbFactory,
 		LoggerInterface $logger,
 		StatsdDataFactoryInterface $stats,
+		JobQueueGroupFactory $jobQueueGroupFactory,
 		$httpMethod
-	) : ?Throwable {
-		$suffix = ( $update instanceof DeferrableCallback ) ? "_{$update->getOrigin()}" : '';
+	): ?Throwable {
+		$suffix = $update instanceof DeferrableCallback ? '_' . $update->getOrigin() : '';
 		$type = get_class( $update ) . $suffix;
 		$stats->increment( "deferred_updates.$httpMethod.$type" );
-
 		$updateId = spl_object_id( $update );
 		$logger->debug( __METHOD__ . ": started $type #$updateId" );
-		$e = null;
+
+		$updateException = null;
+
+		$startTime = microtime( true );
 		try {
 			self::attemptUpdate( $update, $lbFactory );
-
-			return null;
-		} catch ( Throwable $e ) {
-		} finally {
-			$logger->debug( __METHOD__ . ": ended $type #$updateId" );
-		}
-
-		MWExceptionHandler::logException( $e );
-		$logger->error(
-			"Deferred update '{deferred_type}' failed to run.",
-			[
-				'deferred_type' => $type,
-				'exception' => $e,
-			]
-		);
-
-		$lbFactory->rollbackMasterChanges( __METHOD__ );
-
-		// Try to push the update as a job so it can run later if possible
-		if ( $update instanceof EnqueueableDataUpdate ) {
-			$jobEx = null;
-			try {
-				$spec = $update->getAsJobSpecification();
-				JobQueueGroup::singleton( $spec['domain'] )->push( $spec['job'] );
-
-				return $e;
-			} catch ( Throwable $jobEx ) {
-			}
-
-			MWExceptionHandler::logException( $jobEx );
+		} catch ( Throwable $updateException ) {
+			MWExceptionHandler::logException( $updateException );
 			$logger->error(
-				"Deferred update '{deferred_type}' failed to enqueue as a job.",
+				"Deferred update '{deferred_type}' failed to run.",
 				[
 					'deferred_type' => $type,
-					'exception' => $jobEx,
+					'exception' => $updateException,
 				]
 			);
-
-			$lbFactory->rollbackMasterChanges( __METHOD__ );
+			$lbFactory->rollbackPrimaryChanges( __METHOD__ );
+		} finally {
+			$walltime = microtime( true ) - $startTime;
+			$logger->debug( __METHOD__ . ": ended $type #$updateId, processing time: $walltime" );
 		}
 
-		return $e;
-	}
-
-	/**
-	 * Enqueue an update as a job in the job queue system and catch/log any exceptions
-	 *
-	 * @param EnqueueableDataUpdate $update
-	 * @param LBFactory $lbFactory
-	 * @param LoggerInterface $logger
-	 * @param StatsdDataFactoryInterface $stats
-	 * @param string $httpMethod
-	 */
-	private static function jobify(
-		EnqueueableDataUpdate $update,
-		LBFactory $lbFactory,
-		LoggerInterface $logger,
-		StatsdDataFactoryInterface $stats,
-		$httpMethod
-	) {
-		$type = get_class( $update );
-		$stats->increment( "deferred_updates.$httpMethod.$type" );
-
-		$jobEx = null;
-		try {
-			$spec = $update->getAsJobSpecification();
-			JobQueueGroup::singleton( $spec['domain'] )->push( $spec['job'] );
-
-			return;
-		} catch ( Throwable $jobEx ) {
+		// Try to push the update as a job so it can run later if possible
+		if ( $updateException && $update instanceof EnqueueableDataUpdate ) {
+			try {
+				$spec = $update->getAsJobSpecification();
+				$jobQueueGroupFactory->makeJobQueueGroup( $spec['domain'] )->push( $spec['job'] );
+			} catch ( Throwable $jobException ) {
+				MWExceptionHandler::logException( $jobException );
+				$logger->error(
+					"Deferred update '{deferred_type}' failed to enqueue as a job.",
+					[
+						'deferred_type' => $type,
+						'exception' => $jobException,
+					]
+				);
+				$lbFactory->rollbackPrimaryChanges( __METHOD__ );
+			}
 		}
 
-		MWExceptionHandler::logException( $jobEx );
-		$logger->error(
-			"Deferred update '$type' failed to enqueue as a job.",
-			[
-				'deferred_type' => $type,
-				'exception' => $jobEx,
-			]
-		);
-
-		$lbFactory->rollbackMasterChanges( __METHOD__ );
+		return $updateException;
 	}
 
 	/**
@@ -505,14 +466,14 @@ class DeferredUpdates {
 
 		// Flush any pending changes left over from an implicit transaction round
 		if ( $useExplicitTrxRound ) {
-			$lbFactory->beginMasterChanges( $fnameTrxOwner ); // new explicit round
+			$lbFactory->beginPrimaryChanges( $fnameTrxOwner ); // new explicit round
 		} else {
-			$lbFactory->commitMasterChanges( $fnameTrxOwner ); // new implicit round
+			$lbFactory->commitPrimaryChanges( $fnameTrxOwner ); // new implicit round
 		}
-		// Run the update after any stale master view snapshots have been flushed
+		// Run the update after any stale primary DB view snapshots have been flushed
 		$update->doUpdate();
 		// Commit any pending changes from the explicit or implicit transaction round
-		$lbFactory->commitMasterChanges( $fnameTrxOwner );
+		$lbFactory->commitPrimaryChanges( $fnameTrxOwner );
 	}
 
 	/**
@@ -524,16 +485,13 @@ class DeferredUpdates {
 			return true;
 		}
 
-		$connsBusy = false;
-		$lbFactory->forEachLB( static function ( LoadBalancer $lb ) use ( &$connsBusy ) {
-			$lb->forEachOpenMasterConnection( static function ( IDatabase $conn ) use ( &$connsBusy ) {
-				if ( $conn->writesOrCallbacksPending() || $conn->explicitTrxActive() ) {
-					$connsBusy = true;
-				}
-			} );
-		} );
+		foreach ( $lbFactory->getAllLBs() as $lb ) {
+			if ( $lb->hasPrimaryChanges() || $lb->explicitTrxActive() ) {
+				return true;
+			}
+		}
 
-		return $connsBusy;
+		return false;
 	}
 
 	/**

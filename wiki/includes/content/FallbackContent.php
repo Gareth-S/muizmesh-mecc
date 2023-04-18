@@ -31,7 +31,7 @@
  * This can be used to handle content for which no ContentHandler exists on the system,
  * perhaps because the extension that provided it has been removed.
  *
- * UnknownContent instances are immutable.
+ * FallbackContent instances are immutable.
  *
  * @ingroup Content
  */
@@ -54,7 +54,7 @@ class FallbackContent extends AbstractContent {
 	 * @return Content $this
 	 */
 	public function copy() {
-		// UnknownContent is immutable, so no need to copy.
+		// FallbackContent is immutable, so no need to copy.
 		return $this;
 	}
 
@@ -130,22 +130,6 @@ class FallbackContent extends AbstractContent {
 	}
 
 	/**
-	 * Fills the ParserOutput with an error message.
-	 * @param Title $title
-	 * @param int $revId
-	 * @param ParserOptions $options
-	 * @param bool $generateHtml
-	 * @param ParserOutput &$output
-	 */
-	protected function fillParserOutput( Title $title, $revId,
-		ParserOptions $options, $generateHtml, ParserOutput &$output
-	) {
-		$msg = wfMessage( 'unsupported-content-model', [ $this->getModel() ] );
-		$html = Html::rawElement( 'div', [ 'class' => 'error' ], $msg->inContentLanguage()->parse() );
-		$output->setText( $html );
-	}
-
-	/**
 	 * @param string $toModel
 	 * @param string $lossy
 	 * @return false
@@ -163,5 +147,3 @@ class FallbackContent extends AbstractContent {
 	}
 
 }
-
-class_alias( FallbackContent::class, 'UnknownContent' );

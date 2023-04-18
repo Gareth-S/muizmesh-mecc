@@ -3,8 +3,8 @@
  *
  * To improve a translation please visit https://translatewiki.net
  *
- * @ingroup Language
  * @file
+ * @ingroup Languages
  *
  * @author Gálaniitoluodda
  * @author Jeblad
@@ -17,6 +17,8 @@
  * @author Trondtr
  * @author לערי ריינהארט
  */
+
+$fallback = 'nb, fi';
 
 $namespaceNames = [
 	NS_MEDIA            => 'Media',

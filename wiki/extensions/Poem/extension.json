@@ -10,20 +10,23 @@
 	"descriptionmsg": "poem-desc",
 	"type": "parserhook",
 	"requires": {
-		"MediaWiki": ">= 1.29.0"
+		"MediaWiki": ">= 1.37.0"
 	},
 	"MessagesDirs": {
 		"Poem": [
 			"i18n"
 		]
 	},
-	"Hooks": {
-		"ParserFirstCallInit": [
-			"Poem::init"
-		]
+	"HookHandlers": {
+		"main": {
+			"class": "MediaWiki\\Extension\\Poem\\Poem"
+		}
 	},
-	"AutoloadClasses": {
-		"Poem": "includes/Poem.php"
+	"Hooks": {
+		"ParserFirstCallInit": "main"
+	},
+	"AutoloadNamespaces": {
+		"MediaWiki\\Extension\\Poem\\": "includes/"
 	},
 	"manifest_version": 2
 }

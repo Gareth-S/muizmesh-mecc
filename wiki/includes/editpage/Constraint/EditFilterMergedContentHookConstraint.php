@@ -20,12 +20,17 @@
 
 namespace MediaWiki\EditPage\Constraint;
 
+use ApiMessage;
 use Content;
+use Html;
 use IContextSource;
+use Language;
 use MediaWiki\HookContainer\HookContainer;
 use MediaWiki\HookContainer\HookRunner;
+use Message;
 use Status;
 use StatusValue;
+use User;
 
 /**
  * Verify `EditFilterMergedContent` hook
@@ -43,7 +48,7 @@ class EditFilterMergedContentHookConstraint implements IEditConstraint {
 	private $content;
 
 	/** @var IContextSource */
-	private $context;
+	private $hookContext;
 
 	/** @var string */
 	private $summary;
@@ -51,42 +56,53 @@ class EditFilterMergedContentHookConstraint implements IEditConstraint {
 	/** @var bool */
 	private $minorEdit;
 
+	/** @var Language */
+	private $language;
+
+	/** @var User */
+	private $hookUser;
+
 	/** @var Status */
 	private $status;
 
 	/** @var string */
-	private $hookError;
+	private $hookError = '';
 
 	/**
 	 * @param HookContainer $hookContainer
 	 * @param Content $content
-	 * @param IContextSource $context
+	 * @param IContextSource $hookContext NOTE: This should only be passed to the hook.
 	 * @param string $summary
 	 * @param bool $minorEdit
+	 * @param Language $language
+	 * @param User $hookUser NOTE: This should only be passed to the hook.
 	 */
 	public function __construct(
 		HookContainer $hookContainer,
 		Content $content,
-		IContextSource $context,
+		IContextSource $hookContext,
 		string $summary,
-		bool $minorEdit
+		bool $minorEdit,
+		Language $language,
+		User $hookUser
 	) {
 		$this->hookRunner = new HookRunner( $hookContainer );
 		$this->content = $content;
-		$this->context = $context;
+		$this->hookContext = $hookContext;
 		$this->summary = $summary;
 		$this->minorEdit = $minorEdit;
+		$this->language = $language;
+		$this->hookUser = $hookUser;
 		$this->status = Status::newGood();
-		$this->hookError = '';
 	}
 
-	public function checkConstraint() : string {
+	public function checkConstraint(): string {
 		$hookResult = $this->hookRunner->onEditFilterMergedContent(
-			$this->context,
+			$this->hookContext,
 			$this->content,
 			$this->status,
 			$this->summary,
-			$this->context->getUser(),
+			$this->hookUser,
 			$this->minorEdit
 		);
 		if ( !$hookResult ) {
@@ -98,11 +114,16 @@ class EditFilterMergedContentHookConstraint implements IEditConstraint {
 				// being set. This is used by ConfirmEdit to display a captcha
 				// without any error message cruft.
 			} else {
+				if ( !$this->status->getErrors() ) {
+					// Provide a fallback error message if none was set
+					$this->status->fatal( 'hookaborted' );
+				}
 				$this->hookError = $this->formatStatusErrors( $this->status );
 			}
 			// Use the existing $status->value if the hook set it
 			if ( !$this->status->value ) {
-				$this->status->value = self::AS_HOOK_ERROR;
+				// T273354: Should be AS_HOOK_ERROR_EXPECTED to display error message
+				$this->status->value = self::AS_HOOK_ERROR_EXPECTED;
 			}
 			return self::CONSTRAINT_FAILED;
 		}
@@ -122,7 +143,7 @@ class EditFilterMergedContentHookConstraint implements IEditConstraint {
 		return self::CONSTRAINT_PASSED;
 	}
 
-	public function getLegacyStatus() : StatusValue {
+	public function getLegacyStatus(): StatusValue {
 		// This returns a Status instead of a StatusValue since a Status object is
 		// used in the hook
 		return $this->status;
@@ -137,27 +158,24 @@ class EditFilterMergedContentHookConstraint implements IEditConstraint {
 	 * @internal
 	 * @return string
 	 */
-	public function getHookError() : string {
+	public function getHookError(): string {
 		return $this->hookError;
 	}
 
 	/**
-	 * Wrap status errors in an errorbox for increased visibility
+	 * Wrap status errors in error boxes for increased visibility.
 	 * @param Status $status
 	 * @return string
 	 */
-	private function formatStatusErrors( Status $status ) : string {
-		$errmsg = $status->getWikiText(
-			'edit-error-short',
-			'edit-error-long',
-			$this->context->getLanguage()
-		);
-		return <<<ERROR
-<div class="errorbox">
-{$errmsg}
-</div>
-<br clear="all" />
-ERROR;
+	private function formatStatusErrors( Status $status ): string {
+		$ret = '';
+		foreach ( $status->getErrors() as $rawError ) {
+			// XXX: This interface is ugly, but it seems to be the only convenient way to convert a message specifier
+			// as used in Status to a Message without all the cruft that Status::getMessage & friends add.
+			$msg = Message::newFromSpecifier( ApiMessage::create( $rawError ) );
+			$ret .= Html::errorBox( "\n" . $msg->inLanguage( $this->language )->plain() . "\n" );
+		}
+		return $ret;
 	}
 
 }

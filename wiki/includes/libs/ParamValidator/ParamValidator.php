@@ -9,7 +9,7 @@ use Wikimedia\Message\DataMessageValue;
 use Wikimedia\Message\MessageValue;
 use Wikimedia\Message\ParamType;
 use Wikimedia\Message\ScalarParam;
-use Wikimedia\ObjectFactory;
+use Wikimedia\ObjectFactory\ObjectFactory;
 
 /**
  * Service for formatting and validating API parameters
@@ -267,7 +267,7 @@ class ParamValidator {
 	 */
 	public function addTypeDef( $name, $typeDef ) {
 		Assert::parameterType(
-			implode( '|', [ TypeDef::class, 'array' ] ),
+			[ TypeDef::class, 'array' ],
 			$typeDef,
 			'$typeDef'
 		);
@@ -286,7 +286,7 @@ class ParamValidator {
 	 */
 	public function overrideTypeDef( $name, $typeDef ) {
 		Assert::parameterType(
-			implode( '|', [ TypeDef::class, 'array', 'null' ] ),
+			[ TypeDef::class, 'array', 'null' ],
 			$typeDef,
 			'$typeDef'
 		);
@@ -389,7 +389,7 @@ class ParamValidator {
 	 *  - 'allowedKeys': (string[]) ParamValidator keys that are allowed in `$settings`.
 	 *  - 'messages': (MessageValue[]) Messages to be checked for existence.
 	 */
-	public function checkSettings( string $name, $settings, array $options ) : array {
+	public function checkSettings( string $name, $settings, array $options ): array {
 		$settings = $this->normalizeSettingsInternal( $settings );
 		$issues = [];
 		$allowedKeys = [

@@ -1,6 +1,6 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
 use MediaWiki\Permissions\UltimateAuthority;
 use MediaWiki\User\UserFactory;
 use MediaWiki\User\UserIdentityValue;
@@ -15,7 +15,7 @@ use Wikimedia\IPUtils;
 class UserFactoryTest extends MediaWikiIntegrationTestCase {
 
 	private function getUserFactory() {
-		return MediaWikiServices::getInstance()->getUserFactory();
+		return $this->getServiceContainer()->getUserFactory();
 	}
 
 	public function testNewFromName() {
@@ -38,9 +38,13 @@ class UserFactoryTest extends MediaWikiIntegrationTestCase {
 		// Unspecified name defaults to current user's IP address
 		$this->assertSame( $currentIp, $anon->getName() );
 
+		// FIXME: should be a query count performance assertion instead of this hack
+		$this->getServiceContainer()->disableService( 'DBLoadBalancer' );
+
 		$name = '192.0.2.0';
 		$anonIpSpecified = $factory->newAnonymous( $name );
 		$this->assertSame( $name, $anonIpSpecified->getName() );
+		$anonIpSpecified->load(); // no queries expected
 	}
 
 	public function testNewFromId() {
@@ -82,7 +86,7 @@ class UserFactoryTest extends MediaWikiIntegrationTestCase {
 		$this->assertGreaterThan(
 			0,
 			$actorId,
-			'Sanity check: valid actor id for a user'
+			'Valid actor id for a user'
 		);
 
 		$user2 = $factory->newFromActorId( $actorId );
@@ -118,13 +122,13 @@ class UserFactoryTest extends MediaWikiIntegrationTestCase {
 		$this->assertGreaterThan(
 			0,
 			$id,
-			'Sanity check: valid user'
+			'Valid user'
 		);
 		$actorId = $user1->getActorId();
 		$this->assertGreaterThan(
 			0,
 			$actorId,
-			'Sanity check: valid actor id for a user'
+			'Valid actor id for a user'
 		);
 
 		$user2 = $factory->newFromAnyId( $id, null, null );
@@ -180,6 +184,42 @@ class UserFactoryTest extends MediaWikiIntegrationTestCase {
 		$user = $this->getUserFactory()->newFromAuthority( $authority );
 		$this->assertSame( 42, $user->getId() );
 		$this->assertSame( 'Test', $user->getName() );
+	}
+
+	public function testNewTempPlaceholder() {
+		$this->overrideConfigValue(
+			MainConfigNames::AutoCreateTempUser,
+			[
+				'enabled' => true,
+				'actions' => [ 'edit' ],
+				'genPattern' => '*Unregistered $1',
+				'matchPattern' => '*$1',
+				'serialProvider' => [ 'type' => 'local' ],
+				'serialMapping' => [ 'type' => 'plain-numeric' ],
+			]
+		);
+		$user = $this->getUserFactory()->newTempPlaceholder();
+		$this->assertTrue( $user->isTemp() );
+		$this->assertFalse( $user->isRegistered() );
+		$this->assertFalse( $user->isNamed() );
+		$this->assertSame( 0, $user->getId() );
+	}
+
+	public function testNewUnsavedTempUser() {
+		$this->overrideConfigValue(
+			MainConfigNames::AutoCreateTempUser,
+			[
+				'enabled' => true,
+				'actions' => [ 'edit' ],
+				'genPattern' => '*Unregistered $1',
+				'matchPattern' => '*$1',
+				'serialProvider' => [ 'type' => 'local' ],
+				'serialMapping' => [ 'type' => 'plain-numeric' ],
+			]
+		);
+		$user = $this->getUserFactory()->newUnsavedTempUser( '*Unregistered 1234' );
+		$this->assertTrue( $user->isTemp() );
+		$this->assertFalse( $user->isNamed() );
 	}
 
 }

@@ -21,7 +21,9 @@
  * @file
  */
 
-use Wikimedia\ObjectFactory;
+use MediaWiki\MainConfigNames;
+use MediaWiki\MediaWikiServices;
+use Wikimedia\ObjectFactory\ObjectFactory;
 
 /**
  * When you have many workers (threads/servers) giving service, and a
@@ -77,7 +79,7 @@ abstract class PoolCounter {
 	 */
 	private $isMightWaitKey;
 	/**
-	 * @var bool Whether this process holds a "might wait" lock key
+	 * @var int Whether this process holds a "might wait" lock key
 	 */
 	private static $acquiredMightWaitKey = 0;
 
@@ -117,11 +119,12 @@ abstract class PoolCounter {
 	 * @return PoolCounter
 	 */
 	public static function factory( string $type, string $key ) {
-		global $wgPoolCounterConf;
-		if ( !isset( $wgPoolCounterConf[$type] ) ) {
+		$poolCounterConf = MediaWikiServices::getInstance()->getMainConfig()
+			->get( MainConfigNames::PoolCounterConf );
+		if ( !isset( $poolCounterConf[$type] ) ) {
 			return new PoolCounterNull;
 		}
-		$conf = $wgPoolCounterConf[$type];
+		$conf = $poolCounterConf[$type];
 
 		/** @var PoolCounter $poolCounter */
 		$poolCounter = ObjectFactory::getObjectFromSpec(
@@ -171,8 +174,8 @@ abstract class PoolCounter {
 	abstract public function release();
 
 	/**
-	 * Checks that the lock request is sane.
-	 * @return Status - good for sane requests fatal for insane
+	 * Checks that the lock request is sensible.
+	 * @return Status good for sensible requests, fatal for the not so sensible
 	 * @since 1.25
 	 */
 	final protected function precheckAcquire() {

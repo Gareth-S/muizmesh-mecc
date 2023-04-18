@@ -25,6 +25,9 @@
 // NO_AUTOLOAD -- file-scope define() used to modify behaviour
 
 # Start from scratch
+use MediaWiki\MainConfigNames;
+use MediaWiki\Settings\SettingsBuilder;
+
 define( 'MW_NO_EXTENSION_MESSAGES', 1 );
 
 require_once __DIR__ . '/Maintenance.php';
@@ -120,13 +123,12 @@ class MergeMessageFileList extends Maintenance {
 		}
 	}
 
-	public function finalSetup() {
+	public function finalSetup( SettingsBuilder $settingsBuilder = null ) {
 		# This script commonly needs to be run before the l10n cache. But if
-		# $wgLanguageCode is not 'en', it won't be able to run because there is
-		# no l10n cache. Break the cycle by forcing $wgLanguageCode = 'en'.
-		global $wgLanguageCode;
-		$wgLanguageCode = 'en';
-		parent::finalSetup();
+		# LanguageCode is not 'en', it won't be able to run because there is
+		# no l10n cache. Break the cycle by forcing the LanguageCode setting to 'en'.
+		$settingsBuilder->putConfigValue( MainConfigNames::LanguageCode, 'en' );
+		parent::finalSetup( $settingsBuilder );
 	}
 
 	/**
@@ -183,7 +185,7 @@ foreach ( $mmfl['setupFiles'] as $fileName ) {
 		fwrite( STDERR, "Loading data from $fileName\n" );
 	}
 	// Using extension.json or skin.json
-	if ( substr( $fileName, -strlen( '.json' ) ) === '.json' ) {
+	if ( str_ends_with( $fileName, '.json' ) ) {
 		$queue[$fileName] = 1;
 	} else {
 		require_once $fileName;

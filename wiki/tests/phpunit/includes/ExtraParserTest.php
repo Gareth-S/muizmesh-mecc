@@ -1,7 +1,7 @@
 <?php
 
 use MediaWiki\Interwiki\ClassicInterwikiLookup;
-use MediaWiki\MediaWikiServices;
+use MediaWiki\MainConfigNames;
 use Wikimedia\TestingAccessWrapper;
 
 /**
@@ -16,18 +16,17 @@ class ExtraParserTest extends MediaWikiIntegrationTestCase {
 	/** @var Parser */
 	protected $parser;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
-		$this->setMwGlobals( [
-			'wgShowExceptionDetails' => true,
-			'wgCleanSignatures' => true,
-		] );
 		$this->setUserLang( 'en' );
-		$this->setContentLang( 'en' );
+		$this->overrideConfigValues( [
+			MainConfigNames::ShowExceptionDetails => true,
+			MainConfigNames::CleanSignatures => true,
+			MainConfigNames::LanguageCode => 'en',
+		] );
 
-		$services = MediaWikiServices::getInstance();
-
+		$services = $this->getServiceContainer();
 		$contLang = $services->getContentLanguage();
 
 		// FIXME: This test should pass without setting global content language
@@ -62,13 +61,9 @@ class ExtraParserTest extends MediaWikiIntegrationTestCase {
 		$options = ParserOptions::newFromUser( new User() );
 
 		RequestContext::getMain()->setTitle( $title );
-		RequestContext::getMain()->getWikiPage()->CustomTestProp = true;
 
 		$parsed = $this->parser->parse( $text, $title, $options )->getText();
 		$this->assertStringContainsString( 'apihelp-header', $parsed );
-
-		// Verify that this property wasn't wiped out by the parse
-		$this->assertTrue( RequestContext::getMain()->getWikiPage()->CustomTestProp );
 	}
 
 	/**
@@ -136,9 +131,8 @@ class ExtraParserTest extends MediaWikiIntegrationTestCase {
 	 * @covers Parser::cleanSig
 	 */
 	public function testCleanSigDisabled() {
-		$this->setMwGlobals( 'wgCleanSignatures', false );
+		$this->overrideConfigValue( MainConfigNames::CleanSignatures, false );
 
-		$title = Title::newFromText( __FUNCTION__ );
 		$outputText = $this->parser->cleanSig( "{{Foo}} ~~~~" );
 
 		$this->assertEquals( "{{Foo}} ~~~~", $outputText );
@@ -234,7 +228,7 @@ class ExtraParserTest extends MediaWikiIntegrationTestCase {
 		$cat = Title::makeTitleSafe( NS_CATEGORY, $catName );
 		$expected = [ $cat->getDBkey() ];
 		$parserOutput = $this->parser->parse( "[[file:nonexistent]]", $title, $this->options );
-		$result = $parserOutput->getCategoryLinks();
+		$result = $parserOutput->getCategoryNames();
 		$this->assertEquals( $expected, $result );
 	}
 
@@ -245,7 +239,7 @@ class ExtraParserTest extends MediaWikiIntegrationTestCase {
 		// Special pages shouldn't have tracking cats.
 		$title = SpecialPage::getTitleFor( 'Contributions' );
 		$parserOutput = $this->parser->parse( "[[file:nonexistent]]", $title, $this->options );
-		$result = $parserOutput->getCategoryLinks();
+		$result = $parserOutput->getCategoryNames();
 		$this->assertSame( [], $result );
 	}
 
@@ -270,12 +264,9 @@ class ExtraParserTest extends MediaWikiIntegrationTestCase {
 				'iw_local' => 0
 			]
 		];
-		$this->setMwGlobals(
-			'wgInterwikiCache',
+		$this->overrideConfigValue(
+			MainConfigNames::InterwikiCache,
 			ClassicInterwikiLookup::buildCdbHash( $testInterwikis )
-		);
-		MediaWikiServices::getInstance()->resetServiceForTesting(
-			'InterwikiLookup'
 		);
 		Title::clearCaches();
 		$this->parser->startExternalParse(

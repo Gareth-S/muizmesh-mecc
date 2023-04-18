@@ -1,7 +1,5 @@
 <?php
 /**
- * Caches user genders when needed to use correct namespace aliases.
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -19,7 +17,6 @@
  *
  * @file
  * @author Niklas Laxström
- * @ingroup Cache
  */
 
 use MediaWiki\Linker\LinkTarget;
@@ -32,6 +29,7 @@ use Wikimedia\Rdbms\ILoadBalancer;
  * Caches user genders when needed to use correct namespace aliases.
  *
  * @since 1.18
+ * @ingroup Cache
  */
 class GenderCache {
 	protected $cache = [];
@@ -150,7 +148,6 @@ class GenderCache {
 	 */
 	public function doQuery( $users, $caller = '' ) {
 		$default = $this->getDefault();
-		$userNameUtils = MediaWikiServices::getInstance()->getUserNameUtils();
 
 		$usersToCheck = [];
 		foreach ( (array)$users as $value ) {
@@ -159,10 +156,8 @@ class GenderCache {
 			if ( !isset( $this->cache[$name] ) ) {
 				// For existing users, this value will be overwritten by the correct value
 				$this->cache[$name] = $default;
-				// query only for valid names, which can be in the database
-				if ( $userNameUtils->isValid( $name ) ) {
-					$usersToCheck[] = $name;
-				}
+				// We no longer verify that only valid names are checked for, T267054
+				$usersToCheck[] = $name;
 			}
 		}
 

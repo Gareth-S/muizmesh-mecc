@@ -1,31 +1,26 @@
 <?php
+
 namespace MediaWiki\Page;
 
 /**
  * Data record representing a page that is (or used to be, or could be)
  * an editable page on a wiki.
  *
- * @note For compatibility with the WikiPage class, PageIdentity instances may
- *   represent non-existing pages. In the future, the contract of this interface is intended
- *   to be changed to disallow this.
+ * For compatibility with the WikiPage class, PageIdentity instances may
+ * represent non-existing pages. In the future, the contract of this interface is intended
+ * to be changed to disallow this. PageIdentity instances may also
+ * be mutable, and return different values from methods such as getLatest() or isRedirect()
+ * at different times. In the future, the contract of this interface is intended
+ * to be changed to disallow this.
  *
- * @note For compatibility with the WikiPage class, PageIdentity instances may
- *   be mutable, and return different values from methods such as getLatest() or isRedirect()
- *   at different times. In the future, the contract of this interface is intended
- *   to be changed to disallow this.
- *
- * @note Only WikiPage should implement PageRecord directly, other implementations should use
- *   ExistingPageRecord instead. Once WikiPage is removed or guaranteed to be immutable and
- *   existing, ExistingPageRecord will become an alias of PageRecord.
- *
- * @todo In the future, PageRecord should extend ProperPageIdentity. This will only
- *   become possible when WikiPage can no longer represent non-proper pages.
+ * Only WikiPage should implement PageRecord directly, other implementations should use
+ * ExistingPageRecord instead. Once WikiPage is removed or guaranteed to be immutable and
+ * existing, ExistingPageRecord will become an alias of PageRecord.
  *
  * @stable to type
- *
  * @since 1.36
  */
-interface PageRecord extends PageIdentity {
+interface PageRecord extends ProperPageIdentity {
 
 	/**
 	 * False if the page has had more than one edit.
@@ -62,9 +57,10 @@ interface PageRecord extends PageIdentity {
 	public function getTouched();
 
 	/**
-	 * The page's language.
+	 * The page's language, if explicitly recorded.
+	 * The effective page language needs to be determined programmatically.
 	 *
-	 * @return string
+	 * @return ?string
 	 */
 	public function getLanguage();
 }
