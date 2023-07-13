@@ -1,2 +1,0 @@
-[28-Mar-2023 10:51:23 Africa/Johannesburg] PHP Deprecated:  newAlbum (called from themeoptions.php line 116) is deprecated. Use AlbumBase::newAlbum() instead in /home/sexthera/public_html/muizenmesh.co.za/zen/zp-core/functions/functions-basic.php on line 2106
-[28-Mar-2023 10:51:44 Africa/Johannesburg] PHP Deprecated:  newAlbum (called from themeoptions.php line 116) is deprecated. Use AlbumBase::newAlbum() instead in /home/sexthera/public_html/muizenmesh.co.za/zen/zp-core/functions/functions-basic.php on line 2106

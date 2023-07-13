@@ -1,8 +1,0 @@
-THIS PROJECT
-
-is based on onionring.js
-
-https://garlic.garden/onionring
-https://github.com/maxboeck/webring/
-demos is Here:
-https://webringdemo.netlify.app/

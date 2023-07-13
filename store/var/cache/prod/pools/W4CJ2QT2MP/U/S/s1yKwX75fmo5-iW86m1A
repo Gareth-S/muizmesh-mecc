@@ -1,3 +1,0 @@
-<?php //PrestaShopBundle%255CController%255CAdmin%255CConfigure%255CShopParameters%255CPreferencesController
-
-return [PHP_INT_MAX, []];
